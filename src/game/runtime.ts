@@ -1,9 +1,42 @@
-import { applyAction, createInitialState, createSnapshot, stepState } from './logic';
+import { applyAction, createDefaultMetaProgress, createInitialState, createSnapshot, stepState } from './logic';
 import { paintSnapshot } from './render';
-import type { GameRuntime, GameRuntimeConfig, GameSnapshot, InputAction, RunState } from './types';
+import type { GameRuntime, GameRuntimeConfig, GameSnapshot, InputAction, MetaProgress, RunState } from './types';
+
+const META_STORAGE_KEY = 'sauna-defense-v2-meta';
+
+function loadMeta(storage?: Storage | null): MetaProgress {
+  if (!storage) {
+    return createDefaultMetaProgress();
+  }
+
+  try {
+    const raw = storage.getItem(META_STORAGE_KEY);
+    if (!raw) {
+      return createDefaultMetaProgress();
+    }
+    const parsed = JSON.parse(raw) as MetaProgress;
+    return {
+      steam: Number.isFinite(parsed.steam) ? parsed.steam : 0,
+      upgrades: {
+        ...createDefaultMetaProgress().upgrades,
+        ...parsed.upgrades
+      }
+    };
+  } catch {
+    return createDefaultMetaProgress();
+  }
+}
+
+function saveMeta(storage: Storage | null | undefined, meta: MetaProgress) {
+  if (!storage) {
+    return;
+  }
+  storage.setItem(META_STORAGE_KEY, JSON.stringify(meta));
+}
 
 export function createGameRuntime(config: GameRuntimeConfig): GameRuntime {
-  let state: RunState = createInitialState(config.content);
+  const storage = config.storage ?? (typeof window !== 'undefined' ? window.localStorage : null);
+  let state: RunState = createInitialState(config.content, loadMeta(storage), Date.now() >>> 0);
   let snapshot: GameSnapshot = createSnapshot(state, config.content);
   let animationFrameId = 0;
   let lastFrameMs = 0;
@@ -16,6 +49,7 @@ export function createGameRuntime(config: GameRuntimeConfig): GameRuntime {
     }
     snapshot = createSnapshot(state, config.content);
     lastEmitMs = state.timeMs;
+    saveMeta(storage, state.meta);
     for (const listener of listeners) {
       listener(snapshot);
     }
@@ -40,7 +74,6 @@ export function createGameRuntime(config: GameRuntimeConfig): GameRuntime {
     if (lastFrameMs === 0) {
       lastFrameMs = timestamp;
     }
-
     const deltaMs = Math.min(50, timestamp - lastFrameMs);
     lastFrameMs = timestamp;
     state = stepState(state, deltaMs, config.content);
