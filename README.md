@@ -23,7 +23,7 @@ GitHub Pages -julkaisu on tarkoitettu repolle `sauna-defence-v2`.
 
 - tuotantobase on `/sauna-defence-v2/`
 - push `main`-branchiin julkaisee pelin GitHub Pagesiin GitHub Actionsin kautta
-- julkaisuosoite on muotoa `https://artoaskala.github.io/sauna-defence-v2/`
+- julkaisuosoite on muotoa `https://wasab1kastike.github.io/sauna-defence-v2/`
 
 ## Pelisilmukka
 
