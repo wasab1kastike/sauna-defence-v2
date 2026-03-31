@@ -153,18 +153,9 @@ function normalizeDefender(defender: DefenderInstance, content: GameContent): vo
 }
 
 function generateName(state: RunState, content: GameContent): { name: string; title: string } {
-  const fullName = pick(state, content.namePools.first).trim().replace(/\s+/g, ' ');
-  const title = pick(state, content.namePools.title);
-  const parts = fullName.split(' ');
-  if (parts.length <= 1) {
-    return {
-      name: fullName,
-      title
-    };
-  }
   return {
-    name: parts[0],
-    title: `${title} ${parts.slice(1).join(' ')}`
+    name: pick(state, content.namePools.first),
+    title: `${pick(state, content.namePools.title)} ${pick(state, content.namePools.last)}`
   };
 }
 

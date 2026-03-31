@@ -165,6 +165,7 @@ export interface GameConfig {
 
 export interface NamePools {
   first: string[];
+  last: string[];
   title: string[];
 }
 

@@ -111,10 +111,11 @@ button {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(320px, 420px);
   gap: 20px;
+  align-items: start;
 }
 
 .canvas-frame {
-  min-height: 62vh;
+  height: min(72vh, 860px);
   border-radius: 28px;
   padding: 12px;
   background:
@@ -125,7 +126,6 @@ button {
 .battle-canvas {
   width: 100%;
   height: 100%;
-  min-height: 58vh;
   display: block;
   border-radius: 20px;
   touch-action: none;
@@ -347,10 +347,10 @@ em {
   }
 
   .canvas-frame {
-    min-height: 48vh;
+    height: min(56vh, 620px);
   }
 
   .battle-canvas {
-    min-height: 44vh;
+    min-height: 0;
   }
 }
