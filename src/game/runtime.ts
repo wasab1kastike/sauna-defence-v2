@@ -17,6 +17,8 @@ function loadMeta(storage?: Storage | null): MetaProgress {
     const parsed = JSON.parse(raw) as MetaProgress;
     return {
       steam: Number.isFinite(parsed.steam) ? parsed.steam : 0,
+      completedRuns: Number.isFinite(parsed.completedRuns) ? parsed.completedRuns : 0,
+      shopUnlocked: parsed.shopUnlocked === true,
       upgrades: {
         ...createDefaultMetaProgress().upgrades,
         ...parsed.upgrades

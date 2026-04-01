@@ -150,6 +150,8 @@ export interface MetaUpgradeDefinition {
 
 export interface MetaProgress {
   steam: number;
+  completedRuns: number;
+  shopUnlocked: boolean;
   upgrades: Record<MetaUpgradeId, number>;
 }
 
@@ -183,6 +185,7 @@ export interface GameConfig {
   recruitWaveStep: number;
   lowSisuThreshold: number;
   lowSaunaHintRatio: number;
+  metaShopUnlockCost: number;
   spawnLanes: AxialCoord[];
 }
 
@@ -327,6 +330,9 @@ export interface HudViewModel {
   canRecruit: boolean;
   steamEarned: number;
   bankedSteam: number;
+  metaShopUnlockCost: number;
+  canUnlockMetaShop: boolean;
+  metaShopUnlocked: boolean;
   actionTitle: string;
   actionBody: string;
   rosterEntries: HudRosterEntry[];
@@ -366,6 +372,7 @@ export type InputAction =
   | { type: 'equipInventoryDrop'; dropId: number; defenderId: string }
   | { type: 'dismissRecentDrop' }
   | { type: 'buyMetaUpgrade'; upgradeId: MetaUpgradeId }
+  | { type: 'unlockMetaShop' }
   | { type: 'startNextRun' }
   | { type: 'restartRun' };
 

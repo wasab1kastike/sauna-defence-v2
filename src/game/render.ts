@@ -17,6 +17,14 @@ interface TokenPalette {
   glyph: string;
 }
 
+interface SpriteFrame {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  scale?: number;
+}
+
 const DEFENDER_TOKEN_STYLES: TokenPalette[] = [
   { shell: '#f5d69a', ring: '#5a3f1b', accent: '#d46b2d', glow: 'rgba(255,179,92,0.28)', glyph: 'diamond' },
   { shell: '#cddfef', ring: '#22384f', accent: '#70c7d4', glow: 'rgba(112,199,212,0.22)', glyph: 'chevrons' },
@@ -37,6 +45,16 @@ const ENEMY_TOKEN_STYLES: TokenPalette[] = [
   { shell: '#5e2f63', ring: '#1f0c21', accent: '#d58bff', glow: 'rgba(213,139,255,0.22)', glyph: 'claw' },
   { shell: '#364b27', ring: '#0d1709', accent: '#a7dd63', glow: 'rgba(167,221,99,0.2)', glyph: 'skull' }
 ];
+
+const DEFENDER_SPRITE_SHEET_URL = `${import.meta.env.BASE_URL}defenders/sauna-party-sheet.png`;
+const DEFENDER_SPRITE_FRAMES: SpriteFrame[] = [
+  { x: 24, y: 120, w: 360, h: 760, scale: 1.04 },
+  { x: 340, y: 120, w: 360, h: 760, scale: 1.02 },
+  { x: 650, y: 80, w: 470, h: 820, scale: 1.08 },
+  { x: 1090, y: 120, w: 330, h: 760, scale: 1.02 }
+];
+
+let defenderSpriteSheet: HTMLImageElement | null | undefined;
 
 function getBoardLayout(width: number, height: number, radius: number): BoardLayout {
   const padding = Math.max(24, Math.min(width, height) * 0.06);
@@ -334,6 +352,47 @@ function drawTokenLabel(
   ctx.fillText(text, center.x, center.y + radius * 0.6);
 }
 
+function getDefenderSpriteSheet(): HTMLImageElement | null {
+  if (typeof Image === 'undefined') {
+    return null;
+  }
+  if (!defenderSpriteSheet) {
+    defenderSpriteSheet = new Image();
+    defenderSpriteSheet.src = DEFENDER_SPRITE_SHEET_URL;
+  }
+  return defenderSpriteSheet;
+}
+
+function drawDefenderPortrait(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  radius: number,
+  spriteIndex: number
+): boolean {
+  const sheet = getDefenderSpriteSheet();
+  if (!sheet || !sheet.complete || sheet.naturalWidth === 0) {
+    return false;
+  }
+
+  const frame = DEFENDER_SPRITE_FRAMES[spriteIndex % DEFENDER_SPRITE_FRAMES.length];
+  const scale = frame.scale ?? 1;
+  const destWidth = radius * 1.86 * scale;
+  const destHeight = destWidth * (frame.h / frame.w);
+  const destX = center.x - destWidth / 2;
+  const destY = center.y - destHeight * 0.58;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, radius * 0.79, 0, Math.PI * 2);
+  ctx.clip();
+  const previousSmoothing = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(sheet, frame.x, frame.y, frame.w, frame.h, destX, destY, destWidth, destHeight);
+  ctx.imageSmoothingEnabled = previousSmoothing;
+  ctx.restore();
+  return true;
+}
+
 function getDefenderStyle(styleId: number) {
   return DEFENDER_TOKEN_STYLES[styleId % DEFENDER_TOKEN_STYLES.length];
 }
@@ -455,8 +514,10 @@ export function paintSnapshot(
     }
 
     drawTokenBase(ctx, center, radius, style, template.fill);
-    drawGlyph(ctx, center, radius, style.glyph, style.glyph === 'tower' ? style.ring : style.accent);
-    drawTokenLabel(ctx, center, radius, template.label, '#fff8ed');
+    if (!drawDefenderPortrait(ctx, center, radius, defender.tokenStyleId)) {
+      drawGlyph(ctx, center, radius, style.glyph, style.glyph === 'tower' ? style.ring : style.accent);
+      drawTokenLabel(ctx, center, radius, template.label, '#fff8ed');
+    }
     drawHealthBar(ctx, center, layout.hexSize * 0.94, defender.hp / Math.max(1, stats.maxHp), '#7ed8c8');
   }
 

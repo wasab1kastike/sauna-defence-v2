@@ -82,6 +82,8 @@ export function createHexGrid(radius: number): AxialCoord[] {
 export function createDefaultMetaProgress(): MetaProgress {
   return {
     steam: 0,
+    completedRuns: 0,
+    shopUnlocked: false,
     upgrades: {
       roster_capacity: 0,
       inventory_slots: 0,
@@ -682,6 +684,7 @@ function getInventoryDrop(state: RunState, dropId: number | null): InventoryDrop
 function awardMeta(state: RunState): void {
   if (state.metaAwarded) return;
   state.meta.steam += state.steamEarned;
+  state.meta.completedRuns += 1;
   state.metaAwarded = true;
 }
 
@@ -746,6 +749,14 @@ function actionCopy(state: RunState): { title: string; body: string } {
   const selectedDefender = getDefender(state, state.selectedDefenderId);
 
   if (state.overlayMode === 'intermission') {
+    if (!state.meta.shopUnlocked) {
+      return {
+        title: state.phase === 'lost' ? 'Shop Locked' : 'Run Lobby',
+        body: state.phase === 'lost'
+          ? 'You unlocked the between-run lobby, but the actual metashop still needs one Steam-powered grand opening.'
+          : 'No metashop before the first run. Survive one shift first, then decide if the grand opening is worth the Steam.'
+      };
+    }
     return {
       title: state.phase === 'lost' ? 'Run Over' : 'Before The Run',
       body: state.phase === 'lost'
@@ -797,7 +808,7 @@ export function createInitialState(
   content: GameContent,
   meta: MetaProgress = createDefaultMetaProgress(),
   seed = 123456789,
-  showIntermission = true
+  showIntermission = meta.completedRuns > 0
 ): RunState {
   const state: RunState = {
     phase: 'prep',
@@ -834,7 +845,14 @@ export function createInitialState(
 }
 
 export function applyAction(state: RunState, action: InputAction, content: GameContent): RunState {
-  if (action.type === 'restartRun') return createInitialState(content, state.meta, (Date.now() >>> 0) || 1, true);
+  if (action.type === 'restartRun') {
+    return createInitialState(
+      content,
+      state.meta,
+      (Date.now() >>> 0) || 1,
+      state.meta.completedRuns > 0
+    );
+  }
   if (action.type === 'startNextRun') {
     return state.overlayMode === 'intermission'
       ? createInitialState(content, state.meta, (Date.now() >>> 0) || 1, false)
@@ -977,6 +995,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     case 'buyMetaUpgrade': {
       if (next.overlayMode !== 'intermission') return next;
+      if (!next.meta.shopUnlocked) return next;
       if (next.phase === 'lost') {
         awardMeta(next);
       }
@@ -985,6 +1004,17 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.meta.steam -= cost;
       next.meta.upgrades[action.upgradeId] += 1;
       next.message = `${content.metaUpgrades[action.upgradeId].name} purchased.`;
+      return next;
+    }
+    case 'unlockMetaShop': {
+      if (next.overlayMode !== 'intermission' || next.meta.shopUnlocked) return next;
+      if (next.meta.steam < content.config.metaShopUnlockCost) {
+        next.message = 'Not enough Steam to open the metashop yet.';
+        return next;
+      }
+      next.meta.steam -= content.config.metaShopUnlockCost;
+      next.meta.shopUnlocked = true;
+      next.message = 'The metashop shutters creak open for future runs.';
       return next;
     }
     default:
@@ -1065,6 +1095,9 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     canRecruit: state.overlayMode === 'none' && state.phase === 'prep' && state.sisu.current >= recruitCost(state, content) && livingDefenders(state).length < rosterCap(state, content),
     steamEarned: state.steamEarned,
     bankedSteam: state.meta.steam,
+    metaShopUnlockCost: content.config.metaShopUnlockCost,
+    canUnlockMetaShop: state.meta.steam >= content.config.metaShopUnlockCost && !state.meta.shopUnlocked,
+    metaShopUnlocked: state.meta.shopUnlocked,
     actionTitle: action.title,
     actionBody: action.body,
     rosterEntries: [...state.defenders].sort((left, right) => {

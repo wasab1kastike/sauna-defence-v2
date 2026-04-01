@@ -35,9 +35,9 @@ describe('Sauna Defense V2 logic', () => {
   });
 
   it('opens the meta shop before a fresh run when requested', () => {
-    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, true);
+    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42);
 
-    expect(state.overlayMode).toBe('intermission');
+    expect(state.overlayMode).toBe('none');
     expect(state.phase).toBe('prep');
   });
 
@@ -196,12 +196,43 @@ describe('Sauna Defense V2 logic', () => {
     state.phase = 'lost';
     state.overlayMode = 'intermission';
     state.steamEarned = 8;
-    state.meta.steam = 0;
+    state.meta.steam = 8;
+    state.meta.shopUnlocked = true;
 
+    const beforePurchase = state.meta.steam + state.steamEarned;
     state = applyAction(state, { type: 'buyMetaUpgrade', upgradeId: 'inventory_slots' }, gameContent);
 
-    expect(state.meta.steam).toBeLessThan(8);
+    expect(state.meta.steam).toBeLessThan(beforePurchase);
     expect(state.meta.upgrades.inventory_slots).toBe(1);
+  });
+
+  it('shows intermission after a run and requires a one-time shop unlock', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.steamEarned = 8;
+    state.saunaHp = 1;
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 1 },
+      hp: 12,
+      attackReadyAtMs: 0,
+      moveReadyAtMs: 999999
+    }];
+    state.pendingSpawns = [];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.overlayMode).toBe('intermission');
+    expect(state.meta.completedRuns).toBe(1);
+    expect(state.meta.shopUnlocked).toBe(false);
+
+    const beforeUnlockSteam = state.meta.steam;
+    state = applyAction(state, { type: 'unlockMetaShop' }, gameContent);
+
+    expect(state.meta.shopUnlocked).toBe(true);
+    expect(state.meta.steam).toBe(beforeUnlockSteam - gameContent.config.metaShopUnlockCost);
   });
 
   it('tracks selected loot details with art and flavor text', () => {

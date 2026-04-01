@@ -266,7 +266,7 @@ export function App() {
                     className="ghost-button"
                     onClick={() => runtimeRef.current?.dispatch({ type: 'restartRun' })}
                   >
-                    Reset To Shop
+                    Reset Run
                   </button>
                 </div>
               </section>
@@ -391,41 +391,62 @@ export function App() {
         <div className="overlay-shell">
           <section className="overlay-card">
             <div className="panel-head">
-              <h2>{snapshot.state.phase === 'lost' ? 'Steam Intermission' : 'Before The First Heat'}</h2>
+              <h2>{snapshot.state.phase === 'lost' ? 'Steam Intermission' : 'Between Runs'}</h2>
               <span>{snapshot.hud.bankedSteam} Steam banked</span>
             </div>
             <p className="panel-copy">
               {snapshot.state.phase === 'lost'
-                ? 'The last shift ended in steam and regret. Spend what you banked, then start the next run stronger.'
-                : 'Metashop stays between runs only. Take a quick look, then step into wave one when you are ready.'}
+                ? snapshot.hud.metaShopUnlocked
+                  ? 'The last shift ended in steam and regret. Spend what you banked, then start the next run stronger.'
+                  : 'Your first run unlocked the lobby. Pay once to open the metashop for future runs.'
+                : snapshot.hud.metaShopUnlocked
+                  ? 'Metashop only appears between runs now. Buy what you need, then head back to the heat.'
+                  : 'No metashop before the first run. Once you survive a shift, you can pay to open it permanently.'}
             </p>
-            <div className="intermission-grid">
-              {snapshot.hud.metaUpgrades.map((upgrade) => (
-                <div key={upgrade.id} className="inventory-card">
-                  <div>
-                    <strong>{upgrade.name}</strong>
-                    <small>{upgrade.description}</small>
-                    <small>
-                      Level {upgrade.level}
-                      {upgrade.maxed ? ' · MAX' : ` · Cost ${upgrade.cost}`}
-                    </small>
+            {snapshot.hud.metaShopUnlocked ? (
+              <div className="intermission-grid">
+                {snapshot.hud.metaUpgrades.map((upgrade) => (
+                  <div key={upgrade.id} className="inventory-card">
+                    <div>
+                      <strong>{upgrade.name}</strong>
+                      <small>{upgrade.description}</small>
+                      <small>
+                        Level {upgrade.level}
+                        {upgrade.maxed ? ' · MAX' : ` · Cost ${upgrade.cost}`}
+                      </small>
+                    </div>
+                    <button
+                      className="mini-button"
+                      disabled={!upgrade.affordable || upgrade.maxed}
+                      onClick={() => runtimeRef.current?.dispatch({ type: 'buyMetaUpgrade', upgradeId: upgrade.id })}
+                    >
+                      Buy Upgrade
+                    </button>
                   </div>
-                  <button
-                    className="mini-button"
-                    disabled={!upgrade.affordable || upgrade.maxed}
-                    onClick={() => runtimeRef.current?.dispatch({ type: 'buyMetaUpgrade', upgradeId: upgrade.id })}
-                  >
-                    Buy Upgrade
-                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="inventory-card unlock-card">
+                <div>
+                  <strong>Grand Opening</strong>
+                  <small>Unlock the metashop once and keep it available in future intermissions.</small>
+                  <small>Cost {snapshot.hud.metaShopUnlockCost} Steam</small>
                 </div>
-              ))}
-            </div>
+                <button
+                  className="mini-button"
+                  disabled={!snapshot.hud.canUnlockMetaShop}
+                  onClick={() => runtimeRef.current?.dispatch({ type: 'unlockMetaShop' })}
+                >
+                  Open The Shop
+                </button>
+              </div>
+            )}
             <div className="button-row intermission-actions">
               <button
                 className="primary-button"
                 onClick={() => runtimeRef.current?.dispatch({ type: 'startNextRun' })}
               >
-                {snapshot.state.phase === 'lost' ? 'Start Next Run' : 'Enter The Run'}
+                {snapshot.state.phase === 'lost' ? 'Start Next Run' : 'Back To The Sauna'}
               </button>
             </div>
           </section>

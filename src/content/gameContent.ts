@@ -31,6 +31,7 @@ export const gameContent: GameContent = {
     spawnIntervalStepMs: 55,
     lowSisuThreshold: 4,
     lowSaunaHintRatio: 0.45,
+    metaShopUnlockCost: 4,
     spawnLanes: [
       { q: 0, r: -4 },
       { q: 4, r: -4 },
