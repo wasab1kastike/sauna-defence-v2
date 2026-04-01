@@ -533,6 +533,47 @@ function recruitRollCost(state: RunState, content: GameContent): number {
   return Math.max(1, Math.floor(recruitCost(state, content) * 0.34));
 }
 
+function canAccessRecruitment(state: RunState): boolean {
+  return !state.introOpen && state.phase !== 'lost' && state.overlayMode !== 'intermission';
+}
+
+function canRollRecruitOffers(state: RunState, content: GameContent): boolean {
+  return (
+    canAccessRecruitment(state) &&
+    state.sisu.current >= recruitRollCost(state, content) &&
+    livingDefenders(state).length < rosterCap(state, content)
+  );
+}
+
+function canBuyAnyRecruitOffer(state: RunState, content: GameContent): boolean {
+  return (
+    canAccessRecruitment(state) &&
+    livingDefenders(state).length < rosterCap(state, content) &&
+    state.recruitOffers.some((offer) => state.sisu.current >= offer.price)
+  );
+}
+
+function recruitmentStatusText(state: RunState, content: GameContent): string {
+  if (state.phase === 'lost' || state.overlayMode === 'intermission') {
+    return 'Recruitment closes between runs.';
+  }
+  if (state.introOpen) {
+    return 'Finish the briefing before scouting recruits.';
+  }
+  if (livingDefenders(state).length >= rosterCap(state, content)) {
+    return 'Roster is full. Lose a hero or raise capacity before recruiting again.';
+  }
+  if (state.recruitOffers.length > 0) {
+    return state.sisu.current >= Math.min(...state.recruitOffers.map((offer) => offer.price))
+      ? 'Pick one candidate. The others leave when you sign a recruit.'
+      : 'You can inspect the market, but you need more SISU to afford any offer.';
+  }
+  const scoutCost = recruitRollCost(state, content);
+  return state.sisu.current >= scoutCost
+    ? 'Scout three candidates and compare their prices, stats and personalities.'
+    : `Need ${scoutCost} SISU to scout a new batch of recruits.`;
+}
+
 function recruitScore(defender: DefenderInstance, content: GameContent): number {
   const template = content.defenderTemplates[defender.templateId];
   const hpRatio = defender.stats.maxHp / template.stats.maxHp;
@@ -777,7 +818,7 @@ function enemyStep(state: RunState, enemy: EnemyInstance, content: GameContent):
     const target = enemyTarget(state, enemy, content);
     if (target === 'sauna') {
       state.saunaHp = Math.max(0, state.saunaHp - archetype.damage);
-      pushFx(state, enemy.archetypeId === 'chieftain' ? 'boss_hit' : 'hit', CENTER, enemy.archetypeId === 'chieftain' ? 260 : 180, enemy.tile);
+      pushFx(state, enemy.archetypeId === 'chieftain' ? 'boss_hit' : 'sauna_hit', CENTER, enemy.archetypeId === 'chieftain' ? 260 : 210, enemy.tile);
       if (enemy.archetypeId === 'chieftain') {
         addHitStop(state, 42);
       }
@@ -787,7 +828,7 @@ function enemyStep(state: RunState, enemy: EnemyInstance, content: GameContent):
     if (target) {
       target.hp -= archetype.damage;
       if (target.tile) {
-        pushFx(state, enemy.archetypeId === 'chieftain' ? 'boss_hit' : 'hit', target.tile, enemy.archetypeId === 'chieftain' ? 240 : 170, enemy.tile);
+        pushFx(state, enemy.archetypeId === 'chieftain' ? 'boss_hit' : 'defender_hit', target.tile, enemy.archetypeId === 'chieftain' ? 240 : 190, enemy.tile);
       }
       maybeSaunaSlapSwap(state, target, content);
       if (enemy.archetypeId === 'chieftain') {
@@ -988,9 +1029,12 @@ function pressureSignals(state: RunState, content: GameContent): string[] {
   return signals;
 }
 
-function actionCopy(state: RunState): { title: string; body: string } {
+function actionCopy(state: RunState, content: GameContent): { title: string; body: string } {
   const selectedLoot = getInventoryDrop(state, state.selectedInventoryDropId);
   const selectedDefender = getDefender(state, state.selectedDefenderId);
+  const boardCount = boardDefenders(state).length;
+  const readyCount = state.defenders.filter((defender) => defender.location === 'ready').length;
+  const freeSlots = Math.max(0, rosterCap(state, content) - livingDefenders(state).length);
 
   if (state.overlayMode === 'intermission') {
     if (!state.meta.shopUnlocked) {
@@ -1012,6 +1056,12 @@ function actionCopy(state: RunState): { title: string; body: string } {
     return {
       title: 'Run Paused',
       body: 'Combat is frozen. Check loot, place reinforcements, then resume when the plan feels solid.'
+    };
+  }
+  if (state.recruitmentOpen) {
+    return {
+      title: 'Recruitment Market',
+      body: recruitmentStatusText(state, content)
     };
   }
   if (selectedLoot && selectedDefender) {
@@ -1043,22 +1093,32 @@ function actionCopy(state: RunState): { title: string; body: string } {
   if (selectedDefender && selectedDefender.location !== 'board') {
     return {
       title: 'Place Defender',
-      body: `Drop ${selectedDefender.name} onto a free build hex to reinforce the sauna line.`
+      body: `Drop ${selectedDefender.name} onto a bright green build hex. You can place heroes from the bench even while the wave is live.`
     };
   }
   if (state.phase === 'prep') {
+    if (boardCount === 0 && readyCount > 0) {
+      return {
+        title: 'Place Your First Hero',
+        body: 'Select a hero from the roster, then click any green build hex on the board. Path tiles stay dark and cannot hold defenders.'
+      };
+    }
     return {
       title: state.currentWave.isBoss ? 'Boss Prep' : 'Prep Window',
       body: state.currentWave.isBoss
         ? 'This is the clean break before a boss. Set the board, spend SISU carefully, then start when ready.'
-        : 'Set the board, scout recruit offers if needed, and start when your lanes make sense.'
+        : freeSlots > 0
+          ? 'Set the board, scout recruit offers if needed, and start when your lanes make sense.'
+          : 'Set the board, sort loot, and start when your lanes make sense.'
     };
   }
   return {
     title: state.currentWave.isBoss ? 'Boss Pressure' : 'Hold The Line',
     body: state.currentWave.isBoss
       ? 'Keep the center alive, use pause if you need to assign loot, and watch for direct sauna breaches.'
-      : 'Non-boss waves will keep chaining, so stabilize attrition before the next spike arrives.'
+      : freeSlots > 0
+        ? 'Non-boss waves keep chaining. You can still recruit and place bench heroes while the fight is live.'
+        : 'Non-boss waves keep chaining, so stabilize attrition before the next spike arrives.'
   };
 }
 
@@ -1186,7 +1246,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       }
       return next;
     case 'toggleRecruitment':
-      if (next.overlayMode !== 'none' || next.phase !== 'prep') return next;
+      if (!canAccessRecruitment(next)) return next;
       next.recruitmentOpen = !next.recruitmentOpen;
       if (next.recruitmentOpen) {
         next.inventoryOpen = false;
@@ -1257,7 +1317,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       );
       return next;
     case 'rollRecruitOffers': {
-      if (next.overlayMode !== 'none' || next.phase !== 'prep') return next;
+      if (!canAccessRecruitment(next)) return next;
       if (livingDefenders(next).length >= rosterCap(next, content)) {
         next.message = 'Roster cap reached.';
         return next;
@@ -1277,7 +1337,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     }
     case 'recruitOffer': {
-      if (next.overlayMode !== 'none' || next.phase !== 'prep') return next;
+      if (!canAccessRecruitment(next)) return next;
       const offer = next.recruitOffers.find((entry) => entry.offerId === action.offerId);
       if (!offer) return next;
       if (livingDefenders(next).length >= rosterCap(next, content)) {
@@ -1293,11 +1353,11 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.defenders.push(offer.candidate);
       next.recruitOffers = [];
       next.recruitmentOpen = false;
-      next.message = `${offer.candidate.name} ${offer.candidate.title} joined for ${offer.price} SISU.`;
+      next.message = `${offer.candidate.name} ${offer.candidate.title} joined the bench for ${offer.price} SISU.`;
       return next;
     }
     case 'clearRecruitOffers':
-      if (next.overlayMode !== 'none') return next;
+      if (!canAccessRecruitment(next)) return next;
       next.recruitOffers = [];
       next.recruitmentOpen = false;
       next.message = 'Recruit offers dismissed.';
@@ -1405,7 +1465,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const activeMs = Math.max(0, state.sisu.activeUntilMs - state.timeMs);
   const cdMs = Math.max(0, state.sisu.cooldownUntilMs - state.timeMs);
   const saunaDefender = getDefender(state, state.saunaDefenderId);
-  const action = actionCopy(state);
+  const action = actionCopy(state, content);
+  const boardCount = boardDefenders(state).length;
   const readyBenchCount = state.defenders.filter((defender) => defender.location === 'ready').length;
   const freeRecruitSlots = Math.max(0, rosterCap(state, content) - livingDefenders(state).length);
   const hud: HudViewModel = {
@@ -1415,10 +1476,10 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         : state.overlayMode === 'paused'
           ? 'Paused'
           : state.phase === 'prep'
-            ? 'Valmistelu'
+            ? 'Preparation'
             : state.phase === 'wave'
-              ? 'Aalto kaynnissa'
-              : 'Run ohi',
+              ? 'Wave Live'
+              : 'Run Over',
     statusText: state.message,
     overlayMode: state.overlayMode,
     isPaused: state.overlayMode === 'paused',
@@ -1430,8 +1491,9 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     nextWaveThreat: `${pressureLabel(currentWave.pressure)} pressure`,
     nextWavePattern: patternLabel(currentWave),
     pressureSignals: pressureSignals(state, content),
-    boardCount: boardDefenders(state).length,
+    boardCount,
     boardCap: content.config.boardCap,
+    placedBoardLabel: `${boardCount}/${content.config.boardCap} heroes placed`,
     rosterCount: livingDefenders(state).length,
     rosterCap: rosterCap(state, content),
     inventoryCount: state.inventory.length,
@@ -1448,15 +1510,12 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     canUseSisu: state.overlayMode === 'none' && canUseSisu(state, content),
     sisuLabel: activeMs > 0 ? `SISU active ${Math.ceil(activeMs / 1000)} s` : cdMs > 0 ? `SISU cooldown ${Math.ceil(cdMs / 1000)} s` : `SISU ready (${content.config.sisuAbilityCost})`,
     canPause: state.phase === 'wave',
-    canOpenRecruitment: state.overlayMode === 'none' && state.phase === 'prep' && !state.introOpen,
+    canOpenRecruitment: canAccessRecruitment(state),
+    recruitmentStatusText: recruitmentStatusText(state, content),
     recruitCost: recruitCost(state, content),
-    canRecruit: state.overlayMode === 'none' && state.phase === 'prep' && state.recruitOffers.some((offer) => state.sisu.current >= offer.price) && livingDefenders(state).length < rosterCap(state, content),
+    canRecruit: canBuyAnyRecruitOffer(state, content),
     recruitRollCost: recruitRollCost(state, content),
-    canRollRecruitOffers:
-      state.overlayMode === 'none' &&
-      state.phase === 'prep' &&
-      state.sisu.current >= recruitRollCost(state, content) &&
-      livingDefenders(state).length < rosterCap(state, content),
+    canRollRecruitOffers: canRollRecruitOffers(state, content),
     hasRecruitOffers: state.recruitOffers.length > 0,
     recruitOffers: state.recruitOffers.map((offer) => {
       const roleStats = statsWithItems(offer.candidate, content);
@@ -1492,9 +1551,21 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       name: defender.name,
       title: defender.title,
       templateName: content.defenderTemplates[defender.templateId].name,
-      summary: `${defender.location === 'board' ? 'Laudalla' : defender.location === 'sauna' ? 'Saunassa' : defender.location === 'ready' ? 'Valmiina' : 'Kaatunut'} · ${statsWithItems(defender, content).damage} ATK`,
+      roleSummary: content.defenderTemplates[defender.templateId].role,
+      locationLabel:
+        defender.location === 'board'
+          ? 'On Board'
+          : defender.location === 'sauna'
+            ? 'In Sauna'
+            : defender.location === 'ready'
+              ? 'On Bench'
+              : 'Fallen',
+      summary: `${defender.location === 'board' ? 'On board' : defender.location === 'sauna' ? 'In sauna' : defender.location === 'ready' ? 'On bench' : 'Fallen'} · ${statsWithItems(defender, content).damage} ATK`,
       hp: defender.hp,
       maxHp: statsWithItems(defender, content).maxHp,
+      damage: statsWithItems(defender, content).damage,
+      heal: statsWithItems(defender, content).heal,
+      range: statsWithItems(defender, content).range,
       location: defender.location,
       selected: state.selectedDefenderId === defender.id
     })),

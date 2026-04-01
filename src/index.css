@@ -372,6 +372,34 @@ button {
   width: 100%;
 }
 
+.roster-name-row {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.roster-name {
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.role-badge {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(125, 224, 209, 0.14);
+  border: 1px solid rgba(125, 224, 209, 0.22);
+  color: var(--accent-cool);
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.roster-role-copy {
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
 .primary-button {
   background: linear-gradient(135deg, #ffcf7b, #ff9954);
   color: #182021;
@@ -766,6 +794,19 @@ button {
   width: min(760px, 100%);
 }
 
+.guide-shell {
+  z-index: 11;
+  align-items: end;
+}
+
+.guide-card {
+  width: min(520px, 100%);
+}
+
+.guide-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .intro-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -777,7 +818,7 @@ button {
 }
 
 .intermission-actions {
-  grid-template-columns: minmax(200px, 280px);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 240px));
   justify-content: end;
 }
 
@@ -821,6 +862,10 @@ em {
   }
 
   .intro-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .guide-actions {
     grid-template-columns: 1fr;
   }
 

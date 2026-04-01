@@ -14,10 +14,60 @@ function assetUrl(path: string) {
   return `${import.meta.env.BASE_URL}${path}`;
 }
 
+function formatLocationLabel(location: 'ready' | 'board' | 'sauna' | 'dead') {
+  switch (location) {
+    case 'board':
+      return 'On Board';
+    case 'ready':
+      return 'On Bench';
+    case 'sauna':
+      return 'In Sauna';
+    case 'dead':
+      return 'Fallen';
+    default:
+      return location;
+  }
+}
+
+const GUIDE_STORAGE_KEY = 'sauna-defense-v2-guide-seen';
+const GUIDE_STEPS = [
+  {
+    title: 'Board, Path, And Buildable Hexes',
+    body: 'Dark tiles are the enemy path. When you select a bench hero, every valid build hex lights up bright green so you can place them fast.'
+  },
+  {
+    title: 'Bench Heroes Can Join Mid-Wave',
+    body: 'The bench is your live reserve. If a slot opens on the board, select a bench hero and drop them onto any green build hex, even during combat.'
+  },
+  {
+    title: 'Sauna Holds One Reserve',
+    body: 'Click the sauna in the center to inspect its reserve hero. Sauna upgrades can auto-deploy that hero or swap them in when someone gets badly hurt.'
+  },
+  {
+    title: 'SISU Fuels Both Power And Recruitment',
+    body: 'Spend SISU on the combat burst when you need a spike, or use it to scout and buy recruitment offers. The market works in prep, live waves, and pause.'
+  },
+  {
+    title: 'Loot Lives In The Drawer',
+    body: 'Open Loot from the header, inspect drops, use Auto Assign for quick gearing, or equip them to the hero you have selected.'
+  }
+] as const;
+
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const runtimeRef = useRef<GameRuntime | null>(null);
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
+  const [guideSeen, setGuideSeen] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    try {
+      return window.localStorage.getItem(GUIDE_STORAGE_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [guideStep, setGuideStep] = useState<number | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -50,6 +100,35 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!snapshot || snapshot.hud.introOpen || snapshot.hud.showIntermission || guideSeen || guideStep !== null) {
+      return;
+    }
+    setGuideStep(0);
+  }, [guideSeen, guideStep, snapshot]);
+
+  const persistGuideSeen = (value: boolean) => {
+    setGuideSeen(value);
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      window.localStorage.setItem(GUIDE_STORAGE_KEY, value ? 'true' : 'false');
+    } catch {
+      // Ignore localStorage failures.
+    }
+  };
+
+  const closeGuide = (markSeen = true) => {
+    setGuideStep(null);
+    if (markSeen && !guideSeen) {
+      persistGuideSeen(true);
+    }
+    if (snapshot?.hud.introOpen) {
+      runtimeRef.current?.dispatch({ type: 'closeIntro' });
+    }
+  };
+
   const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const runtime = runtimeRef.current;
     const nextSnapshot = snapshot;
@@ -72,7 +151,7 @@ export function App() {
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const runtime = runtimeRef.current;
     const nextSnapshot = snapshot;
-    if (!runtime || !nextSnapshot || nextSnapshot.hud.introOpen) {
+    if (!runtime || !nextSnapshot || nextSnapshot.hud.introOpen || guideStep !== null) {
       return;
     }
     const tile = pickTileAtCanvasPoint(
@@ -102,6 +181,7 @@ export function App() {
   const recruitmentOpen = snapshot?.hud.recruitmentOpen ?? false;
   const hasRecentLoot = snapshot?.hud.hasRecentLoot ?? false;
   const anyDrawerOpen = inventoryOpen || recruitmentOpen;
+  const currentGuide = guideStep !== null ? GUIDE_STEPS[guideStep] : null;
   const rosterEntries = snapshot?.hud.rosterEntries ?? [];
   const boardEntries = rosterEntries.filter((entry) => entry.location === 'board');
   const readyEntries = rosterEntries.filter((entry) => entry.location === 'ready');
@@ -127,12 +207,20 @@ export function App() {
                 className="unit-button"
                 onClick={() => runtimeRef.current?.dispatch({ type: 'selectDefender', defenderId: entry.id })}
               >
-                <span>
-                  {entry.name} <em>{entry.title}</em>
-                </span>
-                <small>{entry.templateName}</small>
-                <small>{entry.summary}</small>
-                <small>HP {entry.hp}/{entry.maxHp}</small>
+                <div className="roster-name-row">
+                  <span className="roster-name">
+                    {entry.name} <em>{entry.title}</em>
+                  </span>
+                  <span className="role-badge">{entry.templateName}</span>
+                </div>
+                <small className="roster-role-copy">{entry.roleSummary}</small>
+                <div className="tag-row compact-tags">
+                  <span className="tag">{entry.locationLabel}</span>
+                  <span className="tag">HP {entry.hp}/{entry.maxHp}</span>
+                  <span className="tag">ATK {entry.damage}</span>
+                  {entry.heal > 0 ? <span className="tag">Heal {entry.heal}</span> : null}
+                  <span className="tag">Range {entry.range}</span>
+                </div>
               </button>
             </div>
           ))}
@@ -165,6 +253,10 @@ export function App() {
                       <strong>{snapshot.hud.waveNumber}</strong>
                     </div>
                     <div className="run-stat">
+                      <span>Board</span>
+                      <strong>{snapshot.hud.placedBoardLabel}</strong>
+                    </div>
+                    <div className="run-stat">
                       <span>SISU</span>
                       <strong>{snapshot.hud.sisu}</strong>
                     </div>
@@ -184,7 +276,10 @@ export function App() {
                   <div className="header-actions">
                     <button
                       className="ghost-button"
-                      onClick={() => runtimeRef.current?.dispatch({ type: 'openIntro' })}
+                      onClick={() => {
+                        setGuideStep(null);
+                        runtimeRef.current?.dispatch({ type: 'openIntro' });
+                      }}
                     >
                       Help
                     </button>
@@ -214,6 +309,7 @@ export function App() {
                 <div className="tag-row compact-tags">
                   <span className="tag">{snapshot.hud.nextWaveThreat}</span>
                   <span className="tag">{snapshot.hud.nextWavePattern}</span>
+                  <span className="tag">{snapshot.hud.placedBoardLabel}</span>
                   {snapshot.hud.pressureSignals.map((signal) => (
                     <span key={signal} className="tag warning-tag">{signal}</span>
                   ))}
@@ -260,6 +356,7 @@ export function App() {
                       <strong>{snapshot.hud.recruitRollCost} SISU</strong>
                     </div>
                   </div>
+                  <p className="panel-copy small-copy">{snapshot.hud.recruitmentStatusText}</p>
                   {snapshot.hud.hasRecruitOffers ? (
                     <div className="offer-list compact-offer-list">
                       {snapshot.hud.recruitOffers.map((offer) => (
@@ -281,7 +378,7 @@ export function App() {
                           </div>
                           <button
                             className="mini-button"
-                            disabled={snapshot.hud.sisu < offer.price || openRecruitSlots <= 0 || isIntermission}
+                            disabled={snapshot.hud.sisu < offer.price || openRecruitSlots <= 0}
                             onClick={() => runtimeRef.current?.dispatch({ type: 'recruitOffer', offerId: offer.id })}
                           >
                             Recruit For {offer.price}
@@ -367,7 +464,7 @@ export function App() {
                   )}
                   <div className="tag-row compact-tags">
                     <span className="tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy ready' : 'Auto Deploy locked'}</span>
-                    <span className="tag">{selectedSauna.slapSwapUnlocked ? 'Läpystävaihto ready' : 'Läpystävaihto locked'}</span>
+                    <span className="tag">{selectedSauna.slapSwapUnlocked ? 'Slap Swap ready' : 'Slap Swap locked'}</span>
                   </div>
                 </div>
               </div>
@@ -384,6 +481,11 @@ export function App() {
                   <span>{snapshot.hud.phaseLabel}</span>
                 </div>
                 <p className="panel-copy">{snapshot.hud.actionBody}</p>
+                <div className="tag-row compact-tags">
+                  <span className="tag">{snapshot.hud.placedBoardLabel}</span>
+                  <span className="tag">Bench {snapshot.hud.readyBenchCount}</span>
+                  <span className="tag">Recruit Slots {snapshot.hud.freeRecruitSlots}</span>
+                </div>
                 <div className="button-stack">
                   <button
                     className="primary-button"
@@ -419,7 +521,7 @@ export function App() {
               <section className="panel selected-panel">
                 <div className="panel-head">
                   <h2>{selectedSauna ? 'Selected Sauna' : 'Selected Hero'}</h2>
-                  <span>{selectedSauna ? selectedSauna.occupancyLabel : selectedDefender ? selectedDefender.location : 'No selection'}</span>
+                  <span>{selectedSauna ? selectedSauna.occupancyLabel : selectedDefender ? formatLocationLabel(selectedDefender.location) : 'No selection'}</span>
                 </div>
                 {selectedSauna ? (
                   <div className="detail-card hero-detail">
@@ -453,7 +555,7 @@ export function App() {
                     ) : null}
                     <div className="tag-row compact-tags">
                       <span className="tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy armed' : 'Auto Deploy locked'}</span>
-                      <span className="tag">{selectedSauna.slapSwapUnlocked ? 'Läpystävaihto armed' : 'Läpystävaihto locked'}</span>
+                      <span className="tag">{selectedSauna.slapSwapUnlocked ? 'Slap Swap armed' : 'Slap Swap locked'}</span>
                     </div>
                   </div>
                 ) : selectedDefender ? (
@@ -654,7 +756,7 @@ export function App() {
         </>
       ) : null}
 
-      {snapshot && introOpen ? (
+      {snapshot && introOpen && guideStep === null ? (
         <div className="overlay-shell intro-shell">
           <section className="overlay-card intro-card">
             <div className="panel-head">
@@ -689,10 +791,62 @@ export function App() {
             </div>
             <div className="button-row intermission-actions">
               <button
+                className="secondary-button"
+                onClick={() => setGuideStep(0)}
+              >
+                Replay Guided Tips
+              </button>
+              <button
                 className="primary-button"
                 onClick={() => runtimeRef.current?.dispatch({ type: 'closeIntro' })}
               >
                 Start The Shift
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {snapshot && currentGuide ? (
+        <div className="overlay-shell guide-shell">
+          <section className="overlay-card guide-card">
+            <div className="panel-head">
+              <h2>Quick Guided Tips</h2>
+              <span>Step {guideStep! + 1}/{GUIDE_STEPS.length}</span>
+            </div>
+            <strong>{currentGuide.title}</strong>
+            <p className="panel-copy">{currentGuide.body}</p>
+            <div className="tag-row compact-tags">
+              <span className="tag">{snapshot.hud.placedBoardLabel}</span>
+              <span className="tag">SISU {snapshot.hud.sisu}</span>
+              <span className="tag">Sauna {snapshot.hud.saunaOccupancyLabel}</span>
+            </div>
+            <div className="button-row guide-actions">
+              <button
+                className="ghost-button"
+                onClick={() => closeGuide(true)}
+              >
+                Skip Tips
+              </button>
+              {guideStep! > 0 ? (
+                <button
+                  className="secondary-button"
+                  onClick={() => setGuideStep((step) => (step === null ? 0 : Math.max(0, step - 1)))}
+                >
+                  Back
+                </button>
+              ) : null}
+              <button
+                className="primary-button"
+                onClick={() => {
+                  if (guideStep === null || guideStep >= GUIDE_STEPS.length - 1) {
+                    closeGuide(true);
+                    return;
+                  }
+                  setGuideStep(guideStep + 1);
+                }}
+              >
+                {guideStep === GUIDE_STEPS.length - 1 ? 'Done' : 'Next Tip'}
               </button>
             </div>
           </section>

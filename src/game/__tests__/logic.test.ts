@@ -413,6 +413,21 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.recruitmentOpen).toBe(false);
   });
 
+  it('opens recruitment during a live wave and while paused', () => {
+    let state = prepState();
+    state.phase = 'wave';
+
+    state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
+    expect(state.recruitmentOpen).toBe(true);
+
+    state.overlayMode = 'paused';
+    state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
+    expect(state.recruitmentOpen).toBe(false);
+
+    state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
+    expect(state.recruitmentOpen).toBe(true);
+  });
+
   it('closes recruitment when opening inventory and closes inventory when opening recruitment', () => {
     let state = prepState();
 
@@ -426,6 +441,33 @@ describe('Sauna Defense V2 logic', () => {
     state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
     expect(state.recruitmentOpen).toBe(true);
     expect(state.inventoryOpen).toBe(false);
+  });
+
+  it('rolls and buys recruit offers during a live wave', () => {
+    let state = prepState();
+    state.defenders = state.defenders.filter((defender) => defender.location !== 'dead').slice(0, 4);
+    state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
+    state.phase = 'wave';
+    state.sisu.current = 20;
+
+    state = applyAction(state, { type: 'rollRecruitOffers' }, gameContent);
+    expect(state.recruitOffers).toHaveLength(3);
+
+    const offer = state.recruitOffers[0];
+    state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
+
+    expect(state.defenders.some((defender) => defender.id === offer.candidate.id)).toBe(true);
+    expect(state.recruitOffers).toHaveLength(0);
+  });
+
+  it('shows recruitment availability in the hud during a live wave', () => {
+    const state = prepState();
+    state.phase = 'wave';
+
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(snapshot.hud.canOpenRecruitment).toBe(true);
+    expect(snapshot.hud.recruitmentStatusText.length).toBeGreaterThan(0);
   });
 
   it('uses the expanded grid configuration for the new larger battlefield', () => {
@@ -528,5 +570,59 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.fxEvents.some((event) => event.kind === 'hit')).toBe(true);
     expect(state.fxEvents.some((event) => event.kind === 'fireball')).toBe(true);
     expect(state.hitStopMs).toBeGreaterThan(0);
+  });
+
+  it('targets a defender before the sauna when a defender is in range', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready');
+    expect(defender).toBeTruthy();
+    defender!.location = 'board';
+    defender!.tile = { q: 0, r: -1 };
+    defender!.hp = 20;
+    defender!.attackReadyAtMs = 999999;
+    state.phase = 'wave';
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 0, r: 0 },
+        hp: 12,
+        attackReadyAtMs: 0,
+        moveReadyAtMs: 999999
+      }
+    ];
+    state.pendingSpawns = [];
+    const saunaHpBefore = state.saunaHp;
+
+    state = stepState(state, 16, gameContent);
+
+    const defenderAfter = state.defenders.find((entry) => entry.id === defender!.id);
+    expect(defenderAfter?.hp).toBeLessThan(20);
+    expect(state.saunaHp).toBe(saunaHpBefore);
+    expect(state.fxEvents.some((event) => event.kind === 'defender_hit')).toBe(true);
+  });
+
+  it('damages the sauna only when no defender target is in range', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 0, r: 1 },
+        hp: 12,
+        attackReadyAtMs: 0,
+        moveReadyAtMs: 999999
+      }
+    ];
+    state.pendingSpawns = [];
+    const saunaHpBefore = state.saunaHp;
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.saunaHp).toBeLessThan(saunaHpBefore);
+    expect(state.fxEvents.some((event) => event.kind === 'sauna_hit')).toBe(true);
   });
 });

@@ -15,7 +15,7 @@ export type Rarity = 'common' | 'rare' | 'epic';
 export type DefenderLocation = 'ready' | 'board' | 'sauna' | 'dead';
 export type WavePattern = 'tutorial' | 'split' | 'staggered' | 'spearhead' | 'surge' | 'boss_pressure' | 'boss_breach';
 export type BossCategory = 'pressure' | 'breach';
-export type CombatFxKind = 'hit' | 'heal' | 'fireball' | 'spin' | 'blink' | 'boss_hit';
+export type CombatFxKind = 'hit' | 'defender_hit' | 'sauna_hit' | 'heal' | 'fireball' | 'spin' | 'blink' | 'boss_hit';
 export type MapTarget = 'defender' | 'sauna';
 export type MetaUpgradeId =
   | 'roster_capacity'
@@ -282,9 +282,14 @@ export interface HudRosterEntry {
   name: string;
   title: string;
   templateName: string;
+  roleSummary: string;
+  locationLabel: string;
   summary: string;
   hp: number;
   maxHp: number;
+  damage: number;
+  heal: number;
+  range: number;
   location: DefenderLocation;
   selected: boolean;
 }
@@ -373,6 +378,7 @@ export interface HudViewModel {
   pressureSignals: string[];
   boardCount: number;
   boardCap: number;
+  placedBoardLabel: string;
   rosterCount: number;
   rosterCap: number;
   inventoryCount: number;
@@ -390,6 +396,7 @@ export interface HudViewModel {
   sisuLabel: string;
   canPause: boolean;
   canOpenRecruitment: boolean;
+  recruitmentStatusText: string;
   recruitCost: number;
   canRecruit: boolean;
   recruitRollCost: number;

@@ -545,6 +545,20 @@ function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, lay
         ctx.arc(center.x, center.y, layout.hexSize * (0.14 + progress * 0.26), 0, Math.PI * 2);
         ctx.stroke();
         break;
+      case 'defender_hit':
+        ctx.strokeStyle = '#8adfff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, layout.hexSize * (0.16 + progress * 0.28), 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      case 'sauna_hit':
+        ctx.strokeStyle = '#ff9a5e';
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, layout.hexSize * (0.2 + progress * 0.42), 0, Math.PI * 2);
+        ctx.stroke();
+        break;
       case 'boss_hit':
         ctx.strokeStyle = '#ff6e63';
         ctx.lineWidth = 4;
@@ -578,6 +592,7 @@ export function paintSnapshot(
   const selected = snapshot.state.selectedDefenderId
     ? snapshot.state.defenders.find((defender) => defender.id === snapshot.state.selectedDefenderId)
     : null;
+  const placementMode = Boolean(selected && (selected.location === 'ready' || selected.location === 'sauna'));
 
   ctx.clearRect(0, 0, viewportWidth, viewportHeight);
 
@@ -613,13 +628,21 @@ export function paintSnapshot(
       fill = 'rgba(109, 43, 48, 0.94)';
       stroke = 'rgba(246, 139, 117, 0.34)';
     } else if (buildableSet.has(key)) {
-      fill = snapshot.state.phase === 'prep' ? 'rgba(110, 72, 35, 0.94)' : 'rgba(52, 65, 61, 0.92)';
-      stroke = 'rgba(255, 205, 118, 0.2)';
+      fill = placementMode
+        ? 'rgba(42, 108, 76, 0.96)'
+        : snapshot.state.phase === 'prep'
+          ? 'rgba(110, 72, 35, 0.94)'
+          : 'rgba(52, 65, 61, 0.92)';
+      stroke = placementMode ? 'rgba(143, 255, 182, 0.52)' : 'rgba(255, 205, 118, 0.2)';
     }
 
     if (hoverKey === key) {
-      fill = buildableSet.has(key) ? 'rgba(171, 117, 58, 0.98)' : 'rgba(75, 92, 89, 0.96)';
-      stroke = 'rgba(231, 255, 250, 0.82)';
+      fill = buildableSet.has(key)
+        ? placementMode
+          ? 'rgba(72, 171, 113, 0.98)'
+          : 'rgba(171, 117, 58, 0.98)'
+        : 'rgba(75, 92, 89, 0.96)';
+      stroke = buildableSet.has(key) && placementMode ? 'rgba(230, 255, 238, 0.92)' : 'rgba(231, 255, 250, 0.82)';
       lineWidth = 2.2;
     }
 
@@ -738,7 +761,7 @@ export function paintSnapshot(
   ctx.textAlign = 'left';
   ctx.font = '700 14px Trebuchet MS';
   ctx.fillText(snapshot.hud.isBossWave ? `Boss Wave ${snapshot.hud.waveNumber}` : `Wave ${snapshot.hud.waveNumber}`, 18, 24);
-  ctx.fillText(`Board ${snapshot.hud.boardCount}/${snapshot.hud.boardCap}`, 18, 44);
+  ctx.fillText(snapshot.hud.placedBoardLabel, 18, 44);
 }
 
 export function pickTileAtCanvasPoint(

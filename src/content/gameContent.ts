@@ -277,7 +277,7 @@ export const gameContent: GameContent = {
     },
     sauna_slap_swap: {
       id: 'sauna_slap_swap',
-      name: 'Lapystavaihto',
+      name: 'Slap Swap',
       description: 'Once per wave, a badly hurt board hero swaps with the sauna hero.',
       baseCost: 12,
       costStep: 0,
