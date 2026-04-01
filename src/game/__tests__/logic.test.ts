@@ -196,8 +196,7 @@ describe('Sauna Defense V2 logic', () => {
 
     state = applyAction(state, { type: 'rollRecruitOffers' }, gameContent);
 
-    expect(state.recruitOffers).toHaveLength(0);
-    expect(state.message).toContain('Roster cap');
+    expect(state.recruitOffers).toHaveLength(3);
   });
 
   it('marks every fifth wave as a boss wave', () => {
@@ -458,6 +457,57 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(state.defenders.some((defender) => defender.id === offer.candidate.id)).toBe(true);
     expect(state.recruitOffers).toHaveLength(0);
+  });
+
+  it('requires a replacement target when buying with a full roster', () => {
+    let state = prepState();
+    state.sisu.current = 30;
+
+    state = applyAction(state, { type: 'rollRecruitOffers' }, gameContent);
+    const offer = state.recruitOffers[0];
+
+    state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
+
+    expect(state.recruitOffers).toHaveLength(3);
+    expect(state.message).toContain('Select a hero');
+  });
+
+  it('replaces the selected ready hero when recruiting with a full roster', () => {
+    let state = prepState();
+    state.sisu.current = 30;
+    const outgoing = state.defenders.find((defender) => defender.location === 'ready');
+    expect(outgoing).toBeTruthy();
+
+    state = applyAction(state, { type: 'rollRecruitOffers' }, gameContent);
+    const offer = state.recruitOffers[0];
+    const rosterBefore = state.defenders.length;
+
+    state = applyAction(state, { type: 'selectDefender', defenderId: outgoing!.id }, gameContent);
+    state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
+
+    expect(state.defenders).toHaveLength(rosterBefore);
+    expect(state.defenders.some((defender) => defender.id === outgoing!.id)).toBe(false);
+    expect(state.defenders.some((defender) => defender.id === offer.candidate.id)).toBe(true);
+    const replacement = state.defenders.find((defender) => defender.id === offer.candidate.id);
+    expect(replacement?.location).toBe('ready');
+  });
+
+  it('can replace the sauna reserve when the sauna is selected', () => {
+    let state = prepState();
+    state.sisu.current = 30;
+    const saunaDefender = state.defenders.find((defender) => defender.location === 'sauna');
+    expect(saunaDefender).toBeTruthy();
+
+    state = applyAction(state, { type: 'rollRecruitOffers' }, gameContent);
+    const offer = state.recruitOffers[0];
+
+    state = applyAction(state, { type: 'selectSauna' }, gameContent);
+    state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
+
+    expect(state.defenders.some((defender) => defender.id === saunaDefender!.id)).toBe(false);
+    expect(state.saunaDefenderId).toBe(offer.candidate.id);
+    const replacement = state.defenders.find((defender) => defender.id === offer.candidate.id);
+    expect(replacement?.location).toBe('sauna');
   });
 
   it('shows recruitment availability in the hud during a live wave', () => {

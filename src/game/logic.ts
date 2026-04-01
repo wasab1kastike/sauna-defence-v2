@@ -540,15 +540,24 @@ function canAccessRecruitment(state: RunState): boolean {
 function canRollRecruitOffers(state: RunState, content: GameContent): boolean {
   return (
     canAccessRecruitment(state) &&
-    state.sisu.current >= recruitRollCost(state, content) &&
-    livingDefenders(state).length < rosterCap(state, content)
+    state.sisu.current >= recruitRollCost(state, content)
   );
 }
 
+function recruitReplacementTarget(state: RunState): DefenderInstance | null {
+  if (state.selectedMapTarget === 'sauna') {
+    const saunaDefender = getDefender(state, state.saunaDefenderId);
+    return saunaDefender && saunaDefender.location === 'sauna' ? saunaDefender : null;
+  }
+  const selected = getDefender(state, state.selectedDefenderId);
+  return selected && selected.location !== 'dead' ? selected : null;
+}
+
 function canBuyAnyRecruitOffer(state: RunState, content: GameContent): boolean {
+  const rosterFull = livingDefenders(state).length >= rosterCap(state, content);
   return (
     canAccessRecruitment(state) &&
-    livingDefenders(state).length < rosterCap(state, content) &&
+    (!rosterFull || recruitReplacementTarget(state) !== null) &&
     state.recruitOffers.some((offer) => state.sisu.current >= offer.price)
   );
 }
@@ -560,10 +569,21 @@ function recruitmentStatusText(state: RunState, content: GameContent): string {
   if (state.introOpen) {
     return 'Finish the briefing before scouting recruits.';
   }
-  if (livingDefenders(state).length >= rosterCap(state, content)) {
-    return 'Roster is full. Lose a hero or raise capacity before recruiting again.';
+  const replacement = recruitReplacementTarget(state);
+  const rosterFull = livingDefenders(state).length >= rosterCap(state, content);
+  if (rosterFull && state.recruitOffers.length === 0) {
+    return replacement
+      ? `Roster is full. Scout normally, then your next recruit will replace ${replacement.name}.`
+      : 'Roster is full. You can still scout offers, but pick a hero from the roster or click the sauna to mark who gets replaced.';
   }
   if (state.recruitOffers.length > 0) {
+    if (rosterFull) {
+      return replacement
+        ? state.sisu.current >= Math.min(...state.recruitOffers.map((offer) => offer.price))
+          ? `Roster is full. Buying a recruit will replace ${replacement.name}.`
+          : `Roster is full and ${replacement.name} is marked for replacement, but you still need more SISU.`
+        : 'Roster is full. Select the hero you want to sacrifice before buying a recruit.';
+    }
     return state.sisu.current >= Math.min(...state.recruitOffers.map((offer) => offer.price))
       ? 'Pick one candidate. The others leave when you sign a recruit.'
       : 'You can inspect the market, but you need more SISU to afford any offer.';
@@ -626,6 +646,34 @@ function createRecruitOffer(state: RunState, content: GameContent): RecruitOffer
 
 function rollRecruitOffersIntoState(state: RunState, content: GameContent): void {
   state.recruitOffers = Array.from({ length: 3 }, () => createRecruitOffer(state, content));
+}
+
+function replaceDefenderWithRecruit(
+  state: RunState,
+  outgoing: DefenderInstance,
+  incoming: DefenderInstance,
+  content: GameContent
+): void {
+  incoming.location = outgoing.location;
+  incoming.tile = outgoing.tile ? { ...outgoing.tile } : null;
+  incoming.attackReadyAtMs =
+    incoming.location === 'board'
+      ? state.timeMs + statsWithItems(incoming, content).attackCooldownMs
+      : 0;
+
+  if (outgoing.location === 'sauna') {
+    state.saunaDefenderId = incoming.id;
+  } else if (state.saunaDefenderId === outgoing.id) {
+    state.saunaDefenderId = null;
+  }
+
+  state.defenders = state.defenders.filter((defender) => defender.id !== outgoing.id);
+  state.defenders.push(incoming);
+
+  if (state.selectedDefenderId === outgoing.id || state.selectedMapTarget === 'sauna') {
+    state.selectedDefenderId = null;
+    state.selectedMapTarget = null;
+  }
 }
 
 function pushFx(
@@ -1035,6 +1083,7 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
   const boardCount = boardDefenders(state).length;
   const readyCount = state.defenders.filter((defender) => defender.location === 'ready').length;
   const freeSlots = Math.max(0, rosterCap(state, content) - livingDefenders(state).length);
+  const replacement = recruitReplacementTarget(state);
 
   if (state.overlayMode === 'intermission') {
     if (!state.meta.shopUnlocked) {
@@ -1087,7 +1136,12 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
   if (state.recruitOffers.length > 0) {
     return {
       title: 'Recruit Market Live',
-      body: 'Three candidates are on the towel rack. Compare prices, stats and vibes, then sign one before the market cools off.'
+      body:
+        freeSlots > 0
+          ? 'Three candidates are on the towel rack. Compare prices, stats and vibes, then sign one before the market cools off.'
+          : replacement
+            ? `Three candidates are ready. Buying one will replace ${replacement.name} immediately.`
+            : 'Three candidates are ready, but your roster is full. Select the hero you want to replace before buying.'
     };
   }
   if (selectedDefender && selectedDefender.location !== 'board') {
@@ -1318,10 +1372,6 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     case 'rollRecruitOffers': {
       if (!canAccessRecruitment(next)) return next;
-      if (livingDefenders(next).length >= rosterCap(next, content)) {
-        next.message = 'Roster cap reached.';
-        return next;
-      }
       const cost = recruitRollCost(next, content);
       if (next.sisu.current < cost) {
         next.message = 'Not enough SISU to scout new recruits.';
@@ -1340,8 +1390,10 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       if (!canAccessRecruitment(next)) return next;
       const offer = next.recruitOffers.find((entry) => entry.offerId === action.offerId);
       if (!offer) return next;
-      if (livingDefenders(next).length >= rosterCap(next, content)) {
-        next.message = 'Roster cap reached.';
+      const rosterFull = livingDefenders(next).length >= rosterCap(next, content);
+      const replacement = rosterFull ? recruitReplacementTarget(next) : null;
+      if (rosterFull && !replacement) {
+        next.message = 'Roster is full. Select a hero from the roster, or click the sauna, to choose who gets replaced.';
         return next;
       }
       if (next.sisu.current < offer.price) {
@@ -1350,10 +1402,16 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       }
       next.sisu.current -= offer.price;
       next.gambleCount += 1;
-      next.defenders.push(offer.candidate);
+      if (replacement) {
+        replaceDefenderWithRecruit(next, replacement, offer.candidate, content);
+      } else {
+        next.defenders.push(offer.candidate);
+      }
       next.recruitOffers = [];
       next.recruitmentOpen = false;
-      next.message = `${offer.candidate.name} ${offer.candidate.title} joined your reserve bench for ${offer.price} SISU.`;
+      next.message = replacement
+        ? `${offer.candidate.name} ${offer.candidate.title} replaced ${replacement.name} for ${offer.price} SISU.`
+        : `${offer.candidate.name} ${offer.candidate.title} joined your reserve bench for ${offer.price} SISU.`;
       return next;
     }
     case 'clearRecruitOffers':

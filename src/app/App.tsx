@@ -187,6 +187,10 @@ export function App() {
   const readyEntries = rosterEntries.filter((entry) => entry.location === 'ready');
   const deadEntries = rosterEntries.filter((entry) => entry.location === 'dead');
   const openRecruitSlots = snapshot ? Math.max(0, snapshot.hud.rosterCap - snapshot.hud.rosterCount) : 0;
+  const recruitReplacementName =
+    openRecruitSlots <= 0
+      ? selectedSauna?.occupantName ?? selectedDefender?.name ?? null
+      : null;
   const nextWavePreview = snapshot?.hud.wavePreview ?? [];
 
   const renderRosterGroup = (
@@ -321,7 +325,7 @@ export function App() {
                   <div className="panel-head">
                     <h2>Recruitment Market</h2>
                     <div className="header-actions">
-                      <span>{openRecruitSlots} open slots</span>
+                      <span>{openRecruitSlots > 0 ? `${openRecruitSlots} open slots` : 'Full roster'}</span>
                       <button
                         className="ghost-button"
                         onClick={() => runtimeRef.current?.dispatch({ type: 'toggleRecruitment' })}
@@ -357,6 +361,15 @@ export function App() {
                     </div>
                   </div>
                   <p className="panel-copy small-copy">{snapshot.hud.recruitmentStatusText}</p>
+                  {openRecruitSlots <= 0 ? (
+                    <div className="tag-row compact-tags">
+                      <span className="tag">
+                        {recruitReplacementName
+                          ? `Replacing ${recruitReplacementName}`
+                          : 'Select a roster hero or sauna reserve to replace'}
+                      </span>
+                    </div>
+                  ) : null}
                   {snapshot.hud.hasRecruitOffers ? (
                     <div className="offer-list compact-offer-list">
                       {snapshot.hud.recruitOffers.map((offer) => (
@@ -378,15 +391,19 @@ export function App() {
                           </div>
                           <button
                             className="mini-button"
-                            disabled={snapshot.hud.sisu < offer.price || openRecruitSlots <= 0}
+                            disabled={snapshot.hud.sisu < offer.price || (openRecruitSlots <= 0 && !recruitReplacementName)}
                             onClick={() => runtimeRef.current?.dispatch({ type: 'recruitOffer', offerId: offer.id })}
                           >
-                            Recruit For {offer.price}
+                            {openRecruitSlots > 0
+                              ? `Recruit For ${offer.price}`
+                              : recruitReplacementName
+                                ? `Replace For ${offer.price}`
+                                : `Pick Replacement (${offer.price})`}
                           </button>
                         </div>
                       ))}
                     </div>
-                  ) : openRecruitSlots > 0 ? (
+                  ) : (
                     <div className="recruitment-empty">
                       <p className="panel-copy small-copy">
                         Scout three named weirdos at a time, compare prices and vibes, then recruit exactly one.
@@ -400,10 +417,6 @@ export function App() {
                         ))}
                       </div>
                     </div>
-                  ) : (
-                    <p className="panel-copy small-copy">
-                      Roster is full for this run. Lose someone or raise capacity in the metashop later.
-                    </p>
                   )}
                   <div className="button-row tight">
                     <button
