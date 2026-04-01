@@ -217,9 +217,10 @@ export function App() {
                   </span>
                   <span className="role-badge">{entry.templateName}</span>
                 </div>
-                <small className="roster-role-copy">{entry.roleSummary}</small>
+                <small className="roster-role-copy">Level {entry.level} · {entry.subclassName} · {entry.roleSummary}</small>
                 <div className="tag-row compact-tags">
                   <span className="tag">{entry.locationLabel}</span>
+                  <span className="tag">Lvl {entry.level}</span>
                   <span className="tag">HP {entry.hp}/{entry.maxHp}</span>
                   <span className="tag">ATK {entry.damage}</span>
                   {entry.heal > 0 ? <span className="tag">Heal {entry.heal}</span> : null}
@@ -377,7 +378,7 @@ export function App() {
                           <div className="offer-head">
                             <div>
                               <strong>{offer.name} <em>{offer.title}</em></strong>
-                              <small>{offer.roleName}</small>
+                              <small>Level {offer.level} · {offer.subclassName} · {offer.roleName}</small>
                             </div>
                             <span className="tag">{offer.price} SISU</span>
                           </div>
@@ -487,8 +488,9 @@ export function App() {
                     <strong>
                       {selectedDefender.name} <em>{selectedDefender.title}</em>
                     </strong>
-                    <small>{selectedDefender.templateName}</small>
+                    <small>Level {selectedDefender.level} · {selectedDefender.subclassName} · {selectedDefender.templateName}</small>
                     <p className="panel-copy flavor-copy small-copy">{selectedDefender.lore}</p>
+                    <p className="panel-copy small-copy">{selectedDefender.subclassDescription}</p>
                   </div>
                   <div className="metric-grid compact compact-metrics">
                     <div>
@@ -512,6 +514,10 @@ export function App() {
                     Attack cooldown: {selectedDefender.attackCooldownMs} ms
                   </p>
                   <div className="tag-row compact-tags">
+                    <span className="tag">
+                      XP {selectedDefender.xp}
+                      {selectedDefender.nextLevelXp !== null ? ` / ${selectedDefender.nextLevelXp}` : ' · Max'}
+                    </span>
                     <span className="tag">Items {selectedDefender.itemNames.length}/{selectedDefender.itemSlotCount}</span>
                     <span className="tag">Skills {selectedDefender.skillNames.length}/{selectedDefender.skillSlotCount}</span>
                     {selectedDefender.itemNames.length === 0 && selectedDefender.skillNames.length === 0 ? (

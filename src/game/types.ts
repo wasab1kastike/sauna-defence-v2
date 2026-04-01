@@ -7,15 +7,37 @@ export type Team = 'player' | 'enemy';
 export type Phase = 'prep' | 'wave' | 'lost';
 export type OverlayMode = 'none' | 'paused' | 'intermission';
 export type DefenderTemplateId = 'guardian' | 'hurler' | 'mender';
+export type DefenderSubclassId =
+  | 'stonewall'
+  | 'emberguard'
+  | 'coalflinger'
+  | 'bucket_sniper'
+  | 'steampriest'
+  | 'towel_oracle';
 export type EnemyUnitId = 'raider' | 'brute' | 'chieftain';
-export type ItemId = 'ladle' | 'coal_heart' | 'towel_wrap' | 'bucket_boots' | 'birch_charm';
-export type SkillId = 'fireball' | 'spin2win' | 'blink_step';
+export type ItemId =
+  | 'ladle'
+  | 'coal_heart'
+  | 'towel_wrap'
+  | 'bucket_boots'
+  | 'birch_charm'
+  | 'cedar_ring'
+  | 'ember_amulet'
+  | 'iron_whisk'
+  | 'sauna_salt';
+export type SkillId =
+  | 'fireball'
+  | 'spin2win'
+  | 'blink_step'
+  | 'chain_spark'
+  | 'steam_shield'
+  | 'battle_hymn';
 export type LootKind = 'item' | 'skill';
 export type Rarity = 'common' | 'rare' | 'epic';
 export type DefenderLocation = 'ready' | 'board' | 'sauna' | 'dead';
 export type WavePattern = 'tutorial' | 'split' | 'staggered' | 'spearhead' | 'surge' | 'boss_pressure' | 'boss_breach';
 export type BossCategory = 'pressure' | 'breach';
-export type CombatFxKind = 'hit' | 'defender_hit' | 'sauna_hit' | 'heal' | 'fireball' | 'spin' | 'blink' | 'boss_hit';
+export type CombatFxKind = 'hit' | 'defender_hit' | 'sauna_hit' | 'heal' | 'fireball' | 'spin' | 'blink' | 'boss_hit' | 'chain';
 export type MapTarget = 'defender' | 'sauna';
 export type MetaUpgradeId =
   | 'roster_capacity'
@@ -50,6 +72,14 @@ export interface DefenderTemplate {
   outline: string;
   label: string;
   stats: UnitStats;
+}
+
+export interface DefenderSubclassDefinition {
+  id: DefenderSubclassId;
+  templateId: DefenderTemplateId;
+  name: string;
+  description: string;
+  modifiers: StatModifier;
 }
 
 export interface EnemyArchetype {
@@ -128,12 +158,15 @@ export interface CombatFxEvent {
 export interface DefenderInstance {
   id: string;
   templateId: DefenderTemplateId;
+  subclassId: DefenderSubclassId;
   name: string;
   title: string;
   lore: string;
   tokenStyleId: number;
   stats: UnitStats;
   hp: number;
+  level: number;
+  xp: number;
   location: DefenderLocation;
   tile: AxialCoord | null;
   attackReadyAtMs: number;
@@ -149,6 +182,7 @@ export interface EnemyInstance {
   tokenStyleId: number;
   tile: AxialCoord;
   hp: number;
+  lastHitByDefenderId: string | null;
   attackReadyAtMs: number;
   moveReadyAtMs: number;
 }
@@ -230,6 +264,7 @@ export interface NamePools {
 export interface GameContent {
   config: GameConfig;
   defenderTemplates: Record<DefenderTemplateId, DefenderTemplate>;
+  defenderSubclasses: Record<DefenderSubclassId, DefenderSubclassDefinition>;
   enemyArchetypes: Record<EnemyUnitId, EnemyArchetype>;
   itemDefinitions: Record<ItemId, ItemDefinition>;
   skillDefinitions: Record<SkillId, SkillDefinition>;
@@ -294,9 +329,11 @@ export interface HudRosterEntry {
   name: string;
   title: string;
   templateName: string;
+  subclassName: string;
   roleSummary: string;
   locationLabel: string;
   summary: string;
+  level: number;
   hp: number;
   maxHp: number;
   damage: number;
@@ -325,6 +362,11 @@ export interface HudSelectedDefender {
   title: string;
   lore: string;
   templateName: string;
+  subclassName: string;
+  subclassDescription: string;
+  level: number;
+  xp: number;
+  nextLevelXp: number | null;
   hp: number;
   maxHp: number;
   damage: number;
@@ -375,8 +417,10 @@ export interface HudRecruitOfferEntry {
   name: string;
   title: string;
   roleName: string;
+  subclassName: string;
   roleSummary: string;
   lore: string;
+  level: number;
   hp: number;
   damage: number;
   heal: number;

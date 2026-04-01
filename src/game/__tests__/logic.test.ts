@@ -32,6 +32,8 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.defenders.filter((defender) => defender.location === 'sauna')).toHaveLength(1);
     expect(state.defenders.every((defender) => defender.name.length > 0)).toBe(true);
     expect(state.defenders.every((defender) => defender.lore.length > 0)).toBe(true);
+    expect(state.defenders.every((defender) => defender.level === 1)).toBe(true);
+    expect(state.defenders.every((defender) => defender.subclassId.length > 0)).toBe(true);
   });
 
   it('opens the meta shop before a fresh run when requested', () => {
@@ -287,6 +289,7 @@ describe('Sauna Defense V2 logic', () => {
       tokenStyleId: 0,
       tile: { q: 0, r: -2 },
       hp: 22,
+      lastHitByDefenderId: null,
       attackReadyAtMs: 0,
       moveReadyAtMs: 999999
     }];
@@ -324,6 +327,7 @@ describe('Sauna Defense V2 logic', () => {
       tokenStyleId: 0,
       tile: { q: 0, r: -2 },
       hp: 22,
+      lastHitByDefenderId: null,
       attackReadyAtMs: 0,
       moveReadyAtMs: 999999
     }];
@@ -351,6 +355,7 @@ describe('Sauna Defense V2 logic', () => {
       tokenStyleId: 0,
       tile: { q: 0, r: 1 },
       hp: 12,
+      lastHitByDefenderId: null,
       attackReadyAtMs: 0,
       moveReadyAtMs: 999999
     }];
@@ -603,6 +608,7 @@ describe('Sauna Defense V2 logic', () => {
         tokenStyleId: 0,
         tile: { q: 0, r: -2 },
         hp: 12,
+        lastHitByDefenderId: null,
         attackReadyAtMs: 999999,
         moveReadyAtMs: 999999
       },
@@ -612,6 +618,7 @@ describe('Sauna Defense V2 logic', () => {
         tokenStyleId: 0,
         tile: { q: 1, r: -2 },
         hp: 12,
+        lastHitByDefenderId: null,
         attackReadyAtMs: 999999,
         moveReadyAtMs: 999999
       }
@@ -623,6 +630,37 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.fxEvents.some((event) => event.kind === 'hit')).toBe(true);
     expect(state.fxEvents.some((event) => event.kind === 'fireball')).toBe(true);
     expect(state.hitStopMs).toBeGreaterThan(0);
+  });
+
+  it('grants xp and levels up a hero from combat kills', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(attacker).toBeTruthy();
+    attacker!.location = 'board';
+    attacker!.tile = { q: 0, r: -1 };
+    attacker!.stats.damage = 99;
+    attacker!.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'chieftain',
+        tokenStyleId: 0,
+        tile: { q: 0, r: -2 },
+        hp: 1,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      }
+    ];
+    state.pendingSpawns = [];
+
+    state = stepState(state, 16, gameContent);
+
+    const attackerAfter = state.defenders.find((defender) => defender.id === attacker!.id);
+    expect(attackerAfter?.kills).toBe(1);
+    expect(attackerAfter?.xp).toBeGreaterThan(0);
+    expect(attackerAfter?.level).toBeGreaterThan(1);
   });
 
   it('targets a defender before the sauna when a defender is in range', () => {
@@ -641,6 +679,7 @@ describe('Sauna Defense V2 logic', () => {
         tokenStyleId: 0,
         tile: { q: 0, r: 0 },
         hp: 12,
+        lastHitByDefenderId: null,
         attackReadyAtMs: 0,
         moveReadyAtMs: 999999
       }
@@ -666,6 +705,7 @@ describe('Sauna Defense V2 logic', () => {
         tokenStyleId: 0,
         tile: { q: 0, r: 1 },
         hp: 12,
+        lastHitByDefenderId: null,
         attackReadyAtMs: 0,
         moveReadyAtMs: 999999
       }
@@ -677,6 +717,37 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(state.saunaHp).toBeLessThan(saunaHpBefore);
     expect(state.fxEvents.some((event) => event.kind === 'sauna_hit')).toBe(true);
+  });
+
+  it('moves an idle defender closer to the sauna when a breach enemy is hitting it', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready');
+    expect(defender).toBeTruthy();
+    defender!.location = 'board';
+    defender!.tile = { q: 0, r: -4 };
+    defender!.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 0, r: 1 },
+        hp: 12,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 0,
+        moveReadyAtMs: 999999
+      }
+    ];
+    state.pendingSpawns = [];
+    const saunaHpBefore = state.saunaHp;
+
+    state = stepState(state, 16, gameContent);
+
+    const defenderAfter = state.defenders.find((entry) => entry.id === defender!.id);
+    expect(defenderAfter?.tile).toEqual({ q: 0, r: -3 });
+    expect(defenderAfter?.attackReadyAtMs).toBeGreaterThan(state.timeMs);
+    expect(state.saunaHp).toBeLessThan(saunaHpBefore);
   });
 
   it('does not show dead defenders in roster entries and keeps only five death log items in the hud', () => {

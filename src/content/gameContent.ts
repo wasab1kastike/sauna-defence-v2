@@ -88,6 +88,70 @@ export const gameContent: GameContent = {
       }
     }
   },
+  defenderSubclasses: {
+    stonewall: {
+      id: 'stonewall',
+      templateId: 'guardian',
+      name: 'Stonewall',
+      description: 'Soaks damage with extra bulk and a slower, heavier stance.',
+      modifiers: {
+        maxHp: 8,
+        attackCooldownMs: 80
+      }
+    },
+    emberguard: {
+      id: 'emberguard',
+      templateId: 'guardian',
+      name: 'Emberguard',
+      description: 'Trades some comfort for harder hits and quicker counter-swings.',
+      modifiers: {
+        damage: 2,
+        attackCooldownMs: -70,
+        maxHp: -3
+      }
+    },
+    coalflinger: {
+      id: 'coalflinger',
+      templateId: 'hurler',
+      name: 'Coalflinger',
+      description: 'Throws meaner, hotter shots and lives for splashy knockouts.',
+      modifiers: {
+        damage: 2,
+        maxHp: -2
+      }
+    },
+    bucket_sniper: {
+      id: 'bucket_sniper',
+      templateId: 'hurler',
+      name: 'Bucket Sniper',
+      description: 'Lobs from one tile farther away but takes a beat to line it up.',
+      modifiers: {
+        range: 1,
+        attackCooldownMs: 90
+      }
+    },
+    steampriest: {
+      id: 'steampriest',
+      templateId: 'mender',
+      name: 'Steam Priest',
+      description: 'Turns every healing cycle into a stronger restorative pulse.',
+      modifiers: {
+        heal: 2,
+        attackCooldownMs: 40
+      }
+    },
+    towel_oracle: {
+      id: 'towel_oracle',
+      templateId: 'mender',
+      name: 'Towel Oracle',
+      description: 'Reads the steam beautifully and reaches farther with calmer support.',
+      modifiers: {
+        range: 1,
+        attackCooldownMs: -60,
+        heal: -1
+      }
+    }
+  },
   enemyArchetypes: {
     raider: {
       id: 'raider',
@@ -195,6 +259,58 @@ export const gameContent: GameContent = {
         damage: 1,
         attackCooldownMs: -60
       }
+    },
+    cedar_ring: {
+      id: 'cedar_ring',
+      kind: 'item',
+      name: 'Cedar Ring',
+      rarity: 'common',
+      effectText: '+3 HP, +1 heal.',
+      flavorText: 'Smells expensive even when it clearly was not.',
+      artPath: 'loot/cedar-ring.svg',
+      modifiers: {
+        maxHp: 3,
+        heal: 1
+      }
+    },
+    ember_amulet: {
+      id: 'ember_amulet',
+      kind: 'item',
+      name: 'Ember Amulet',
+      rarity: 'rare',
+      effectText: '+2 damage, -70 ms attack cooldown.',
+      flavorText: 'Still glowing from a terrible idea that somehow worked.',
+      artPath: 'loot/ember-amulet.svg',
+      modifiers: {
+        damage: 2,
+        attackCooldownMs: -70
+      }
+    },
+    iron_whisk: {
+      id: 'iron_whisk',
+      kind: 'item',
+      name: 'Iron Whisk',
+      rarity: 'epic',
+      effectText: '+10 HP, +2 damage.',
+      flavorText: 'Too heavy for normal sauna use, perfect for abnormal heroics.',
+      artPath: 'loot/iron-whisk.svg',
+      modifiers: {
+        maxHp: 10,
+        damage: 2
+      }
+    },
+    sauna_salt: {
+      id: 'sauna_salt',
+      kind: 'item',
+      name: 'Sauna Salt',
+      rarity: 'common',
+      effectText: '+1 range, -2 HP.',
+      flavorText: 'Sharpens the senses and dries every lip in the building.',
+      artPath: 'loot/sauna-salt.svg',
+      modifiers: {
+        range: 1,
+        maxHp: -2
+      }
     }
   },
   skillDefinitions: {
@@ -224,6 +340,33 @@ export const gameContent: GameContent = {
       effectText: 'If no target is in range, blink one hex closer to danger.',
       flavorText: 'A deeply unwise technique for entering rooms dramatically.',
       artPath: 'loot/blink-step.svg'
+    },
+    chain_spark: {
+      id: 'chain_spark',
+      kind: 'skill',
+      name: 'Chain Spark',
+      rarity: 'rare',
+      effectText: 'Attacks arc bonus damage to one nearby enemy.',
+      flavorText: 'The electricity is mostly symbolic, but the second target still hates it.',
+      artPath: 'loot/chain-spark.svg'
+    },
+    steam_shield: {
+      id: 'steam_shield',
+      kind: 'skill',
+      name: 'Steam Shield',
+      rarity: 'common',
+      effectText: 'After attacking, restore a little HP to yourself.',
+      flavorText: 'Wraps the user in a smug, medicinal cloud.',
+      artPath: 'loot/steam-shield.svg'
+    },
+    battle_hymn: {
+      id: 'battle_hymn',
+      kind: 'skill',
+      name: 'Battle Hymn',
+      rarity: 'epic',
+      effectText: 'Attacks also pulse a small heal into a nearby ally.',
+      flavorText: 'Half prayer, half terrace chant, all morale.',
+      artPath: 'loot/battle-hymn.svg'
     }
   },
   metaUpgrades: {

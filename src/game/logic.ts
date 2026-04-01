@@ -4,6 +4,7 @@ import type {
   CombatFxEvent,
   CombatFxKind,
   DefenderInstance,
+  DefenderSubclassId,
   DefenderLocation,
   DefenderTemplateId,
   EnemyInstance,
@@ -35,6 +36,11 @@ const DIRS: AxialCoord[] = [
   { q: 0, r: 1 }
 ];
 const DEF_IDS: DefenderTemplateId[] = ['guardian', 'hurler', 'mender'];
+const DEFENDER_SUBCLASS_IDS: Record<DefenderTemplateId, DefenderSubclassId[]> = {
+  guardian: ['stonewall', 'emberguard'],
+  hurler: ['coalflinger', 'bucket_sniper'],
+  mender: ['steampriest', 'towel_oracle']
+};
 const ENEMY_IDS: EnemyUnitId[] = ['raider', 'brute', 'chieftain'];
 const META_IDS: MetaUpgradeId[] = [
   'roster_capacity',
@@ -147,6 +153,10 @@ function itemSlotCap(state: RunState, content: GameContent): number {
   return content.config.baseItemSlots + state.meta.upgrades.item_slots;
 }
 
+function skillSlotCap(): number {
+  return 1;
+}
+
 function saunaOccupancy(state: RunState): number {
   return state.saunaDefenderId ? 1 : 0;
 }
@@ -171,8 +181,52 @@ function getDefender(state: RunState, defenderId: string | null): DefenderInstan
   return defenderId ? state.defenders.find((defender) => defender.id === defenderId) ?? null : null;
 }
 
+function xpForLevel(level: number): number {
+  let total = 0;
+  for (let nextLevel = 2; nextLevel <= level; nextLevel += 1) {
+    total += nextLevel + 1;
+  }
+  return total;
+}
+
+function levelFromXp(xp: number): number {
+  let level = 1;
+  while (level < 5 && xp >= xpForLevel(level + 1)) {
+    level += 1;
+  }
+  return level;
+}
+
+function xpForEnemy(enemyId: EnemyUnitId): number {
+  switch (enemyId) {
+    case 'brute':
+      return 2;
+    case 'chieftain':
+      return 4;
+    default:
+      return 1;
+  }
+}
+
+function subclassModifiers(defender: DefenderInstance, content: GameContent) {
+  return content.defenderSubclasses[defender.subclassId].modifiers;
+}
+
+function levelModifiers(defender: DefenderInstance) {
+  const bonusLevel = Math.max(0, defender.level - 1);
+  return {
+    maxHp: bonusLevel * 2,
+    damage: Math.floor(defender.level / 2),
+    heal: defender.templateId === 'mender' ? Math.floor(defender.level / 2) : 0,
+    range: 0,
+    attackCooldownMs: 0
+  };
+}
+
 function statsWithItems(defender: DefenderInstance, content: GameContent): UnitStats {
-  const bonus = defender.items.reduce(
+  const subclassBonus = subclassModifiers(defender, content);
+  const levelBonus = levelModifiers(defender);
+  const itemBonus = defender.items.reduce(
     (totals, itemId) => {
       const item = content.itemDefinitions[itemId];
       totals.maxHp += item.modifiers.maxHp ?? 0;
@@ -186,11 +240,17 @@ function statsWithItems(defender: DefenderInstance, content: GameContent): UnitS
   );
 
   return {
-    maxHp: Math.max(6, defender.stats.maxHp + bonus.maxHp),
-    damage: Math.max(1, defender.stats.damage + bonus.damage),
-    heal: Math.max(0, defender.stats.heal + bonus.heal),
-    range: Math.max(1, defender.stats.range + bonus.range),
-    attackCooldownMs: Math.max(360, defender.stats.attackCooldownMs + bonus.attackCooldownMs)
+    maxHp: Math.max(6, defender.stats.maxHp + (subclassBonus.maxHp ?? 0) + levelBonus.maxHp + itemBonus.maxHp),
+    damage: Math.max(1, defender.stats.damage + (subclassBonus.damage ?? 0) + levelBonus.damage + itemBonus.damage),
+    heal: Math.max(0, defender.stats.heal + (subclassBonus.heal ?? 0) + levelBonus.heal + itemBonus.heal),
+    range: Math.max(1, defender.stats.range + (subclassBonus.range ?? 0) + levelBonus.range + itemBonus.range),
+    attackCooldownMs: Math.max(
+      360,
+      defender.stats.attackCooldownMs +
+        (subclassBonus.attackCooldownMs ?? 0) +
+        levelBonus.attackCooldownMs +
+        itemBonus.attackCooldownMs
+    )
   };
 }
 
@@ -216,6 +276,7 @@ function rollStat(state: RunState, base: number, spread: number, min: number): n
 function newDefender(state: RunState, templateId: DefenderTemplateId, content: GameContent): DefenderInstance {
   const template = content.defenderTemplates[templateId];
   const name = generateName(state, content);
+  const subclassId = pick(state, DEFENDER_SUBCLASS_IDS[templateId]);
   const stats: UnitStats = {
     maxHp: rollStat(state, template.stats.maxHp, 9, 8),
     damage: rollStat(state, template.stats.damage, 3, 1),
@@ -226,12 +287,15 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
   return {
     id: `${templateId}-${Math.round(rng(state) * 1e9).toString(16)}`,
     templateId,
+    subclassId,
     name: name.name,
     title: name.title,
     lore: generateLore(state, templateId, content),
     tokenStyleId: randomInt(state, 0, 9),
     stats,
     hp: stats.maxHp,
+    level: 1,
+    xp: 0,
     location: 'ready',
     tile: null,
     attackReadyAtMs: 0,
@@ -732,6 +796,12 @@ function nearestEnemy(state: RunState, tile: AxialCoord): EnemyInstance | null {
   return [...state.enemies].sort((left, right) => (hexDistance(tile, left.tile) - hexDistance(tile, right.tile)) || (left.hp - right.hp))[0] ?? null;
 }
 
+function saunaThreats(state: RunState, content: GameContent): EnemyInstance[] {
+  return state.enemies
+    .filter((enemy) => enemyTarget(state, enemy, content) === 'sauna')
+    .sort((left, right) => (hexDistance(left.tile, CENTER) - hexDistance(right.tile, CENTER)) || (left.hp - right.hp));
+}
+
 function alliesToHeal(state: RunState, defender: DefenderInstance, stats: UnitStats, content: GameContent): DefenderInstance[] {
   if (!defender.tile) return [];
   return boardDefenders(state)
@@ -755,6 +825,41 @@ function tryBlink(state: RunState, defender: DefenderInstance, content: GameCont
   if (!tile) return false;
   defender.tile = tile;
   pushFx(state, 'blink', tile, 240, from);
+  return true;
+}
+
+function moveDefenderTowardSaunaThreat(
+  state: RunState,
+  defender: DefenderInstance,
+  stats: UnitStats,
+  content: GameContent,
+  cooldownMultiplier: number
+): boolean {
+  if (!defender.tile) return false;
+
+  const threat = saunaThreats(state, content)
+    .sort((left, right) => (hexDistance(defender.tile as AxialCoord, left.tile) - hexDistance(defender.tile as AxialCoord, right.tile)) || (left.hp - right.hp))[0];
+  if (!threat) return false;
+
+  const currentThreatDistance = hexDistance(defender.tile, threat.tile);
+  const currentCenterDistance = hexDistance(defender.tile, CENTER);
+  const nextTile = DIRS.map((dir) => add(defender.tile as AxialCoord, dir))
+    .filter((tile) => isBuildable(tile, content) && !occupied(state, tile))
+    .sort((left, right) =>
+      (hexDistance(left, threat.tile) - hexDistance(right, threat.tile)) ||
+      (hexDistance(left, CENTER) - hexDistance(right, CENTER)) ||
+      (left.r - right.r) ||
+      (left.q - right.q)
+    )[0];
+
+  if (!nextTile) return false;
+
+  const closesThreatGap = hexDistance(nextTile, threat.tile) < currentThreatDistance;
+  const closesCenterGap = hexDistance(nextTile, CENTER) < currentCenterDistance;
+  if (!closesThreatGap && !closesCenterGap) return false;
+
+  defender.tile = nextTile;
+  defender.attackReadyAtMs = state.timeMs + Math.max(260, (stats.attackCooldownMs / cooldownMultiplier) * 0.45);
   return true;
 }
 
@@ -798,6 +903,19 @@ function maybeDrop(state: RunState, enemyId: EnemyUnitId, content: GameContent):
   state.message = `${drop.name} looted. Pause if you want to think before equipping it.`;
 }
 
+function grantXp(defender: DefenderInstance, amount: number, content: GameContent): string | null {
+  const beforeLevel = defender.level;
+  const previousMaxHp = statsWithItems(defender, content).maxHp;
+  defender.xp += amount;
+  defender.level = levelFromXp(defender.xp);
+  if (defender.level > beforeLevel) {
+    const nextMaxHp = statsWithItems(defender, content).maxHp;
+    defender.hp = Math.min(nextMaxHp, defender.hp + Math.max(0, nextMaxHp - previousMaxHp));
+    return `${defender.name} hit level ${defender.level}.`;
+  }
+  return null;
+}
+
 function createDeathLogText(state: RunState, defender: DefenderInstance, content: GameContent): { enemyName: string; text: string } {
   const enemyId = defender.lastHitByEnemyId;
   const enemyName = enemyId ? content.enemyArchetypes[enemyId].name : 'Mysterious Steam';
@@ -815,6 +933,16 @@ function resolveEnemyDeaths(state: RunState, content: GameContent): void {
     if (enemy.hp > 0) {
       living.push(enemy);
       continue;
+    }
+    if (enemy.lastHitByDefenderId) {
+      const killer = getDefender(state, enemy.lastHitByDefenderId);
+      if (killer && killer.location !== 'dead') {
+        killer.kills += 1;
+        const levelMessage = grantXp(killer, xpForEnemy(enemy.archetypeId), content);
+        if (levelMessage) {
+          state.message = levelMessage;
+        }
+      }
     }
     maybeDrop(state, enemy.archetypeId, content);
   }
@@ -867,14 +995,19 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
   }
   let target = enemiesInRange(state, defender.tile, stats.range)[0] ?? null;
   if (!target && tryBlink(state, defender, content)) target = enemiesInRange(state, defender.tile, stats.range)[0] ?? null;
-  if (!target) return;
+  if (!target) {
+    moveDefenderTowardSaunaThreat(state, defender, stats, content, cdMult);
+    return;
+  }
   target.hp -= Math.round(stats.damage * dmgMult);
+  target.lastHitByDefenderId = defender.id;
   pushFx(state, 'hit', target.tile, 180, defender.tile);
   if (defender.skills.includes('fireball')) {
     pushFx(state, 'fireball', target.tile, 260, defender.tile);
     for (const enemy of state.enemies) {
       if (enemy.instanceId !== target.instanceId && hexDistance(enemy.tile, target.tile) <= 1) {
         enemy.hp -= Math.max(1, Math.round(stats.damage * 0.35));
+        enemy.lastHitByDefenderId = defender.id;
       }
     }
     addHitStop(state, 36);
@@ -884,9 +1017,32 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
     for (const enemy of state.enemies) {
       if (enemy.instanceId !== target.instanceId && hexDistance(enemy.tile, defender.tile) <= 1) {
         enemy.hp -= Math.max(1, Math.round(stats.damage * 0.5));
+        enemy.lastHitByDefenderId = defender.id;
       }
     }
     addHitStop(state, 28);
+  }
+  if (defender.skills.includes('chain_spark')) {
+    const chainedTarget = state.enemies
+      .filter((enemy) => enemy.instanceId !== target.instanceId)
+      .filter((enemy) => hexDistance(enemy.tile, target.tile) <= 2)
+      .sort((left, right) => (left.hp - right.hp) || (hexDistance(left.tile, target.tile) - hexDistance(right.tile, target.tile)))[0];
+    if (chainedTarget) {
+      chainedTarget.hp -= Math.max(1, Math.round(stats.damage * 0.42));
+      chainedTarget.lastHitByDefenderId = defender.id;
+      pushFx(state, 'chain', chainedTarget.tile, 220, target.tile);
+    }
+  }
+  if (defender.skills.includes('steam_shield')) {
+    defender.hp = Math.min(stats.maxHp, defender.hp + 3);
+    pushFx(state, 'heal', defender.tile, 220);
+  }
+  if (defender.skills.includes('battle_hymn')) {
+    const allyPulse = alliesToHeal(state, defender, { ...stats, range: 1 }, content)[0];
+    if (allyPulse?.tile) {
+      allyPulse.hp = Math.min(statsWithItems(allyPulse, content).maxHp, allyPulse.hp + 2);
+      pushFx(state, 'heal', allyPulse.tile, 240, defender.tile);
+    }
   }
   defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
 }
@@ -956,6 +1112,7 @@ function spawnEnemies(state: RunState, content: GameContent): void {
       tokenStyleId: randomInt(state, 0, 4),
       tile: { ...lane },
       hp: archetype.maxHp,
+      lastHitByDefenderId: null,
       attackReadyAtMs: state.timeMs + archetype.attackCooldownMs,
       moveReadyAtMs: state.timeMs + archetype.moveCooldownMs
     });
@@ -1016,7 +1173,7 @@ function canEquipDrop(defender: DefenderInstance, drop: InventoryDrop, state: Ru
   if (drop.kind === 'item') {
     return defender.items.length < itemSlotCap(state, content);
   }
-  return defender.skills.length < 1;
+  return defender.skills.length < skillSlotCap();
 }
 
 function findAutoAssignTarget(state: RunState, drop: InventoryDrop, content: GameContent): DefenderInstance | null {
@@ -1473,7 +1630,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
           return next;
         }
       } else {
-        if (defender.skills.length >= 1) {
+        if (defender.skills.length >= skillSlotCap()) {
           next.message = `${defender.name} already knows a skill.`;
           return next;
         }
@@ -1627,8 +1784,10 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         name: offer.candidate.name,
         title: offer.candidate.title,
         roleName: content.defenderTemplates[offer.candidate.templateId].name,
+        subclassName: content.defenderSubclasses[offer.candidate.subclassId].name,
         roleSummary: content.defenderTemplates[offer.candidate.templateId].role,
         lore: offer.candidate.lore,
+        level: offer.candidate.level,
         hp: roleStats.maxHp,
         damage: roleStats.damage,
         heal: roleStats.heal,
@@ -1652,6 +1811,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       name: defender.name,
       title: defender.title,
       templateName: content.defenderTemplates[defender.templateId].name,
+      subclassName: content.defenderSubclasses[defender.subclassId].name,
       roleSummary: content.defenderTemplates[defender.templateId].role,
       locationLabel:
         defender.location === 'board'
@@ -1661,7 +1821,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
             : defender.location === 'ready'
               ? 'On Bench'
               : 'Fallen',
-      summary: `${defender.location === 'board' ? 'On board' : defender.location === 'sauna' ? 'In sauna' : defender.location === 'ready' ? 'On bench' : 'Fallen'} · ${statsWithItems(defender, content).damage} ATK`,
+      summary: `Lvl ${defender.level} ${content.defenderSubclasses[defender.subclassId].name} · ${statsWithItems(defender, content).damage} ATK`,
+      level: defender.level,
       hp: defender.hp,
       maxHp: statsWithItems(defender, content).maxHp,
       damage: statsWithItems(defender, content).damage,
@@ -1708,6 +1869,11 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       title: selected.title,
       lore: selected.lore,
       templateName: content.defenderTemplates[selected.templateId].name,
+      subclassName: content.defenderSubclasses[selected.subclassId].name,
+      subclassDescription: content.defenderSubclasses[selected.subclassId].description,
+      level: selected.level,
+      xp: selected.xp,
+      nextLevelXp: selected.level >= 5 ? null : xpForLevel(selected.level + 1),
       hp: selected.hp,
       maxHp: statsWithItems(selected, content).maxHp,
       damage: statsWithItems(selected, content).damage,
@@ -1715,7 +1881,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       range: statsWithItems(selected, content).range,
       attackCooldownMs: statsWithItems(selected, content).attackCooldownMs,
       itemSlotCount: itemSlotCap(state, content),
-      skillSlotCount: 1,
+      skillSlotCount: skillSlotCap(),
       itemNames: selected.items.map((itemId) => content.itemDefinitions[itemId].name),
       skillNames: selected.skills.map((skillId) => content.skillDefinitions[skillId].name),
       location: selected.location

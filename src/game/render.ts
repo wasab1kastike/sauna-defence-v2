@@ -250,7 +250,7 @@ function drawHealthBar(
   color: string
 ) {
   const x = center.x - width / 2;
-  const y = center.y - width * 0.88;
+  const y = center.y - width * 1.2;
   ctx.fillStyle = 'rgba(10, 16, 18, 0.45)';
   ctx.fillRect(x, y, width, 5);
   ctx.fillStyle = color;
@@ -507,6 +507,57 @@ function getDefenderSpriteSheet(): HTMLImageElement | null {
   return defenderSpriteSheet;
 }
 
+function fitSpriteDimensions(sourceWidth: number, sourceHeight: number, maxWidth: number, maxHeight: number) {
+  const scale = Math.min(maxWidth / sourceWidth, maxHeight / sourceHeight);
+  return {
+    width: sourceWidth * scale,
+    height: sourceHeight * scale
+  };
+}
+
+function drawUnitShadow(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  width: number,
+  height: number
+) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(6, 10, 12, 0.34)';
+  ctx.beginPath();
+  ctx.ellipse(center.x, center.y + height * 0.24, width * 0.26, height * 0.09, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawSprite(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  source: { x: number; y: number; width: number; height: number } | null,
+  center: { x: number; y: number },
+  maxWidth: number,
+  maxHeight: number
+) {
+  const sourceWidth = source?.width ?? image.naturalWidth;
+  const sourceHeight = source?.height ?? image.naturalHeight;
+  const dims = fitSpriteDimensions(sourceWidth, sourceHeight, maxWidth, maxHeight);
+  const footY = center.y + maxHeight * 0.22;
+  const destX = center.x - dims.width / 2;
+  const destY = footY - dims.height;
+
+  drawUnitShadow(ctx, center, dims.width, dims.height);
+
+  ctx.save();
+  const previousSmoothing = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
+  if (source) {
+    ctx.drawImage(image, source.x, source.y, source.width, source.height, destX, destY, dims.width, dims.height);
+  } else {
+    ctx.drawImage(image, destX, destY, dims.width, dims.height);
+  }
+  ctx.imageSmoothingEnabled = previousSmoothing;
+  ctx.restore();
+}
+
 function drawDefenderPortrait(
   ctx: CanvasRenderingContext2D,
   center: { x: number; y: number },
@@ -519,20 +570,7 @@ function drawDefenderPortrait(
 
   const portrait = getDefenderPortrait(portraitIndex);
   if (portrait && portrait.complete && portrait.naturalWidth > 0) {
-    const destWidth = radius * 1.9;
-    const destHeight = destWidth * (portrait.naturalHeight / portrait.naturalWidth);
-    const destX = center.x - destWidth / 2;
-    const destY = center.y - destHeight * 0.56;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, radius * 0.79, 0, Math.PI * 2);
-    ctx.clip();
-    const previousSmoothing = ctx.imageSmoothingEnabled;
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(portrait, destX, destY, destWidth, destHeight);
-    ctx.imageSmoothingEnabled = previousSmoothing;
-    ctx.restore();
+    drawSprite(ctx, portrait, null, center, radius * 2.45, radius * 2.85);
     return true;
   }
 
@@ -544,20 +582,7 @@ function drawDefenderPortrait(
   const frameWidth = sheet.naturalWidth / 4;
   const frameHeight = sheet.naturalHeight;
   const frameX = (portraitIndex % 4) * frameWidth;
-  const destWidth = radius * 1.86;
-  const destHeight = destWidth * (frameHeight / frameWidth);
-  const destX = center.x - destWidth / 2;
-  const destY = center.y - destHeight * 0.58;
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(center.x, center.y, radius * 0.79, 0, Math.PI * 2);
-  ctx.clip();
-  const previousSmoothing = ctx.imageSmoothingEnabled;
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(sheet, frameX, 0, frameWidth, frameHeight, destX, destY, destWidth, destHeight);
-  ctx.imageSmoothingEnabled = previousSmoothing;
-  ctx.restore();
+  drawSprite(ctx, sheet, { x: frameX, y: 0, width: frameWidth, height: frameHeight }, center, radius * 2.4, radius * 2.9);
   return true;
 }
 
@@ -575,20 +600,7 @@ function drawEnemyPortrait(
     return false;
   }
 
-  const destWidth = radius * 1.78;
-  const destHeight = destWidth * (portrait.naturalHeight / portrait.naturalWidth);
-  const destX = center.x - destWidth / 2;
-  const destY = center.y - destHeight * 0.58;
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(center.x, center.y, radius * 0.79, 0, Math.PI * 2);
-  ctx.clip();
-  const previousSmoothing = ctx.imageSmoothingEnabled;
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(portrait, destX, destY, destWidth, destHeight);
-  ctx.imageSmoothingEnabled = previousSmoothing;
-  ctx.restore();
+  drawSprite(ctx, portrait, null, center, radius * 2.2, radius * 3.3);
   return true;
 }
 
@@ -649,6 +661,13 @@ function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, lay
         ctx.lineWidth = 2.5;
         ctx.beginPath();
         ctx.arc(center.x, center.y, layout.hexSize * (0.14 + progress * 0.26), 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      case 'chain':
+        ctx.strokeStyle = '#9fe8ff';
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, layout.hexSize * (0.1 + progress * 0.18), 0, Math.PI * 2);
         ctx.stroke();
         break;
       case 'defender_hit':
@@ -812,36 +831,42 @@ export function paintSnapshot(
         attackCooldownMs: defender.stats.attackCooldownMs
       }
     );
-    const radius = layout.hexSize * 0.39;
+    const radius = layout.hexSize * 0.48;
     const style = getDefenderStyle(defender.tokenStyleId);
+    const hasPortrait = drawDefenderPortrait(ctx, center, radius, defender.templateId, defender.tokenStyleId);
 
     if (selected?.id === defender.id) {
       ctx.beginPath();
-      ctx.arc(center.x, center.y, radius + 8, 0, Math.PI * 2);
+      if (hasPortrait) {
+        ctx.ellipse(center.x, center.y + radius * 0.55, radius * 0.9, radius * 0.34, 0, 0, Math.PI * 2);
+      } else {
+        ctx.arc(center.x, center.y, radius + 8, 0, Math.PI * 2);
+      }
       ctx.strokeStyle = 'rgba(234, 255, 250, 0.9)';
       ctx.lineWidth = 2.6;
       ctx.stroke();
-      }
+    }
 
+    if (!hasPortrait) {
       drawTokenBase(ctx, center, radius, style, template.fill);
-      if (!drawDefenderPortrait(ctx, center, radius, defender.templateId, defender.tokenStyleId)) {
-        drawGlyph(ctx, center, radius, style.glyph, style.glyph === 'tower' ? style.ring : style.accent);
-        drawTokenLabel(ctx, center, radius, template.label, '#fff8ed');
-      }
-    drawHealthBar(ctx, center, layout.hexSize * 0.94, defender.hp / Math.max(1, stats.maxHp), '#7ed8c8');
+      drawGlyph(ctx, center, radius, style.glyph, style.glyph === 'tower' ? style.ring : style.accent);
+      drawTokenLabel(ctx, center, radius, template.label, '#fff8ed');
+    }
+    drawHealthBar(ctx, center, layout.hexSize * 1.04, defender.hp / Math.max(1, stats.maxHp), '#7ed8c8');
   }
 
   for (const enemy of snapshot.state.enemies) {
     const center = axialToPixel(enemy.tile, layout);
     const archetype = snapshot.enemyArchetypes[enemy.archetypeId];
-    const radius = layout.hexSize * (enemy.archetypeId === 'chieftain' ? 0.42 : 0.36);
+    const radius = layout.hexSize * (enemy.archetypeId === 'chieftain' ? 0.54 : 0.47);
     const style = getEnemyStyle(enemy.tokenStyleId);
-    drawTokenBase(ctx, center, radius, style, archetype.fill);
-    if (!drawEnemyPortrait(ctx, center, radius, enemy.archetypeId, enemy.tokenStyleId)) {
+    const hasPortrait = drawEnemyPortrait(ctx, center, radius, enemy.archetypeId, enemy.tokenStyleId);
+    if (!hasPortrait) {
+      drawTokenBase(ctx, center, radius, style, archetype.fill);
       drawGlyph(ctx, center, radius, style.glyph, style.accent);
       drawTokenLabel(ctx, center, radius, archetype.label, '#fff0e8');
     }
-    drawHealthBar(ctx, center, layout.hexSize * 0.94, enemy.hp / archetype.maxHp, '#ff8772');
+    drawHealthBar(ctx, center, layout.hexSize * 1.04, enemy.hp / archetype.maxHp, '#ff8772');
   }
 
   drawCombatFx(ctx, snapshot, layout);
