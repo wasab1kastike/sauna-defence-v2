@@ -15,6 +15,7 @@ export type Rarity = 'common' | 'rare' | 'epic';
 export type DefenderLocation = 'ready' | 'board' | 'sauna' | 'dead';
 export type WavePattern = 'tutorial' | 'split' | 'staggered' | 'spearhead' | 'surge' | 'boss_pressure' | 'boss_breach';
 export type BossCategory = 'pressure' | 'breach';
+export type CombatFxKind = 'hit' | 'heal' | 'fireball' | 'spin' | 'blink' | 'boss_hit';
 export type MetaUpgradeId =
   | 'roster_capacity'
   | 'inventory_slots'
@@ -94,6 +95,22 @@ export interface InventoryDrop {
   artPath: string;
   waveFound: number;
   sourceEnemyId: EnemyUnitId;
+}
+
+export interface RecruitOffer {
+  offerId: number;
+  price: number;
+  quality: 'rough' | 'solid' | 'elite';
+  candidate: DefenderInstance;
+}
+
+export interface CombatFxEvent {
+  id: number;
+  kind: CombatFxKind;
+  tile: AxialCoord;
+  secondaryTile?: AxialCoord | null;
+  ageMs: number;
+  durationMs: number;
 }
 
 export interface DefenderInstance {
@@ -226,13 +243,18 @@ export interface RunState {
   hoveredTile: AxialCoord | null;
   defenders: DefenderInstance[];
   enemies: EnemyInstance[];
+  fxEvents: CombatFxEvent[];
+  hitStopMs: number;
   saunaDefenderId: string | null;
   pendingSpawns: WaveSpawn[];
   nextEnemyInstanceId: number;
   nextLootInstanceId: number;
+  nextRecruitOfferId: number;
+  nextFxEventId: number;
   inventory: InventoryDrop[];
   selectedInventoryDropId: number | null;
   recentDropId: number | null;
+  recruitOffers: RecruitOffer[];
   sisu: SisuState;
   steamEarned: number;
   gambleCount: number;
@@ -302,6 +324,21 @@ export interface HudMetaUpgradeEntry {
   maxed: boolean;
 }
 
+export interface HudRecruitOfferEntry {
+  id: number;
+  price: number;
+  quality: 'rough' | 'solid' | 'elite';
+  name: string;
+  title: string;
+  roleName: string;
+  roleSummary: string;
+  lore: string;
+  hp: number;
+  damage: number;
+  heal: number;
+  range: number;
+}
+
 export interface HudViewModel {
   phaseLabel: string;
   statusText: string;
@@ -331,6 +368,10 @@ export interface HudViewModel {
   canPause: boolean;
   recruitCost: number;
   canRecruit: boolean;
+  recruitRollCost: number;
+  canRollRecruitOffers: boolean;
+  hasRecruitOffers: boolean;
+  recruitOffers: HudRecruitOfferEntry[];
   steamEarned: number;
   bankedSteam: number;
   metaShopUnlockCost: number;
@@ -373,7 +414,9 @@ export type InputAction =
   | { type: 'togglePause' }
   | { type: 'activateSisu' }
   | { type: 'recallDefenderToSauna'; defenderId: string }
-  | { type: 'gambleRecruit' }
+  | { type: 'rollRecruitOffers' }
+  | { type: 'recruitOffer'; offerId: number }
+  | { type: 'clearRecruitOffers' }
   | { type: 'equipInventoryDrop'; dropId: number; defenderId: string }
   | { type: 'autoAssignInventoryDrop'; dropId: number }
   | { type: 'dismissRecentDrop' }

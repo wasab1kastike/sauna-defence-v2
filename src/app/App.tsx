@@ -343,8 +343,7 @@ export function App() {
                   <span>{openRecruitSlots} open slots</span>
                 </div>
                 <p className="panel-copy">
-                  New recruits appear here conceptually. If you still have capacity, gambling SISU will add a fresh
-                  weird hero to your roster.
+                  Scout three named weirdos at a time, compare prices and vibes, then recruit exactly one.
                 </p>
                 <div className="metric-grid compact">
                   <div>
@@ -352,16 +351,45 @@ export function App() {
                     <strong>{snapshot.hud.rosterCount}/{snapshot.hud.rosterCap}</strong>
                   </div>
                   <div>
-                    <span>Next Cost</span>
-                    <strong>{snapshot.hud.recruitCost} SISU</strong>
+                    <span>Scout Cost</span>
+                    <strong>{snapshot.hud.recruitRollCost} SISU</strong>
                   </div>
                 </div>
-                {openRecruitSlots > 0 ? (
+                {snapshot.hud.hasRecruitOffers ? (
+                  <div className="offer-list">
+                    {snapshot.hud.recruitOffers.map((offer) => (
+                      <div key={offer.id} className={`offer-card offer-${offer.quality}`}>
+                        <div className="offer-head">
+                          <div>
+                            <strong>{offer.name} <em>{offer.title}</em></strong>
+                            <small>{offer.roleName}</small>
+                          </div>
+                          <span className="tag">{offer.price} SISU</span>
+                        </div>
+                        <p className="panel-copy small-copy">{offer.roleSummary}</p>
+                        <p className="panel-copy flavor-copy small-copy">{offer.lore}</p>
+                        <div className="tag-row compact-tags">
+                          <span className="tag">HP {offer.hp}</span>
+                          <span className="tag">ATK {offer.damage}</span>
+                          <span className="tag">Heal {offer.heal}</span>
+                          <span className="tag">Range {offer.range}</span>
+                        </div>
+                        <button
+                          className="mini-button"
+                          disabled={snapshot.hud.sisu < offer.price || openRecruitSlots <= 0 || isIntermission}
+                          onClick={() => runtimeRef.current?.dispatch({ type: 'recruitOffer', offerId: offer.id })}
+                        >
+                          Recruit For {offer.price}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : openRecruitSlots > 0 ? (
                   <div className="open-slot-list">
-                    {Array.from({ length: openRecruitSlots }).map((_, index) => (
+                    {Array.from({ length: Math.min(3, openRecruitSlots) }).map((_, index) => (
                       <div key={index} className="open-slot-card">
-                        <strong>Open Slot</strong>
-                        <small>Waiting for the next unlucky volunteer.</small>
+                        <strong>Offer Slot</strong>
+                        <small>Scout candidates to fill this lane-holding vacancy.</small>
                       </div>
                     ))}
                   </div>
@@ -370,13 +398,23 @@ export function App() {
                     Roster is full for this run. Lose someone or raise capacity in the metashop later.
                   </p>
                 )}
-                <button
-                  className="secondary-button"
-                  disabled={!snapshot.hud.canRecruit}
-                  onClick={() => runtimeRef.current?.dispatch({ type: 'gambleRecruit' })}
-                >
-                  Gamble Recruit ({snapshot.hud.recruitCost} SISU)
-                </button>
+                <div className="button-row tight">
+                  <button
+                    className="secondary-button"
+                    disabled={!snapshot.hud.canRollRecruitOffers}
+                    onClick={() => runtimeRef.current?.dispatch({ type: 'rollRecruitOffers' })}
+                  >
+                    {snapshot.hud.hasRecruitOffers ? 'Refresh Offers' : 'Roll Offers'} ({snapshot.hud.recruitRollCost} SISU)
+                  </button>
+                  {snapshot.hud.hasRecruitOffers ? (
+                    <button
+                      className="ghost-button"
+                      onClick={() => runtimeRef.current?.dispatch({ type: 'clearRecruitOffers' })}
+                    >
+                      Clear Offers
+                    </button>
+                  ) : null}
+                </div>
               </section>
             </>
           ) : (

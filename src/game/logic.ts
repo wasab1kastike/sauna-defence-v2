@@ -1,6 +1,8 @@
 import type {
   AxialCoord,
   BossCategory,
+  CombatFxEvent,
+  CombatFxKind,
   DefenderInstance,
   DefenderLocation,
   DefenderTemplateId,
@@ -14,6 +16,7 @@ import type {
   ItemId,
   MetaProgress,
   MetaUpgradeId,
+  RecruitOffer,
   RunState,
   SkillId,
   UnitStats,
@@ -455,6 +458,92 @@ function recruitCost(state: RunState, content: GameContent): number {
   return content.config.recruitBaseCost + state.gambleCount * content.config.recruitCostStep + cycleTax + waveTax;
 }
 
+function recruitRollCost(state: RunState, content: GameContent): number {
+  return Math.max(1, Math.floor(recruitCost(state, content) * 0.34));
+}
+
+function recruitScore(defender: DefenderInstance, content: GameContent): number {
+  const template = content.defenderTemplates[defender.templateId];
+  const hpRatio = defender.stats.maxHp / template.stats.maxHp;
+  const damageRatio = defender.stats.damage / Math.max(1, template.stats.damage);
+  const healRatio = template.stats.heal > 0 ? defender.stats.heal / Math.max(1, template.stats.heal) : 1;
+  const rangeRatio = defender.stats.range / Math.max(1, template.stats.range);
+  const speedRatio = template.stats.attackCooldownMs / Math.max(360, defender.stats.attackCooldownMs);
+  return hpRatio * 0.34 + damageRatio * 0.3 + healRatio * 0.16 + rangeRatio * 0.08 + speedRatio * 0.12;
+}
+
+function recruitQuality(score: number): RecruitOffer['quality'] {
+  if (score >= 1.12) return 'elite';
+  if (score >= 0.96) return 'solid';
+  return 'rough';
+}
+
+function roleRecruitTax(templateId: DefenderTemplateId): number {
+  switch (templateId) {
+    case 'guardian':
+      return 1;
+    case 'mender':
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function createRecruitOffer(state: RunState, content: GameContent): RecruitOffer {
+  const templateId = pick(state, DEF_IDS);
+  const candidate = newDefender(state, templateId, content);
+  const score = recruitScore(candidate, content);
+  const quality = recruitQuality(score);
+  const baseCost = recruitCost(state, content);
+  const price = Math.max(
+    3,
+    Math.round(
+      baseCost +
+      roleRecruitTax(templateId) +
+      (quality === 'rough' ? -1 : quality === 'elite' ? 2 : 0) +
+      Math.max(0, Math.round((score - 1) * 6))
+    )
+  );
+  return {
+    offerId: state.nextRecruitOfferId++,
+    price,
+    quality,
+    candidate
+  };
+}
+
+function rollRecruitOffersIntoState(state: RunState, content: GameContent): void {
+  state.recruitOffers = Array.from({ length: 3 }, () => createRecruitOffer(state, content));
+}
+
+function pushFx(
+  state: RunState,
+  kind: CombatFxKind,
+  tile: AxialCoord,
+  durationMs: number,
+  secondaryTile?: AxialCoord | null
+): void {
+  const fx: CombatFxEvent = {
+    id: state.nextFxEventId++,
+    kind,
+    tile: { ...tile },
+    secondaryTile: secondaryTile ? { ...secondaryTile } : null,
+    ageMs: 0,
+    durationMs
+  };
+  state.fxEvents.push(fx);
+}
+
+function ageFx(state: RunState, deltaMs: number): void {
+  state.fxEvents = state.fxEvents
+    .map((event) => ({ ...event, ageMs: event.ageMs + deltaMs }))
+    .filter((event) => event.ageMs < event.durationMs);
+}
+
+function addHitStop(state: RunState, durationMs: number): void {
+  state.hitStopMs = Math.max(state.hitStopMs, durationMs);
+}
+
 function enemiesInRange(state: RunState, tile: AxialCoord, range: number): EnemyInstance[] {
   return state.enemies
     .filter((enemy) => hexDistance(tile, enemy.tile) <= range)
@@ -479,6 +568,7 @@ function alliesToHeal(state: RunState, defender: DefenderInstance, stats: UnitSt
 
 function tryBlink(state: RunState, defender: DefenderInstance, content: GameContent): boolean {
   if (!defender.tile || !defender.skills.includes('blink_step')) return false;
+  const from = { ...defender.tile };
   const enemy = nearestEnemy(state, defender.tile);
   if (!enemy) return false;
   const tile = DIRS.map((dir) => add(defender.tile as AxialCoord, dir))
@@ -486,6 +576,7 @@ function tryBlink(state: RunState, defender: DefenderInstance, content: GameCont
     .sort((left, right) => hexDistance(left, enemy.tile) - hexDistance(right, enemy.tile))[0];
   if (!tile) return false;
   defender.tile = tile;
+  pushFx(state, 'blink', tile, 240, from);
   return true;
 }
 
@@ -560,6 +651,9 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
   const ally = stats.heal > 0 ? alliesToHeal(state, defender, stats, content)[0] : null;
   if (ally) {
     ally.hp = Math.min(statsWithItems(ally, content).maxHp, ally.hp + Math.round(stats.heal * dmgMult));
+    if (ally.tile) {
+      pushFx(state, 'heal', ally.tile, 320, defender.tile);
+    }
     defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
     return;
   }
@@ -567,11 +661,24 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
   if (!target && tryBlink(state, defender, content)) target = enemiesInRange(state, defender.tile, stats.range)[0] ?? null;
   if (!target) return;
   target.hp -= Math.round(stats.damage * dmgMult);
+  pushFx(state, 'hit', target.tile, 180, defender.tile);
   if (defender.skills.includes('fireball')) {
-    for (const enemy of state.enemies) if (enemy.instanceId !== target.instanceId && hexDistance(enemy.tile, target.tile) <= 1) enemy.hp -= Math.max(1, Math.round(stats.damage * 0.35));
+    pushFx(state, 'fireball', target.tile, 260, defender.tile);
+    for (const enemy of state.enemies) {
+      if (enemy.instanceId !== target.instanceId && hexDistance(enemy.tile, target.tile) <= 1) {
+        enemy.hp -= Math.max(1, Math.round(stats.damage * 0.35));
+      }
+    }
+    addHitStop(state, 36);
   }
   if (defender.skills.includes('spin2win')) {
-    for (const enemy of state.enemies) if (enemy.instanceId !== target.instanceId && hexDistance(enemy.tile, defender.tile) <= 1) enemy.hp -= Math.max(1, Math.round(stats.damage * 0.5));
+    pushFx(state, 'spin', defender.tile, 220);
+    for (const enemy of state.enemies) {
+      if (enemy.instanceId !== target.instanceId && hexDistance(enemy.tile, defender.tile) <= 1) {
+        enemy.hp -= Math.max(1, Math.round(stats.damage * 0.5));
+      }
+    }
+    addHitStop(state, 28);
   }
   defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
 }
@@ -591,11 +698,21 @@ function enemyStep(state: RunState, enemy: EnemyInstance, content: GameContent):
     const target = enemyTarget(state, enemy, content);
     if (target === 'sauna') {
       state.saunaHp = Math.max(0, state.saunaHp - archetype.damage);
+      pushFx(state, enemy.archetypeId === 'chieftain' ? 'boss_hit' : 'hit', CENTER, enemy.archetypeId === 'chieftain' ? 260 : 180, enemy.tile);
+      if (enemy.archetypeId === 'chieftain') {
+        addHitStop(state, 42);
+      }
       enemy.attackReadyAtMs = state.timeMs + archetype.attackCooldownMs;
       return;
     }
     if (target) {
       target.hp -= archetype.damage;
+      if (target.tile) {
+        pushFx(state, enemy.archetypeId === 'chieftain' ? 'boss_hit' : 'hit', target.tile, enemy.archetypeId === 'chieftain' ? 240 : 170, enemy.tile);
+      }
+      if (enemy.archetypeId === 'chieftain') {
+        addHitStop(state, 36);
+      }
       enemy.attackReadyAtMs = state.timeMs + archetype.attackCooldownMs;
       return;
     }
@@ -646,6 +763,8 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, message: strin
   state.overlayMode = 'none';
   state.phase = 'wave';
   state.waveElapsedMs = 0;
+  state.hitStopMs = 0;
+  state.fxEvents = [];
   state.currentWave = waveDef;
   state.pendingSpawns = waveDef.spawns.map((spawn) => ({ ...spawn }));
   state.message = message;
@@ -826,6 +945,12 @@ function actionCopy(state: RunState): { title: string; body: string } {
       body: `${selectedLoot.name}: ${selectedLoot.flavorText}`
     };
   }
+  if (state.recruitOffers.length > 0) {
+    return {
+      title: 'Recruit Market Live',
+      body: 'Three candidates are on the towel rack. Compare prices, stats and vibes, then sign one before the market cools off.'
+    };
+  }
   if (selectedDefender && selectedDefender.location !== 'board') {
     return {
       title: 'Place Defender',
@@ -867,13 +992,18 @@ export function createInitialState(
     hoveredTile: null,
     defenders: [],
     enemies: [],
+    fxEvents: [],
+    hitStopMs: 0,
     saunaDefenderId: null,
     pendingSpawns: [],
     nextEnemyInstanceId: 1,
     nextLootInstanceId: 1,
+    nextRecruitOfferId: 1,
+    nextFxEventId: 1,
     inventory: [],
     selectedInventoryDropId: null,
     recentDropId: null,
+    recruitOffers: [],
     sisu: { current: content.config.startingSisu, activeUntilMs: 0, cooldownUntilMs: 0 },
     steamEarned: 0,
     gambleCount: 0,
@@ -995,24 +1125,49 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
           : `Wave ${next.currentWave.index} started.`
       );
       return next;
-    case 'gambleRecruit': {
+    case 'rollRecruitOffers': {
       if (next.overlayMode !== 'none' || next.phase !== 'prep') return next;
-      const cost = recruitCost(next, content);
-      if (next.sisu.current < cost) {
-        next.message = 'Not enough SISU for a recruit gamble.';
-        return next;
-      }
       if (livingDefenders(next).length >= rosterCap(next, content)) {
         next.message = 'Roster cap reached.';
         return next;
       }
+      const cost = recruitRollCost(next, content);
+      if (next.sisu.current < cost) {
+        next.message = 'Not enough SISU to scout new recruits.';
+        return next;
+      }
       next.sisu.current -= cost;
-      next.gambleCount += 1;
-      const recruit = newDefender(next, pick(next, DEF_IDS), content);
-      next.defenders.push(recruit);
-      next.message = `${recruit.name} ${recruit.title} joined for ${cost} SISU.`;
+      rollRecruitOffersIntoState(next, content);
+      next.message =
+        next.recruitOffers.length > 0
+          ? `Three new recruits walked in for inspection. Prices start at ${Math.min(...next.recruitOffers.map((offer) => offer.price))} SISU.`
+          : 'No recruits showed up.';
       return next;
     }
+    case 'recruitOffer': {
+      if (next.overlayMode !== 'none' || next.phase !== 'prep') return next;
+      const offer = next.recruitOffers.find((entry) => entry.offerId === action.offerId);
+      if (!offer) return next;
+      if (livingDefenders(next).length >= rosterCap(next, content)) {
+        next.message = 'Roster cap reached.';
+        return next;
+      }
+      if (next.sisu.current < offer.price) {
+        next.message = `Not enough SISU for ${offer.candidate.name}.`;
+        return next;
+      }
+      next.sisu.current -= offer.price;
+      next.gambleCount += 1;
+      next.defenders.push(offer.candidate);
+      next.recruitOffers = [];
+      next.message = `${offer.candidate.name} ${offer.candidate.title} joined for ${offer.price} SISU.`;
+      return next;
+    }
+    case 'clearRecruitOffers':
+      if (next.overlayMode !== 'none') return next;
+      next.recruitOffers = [];
+      next.message = 'Recruit offers dismissed.';
+      return next;
     case 'equipInventoryDrop': {
       const defender = getDefender(next, action.defenderId);
       const drop = getInventoryDrop(next, action.dropId);
@@ -1080,6 +1235,11 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
   if (deltaMs <= 0) return state;
   if (state.overlayMode !== 'none' || state.phase !== 'wave') return state;
   const next = clone(state);
+  ageFx(next, deltaMs);
+  if (next.hitStopMs > 0) {
+    next.hitStopMs = Math.max(0, next.hitStopMs - deltaMs);
+    return next;
+  }
   next.timeMs += deltaMs;
   next.waveElapsedMs += deltaMs;
   spawnEnemies(next, content);
@@ -1148,7 +1308,31 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     sisuLabel: activeMs > 0 ? `SISU active ${Math.ceil(activeMs / 1000)} s` : cdMs > 0 ? `SISU cooldown ${Math.ceil(cdMs / 1000)} s` : `SISU ready (${content.config.sisuAbilityCost})`,
     canPause: state.phase === 'wave',
     recruitCost: recruitCost(state, content),
-    canRecruit: state.overlayMode === 'none' && state.phase === 'prep' && state.sisu.current >= recruitCost(state, content) && livingDefenders(state).length < rosterCap(state, content),
+    canRecruit: state.overlayMode === 'none' && state.phase === 'prep' && state.recruitOffers.some((offer) => state.sisu.current >= offer.price) && livingDefenders(state).length < rosterCap(state, content),
+    recruitRollCost: recruitRollCost(state, content),
+    canRollRecruitOffers:
+      state.overlayMode === 'none' &&
+      state.phase === 'prep' &&
+      state.sisu.current >= recruitRollCost(state, content) &&
+      livingDefenders(state).length < rosterCap(state, content),
+    hasRecruitOffers: state.recruitOffers.length > 0,
+    recruitOffers: state.recruitOffers.map((offer) => {
+      const roleStats = statsWithItems(offer.candidate, content);
+      return {
+        id: offer.offerId,
+        price: offer.price,
+        quality: offer.quality,
+        name: offer.candidate.name,
+        title: offer.candidate.title,
+        roleName: content.defenderTemplates[offer.candidate.templateId].name,
+        roleSummary: content.defenderTemplates[offer.candidate.templateId].role,
+        lore: offer.candidate.lore,
+        hp: roleStats.maxHp,
+        damage: roleStats.damage,
+        heal: roleStats.heal,
+        range: roleStats.range
+      };
+    }),
     steamEarned: state.steamEarned,
     bankedSteam: state.meta.steam,
     metaShopUnlockCost: content.config.metaShopUnlockCost,

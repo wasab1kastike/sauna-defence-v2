@@ -494,6 +494,77 @@ function getEnemyStyle(styleId: number) {
   return ENEMY_TOKEN_STYLES[styleId % ENEMY_TOKEN_STYLES.length];
 }
 
+function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, layout: BoardLayout) {
+  for (const event of snapshot.state.fxEvents) {
+    const center = axialToPixel(event.tile, layout);
+    const progress = event.ageMs / event.durationMs;
+    const fade = 1 - progress;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, fade);
+
+    if (event.secondaryTile) {
+      const secondary = axialToPixel(event.secondaryTile, layout);
+      ctx.strokeStyle = event.kind === 'heal' ? 'rgba(123, 235, 165, 0.7)' : 'rgba(255, 214, 140, 0.45)';
+      ctx.lineWidth = Math.max(1.5, layout.hexSize * 0.08 * fade);
+      ctx.beginPath();
+      ctx.moveTo(secondary.x, secondary.y);
+      ctx.lineTo(center.x, center.y);
+      ctx.stroke();
+    }
+
+    switch (event.kind) {
+      case 'heal':
+        ctx.strokeStyle = '#8ef0ad';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, layout.hexSize * (0.16 + progress * 0.34), 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      case 'fireball':
+        ctx.fillStyle = 'rgba(255, 152, 78, 0.35)';
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, layout.hexSize * (0.18 + progress * 0.46), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffd27b';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, layout.hexSize * (0.14 + progress * 0.32), 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      case 'spin':
+        ctx.strokeStyle = '#ffd27b';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, layout.hexSize * (0.22 + progress * 0.28), -Math.PI * 0.8, Math.PI * 0.8);
+        ctx.stroke();
+        break;
+      case 'blink':
+        ctx.strokeStyle = '#91dfff';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, layout.hexSize * (0.14 + progress * 0.26), 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      case 'boss_hit':
+        ctx.strokeStyle = '#ff6e63';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, layout.hexSize * (0.18 + progress * 0.48), 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      case 'hit':
+      default:
+        ctx.strokeStyle = '#ffe3a4';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, layout.hexSize * (0.12 + progress * 0.22), 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+    }
+    ctx.restore();
+  }
+}
+
 export function paintSnapshot(
   ctx: CanvasRenderingContext2D,
   snapshot: GameSnapshot,
@@ -626,6 +697,8 @@ export function paintSnapshot(
     }
     drawHealthBar(ctx, center, layout.hexSize * 0.94, enemy.hp / archetype.maxHp, '#ff8772');
   }
+
+  drawCombatFx(ctx, snapshot, layout);
 
   if (snapshot.state.overlayMode === 'paused') {
     ctx.fillStyle = 'rgba(6, 12, 14, 0.48)';

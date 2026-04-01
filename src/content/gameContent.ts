@@ -54,7 +54,7 @@ export const gameContent: GameContent = {
         damage: 7,
         heal: 0,
         range: 1,
-        attackCooldownMs: 980
+        attackCooldownMs: 1100
       }
     },
     hurler: {
@@ -69,7 +69,7 @@ export const gameContent: GameContent = {
         damage: 6,
         heal: 0,
         range: 2,
-        attackCooldownMs: 840
+        attackCooldownMs: 940
       }
     },
     mender: {
@@ -84,7 +84,7 @@ export const gameContent: GameContent = {
         damage: 2,
         heal: 5,
         range: 2,
-        attackCooldownMs: 1080
+        attackCooldownMs: 1180
       }
     }
   },
@@ -95,8 +95,8 @@ export const gameContent: GameContent = {
       maxHp: 12,
       damage: 4,
       range: 1,
-      attackCooldownMs: 940,
-      moveCooldownMs: 760,
+      attackCooldownMs: 1030,
+      moveCooldownMs: 860,
       fill: '#d96b5a',
       outline: '#6d231f',
       label: 'R',
@@ -108,8 +108,8 @@ export const gameContent: GameContent = {
       maxHp: 22,
       damage: 7,
       range: 1,
-      attackCooldownMs: 1220,
-      moveCooldownMs: 930,
+      attackCooldownMs: 1320,
+      moveCooldownMs: 1020,
       fill: '#c14b3f',
       outline: '#5c1715',
       label: 'B',
@@ -121,8 +121,8 @@ export const gameContent: GameContent = {
       maxHp: 52,
       damage: 10,
       range: 1,
-      attackCooldownMs: 980,
-      moveCooldownMs: 820,
+      attackCooldownMs: 1100,
+      moveCooldownMs: 930,
       fill: '#8c2d2d',
       outline: '#2f0909',
       label: 'C',

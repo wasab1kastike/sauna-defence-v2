@@ -123,18 +123,46 @@ describe('Sauna Defense V2 logic', () => {
     expect(next.currentWave.isBoss).toBe(true);
   });
 
-  it('recruit gamble consumes more SISU each time', () => {
+  it('rolls three visible recruit offers with prices and lore', () => {
     let state = prepState();
     state.defenders = state.defenders.filter((defender) => defender.location !== 'dead').slice(0, 4);
     state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
     state.sisu.current = 20;
 
-    const firstCost = createSnapshot(state, gameContent).hud.recruitCost;
-    state = applyAction(state, { type: 'gambleRecruit' }, gameContent);
-    const secondCost = createSnapshot(state, gameContent).hud.recruitCost;
+    const before = state.sisu.current;
+    state = applyAction(state, { type: 'rollRecruitOffers' }, gameContent);
 
-    expect(state.sisu.current).toBe(20 - firstCost);
-    expect(secondCost).toBeGreaterThan(firstCost);
+    expect(state.recruitOffers).toHaveLength(3);
+    expect(state.sisu.current).toBeLessThan(before);
+    expect(state.recruitOffers.every((offer) => offer.price >= 3)).toBe(true);
+    expect(state.recruitOffers.every((offer) => offer.candidate.lore.length > 0)).toBe(true);
+  });
+
+  it('recruits one chosen offer and clears the rest', () => {
+    let state = prepState();
+    state.defenders = state.defenders.filter((defender) => defender.location !== 'dead').slice(0, 4);
+    state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
+    state.sisu.current = 30;
+
+    state = applyAction(state, { type: 'rollRecruitOffers' }, gameContent);
+    const offer = state.recruitOffers[1];
+    const rosterBefore = state.defenders.length;
+
+    state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
+
+    expect(state.defenders).toHaveLength(rosterBefore + 1);
+    expect(state.defenders.some((defender) => defender.id === offer.candidate.id)).toBe(true);
+    expect(state.recruitOffers).toHaveLength(0);
+  });
+
+  it('does not roll recruit offers when the roster is full', () => {
+    let state = prepState();
+    state.sisu.current = 30;
+
+    state = applyAction(state, { type: 'rollRecruitOffers' }, gameContent);
+
+    expect(state.recruitOffers).toHaveLength(0);
+    expect(state.message).toContain('Roster cap');
   });
 
   it('marks every fifth wave as a boss wave', () => {
@@ -323,5 +351,43 @@ describe('Sauna Defense V2 logic', () => {
     expect(selectedAfter?.skills).toEqual(['fireball']);
     expect(backupAfter?.skills).toContain('blink_step');
     expect(state.inventory).toHaveLength(0);
+  });
+
+  it('creates visible combat fx and brief hit-stop for skill procs', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(attacker).toBeTruthy();
+    attacker!.location = 'board';
+    attacker!.tile = { q: 0, r: -1 };
+    attacker!.skills.push('fireball');
+    attacker!.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 0, r: -2 },
+        hp: 12,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      },
+      {
+        instanceId: 2,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 1, r: -2 },
+        hp: 12,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      }
+    ];
+    state.pendingSpawns = [];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.fxEvents.some((event) => event.kind === 'hit')).toBe(true);
+    expect(state.fxEvents.some((event) => event.kind === 'fireball')).toBe(true);
+    expect(state.hitStopMs).toBeGreaterThan(0);
   });
 });
