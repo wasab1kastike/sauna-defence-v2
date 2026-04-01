@@ -237,6 +237,7 @@ export interface RunState {
   phase: Phase;
   overlayMode: OverlayMode;
   inventoryOpen: boolean;
+  recruitmentOpen: boolean;
   introOpen: boolean;
   timeMs: number;
   waveIndex: number;
@@ -377,6 +378,7 @@ export interface HudViewModel {
   inventoryCount: number;
   inventoryCap: number;
   inventoryOpen: boolean;
+  recruitmentOpen: boolean;
   hasRecentLoot: boolean;
   saunaOccupantName: string | null;
   saunaOccupancyLabel: string;
@@ -387,6 +389,7 @@ export interface HudViewModel {
   canUseSisu: boolean;
   sisuLabel: string;
   canPause: boolean;
+  canOpenRecruitment: boolean;
   recruitCost: number;
   canRecruit: boolean;
   recruitRollCost: number;
@@ -436,6 +439,7 @@ export type InputAction =
   | { type: 'openIntro' }
   | { type: 'closeIntro' }
   | { type: 'toggleInventory' }
+  | { type: 'toggleRecruitment' }
   | { type: 'placeSelectedDefender'; tile: AxialCoord }
   | { type: 'hoverTile'; tile: AxialCoord | null }
   | { type: 'startWave' }

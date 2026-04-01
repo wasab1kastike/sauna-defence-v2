@@ -71,8 +71,14 @@ button {
 .hero-copy h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.15rem, 2vw, 1.55rem);
-  line-height: 1.08;
+  font-size: clamp(1rem, 1.55vw, 1.22rem);
+  line-height: 1.04;
+}
+
+.hero-mini-copy {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
 }
 
 .eyebrow {
@@ -131,7 +137,7 @@ button {
 .playfield {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 420px);
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 390px);
   gap: 16px;
   align-items: start;
 }
@@ -143,12 +149,12 @@ button {
 }
 
 .map-header-panel {
-  padding: 14px 16px;
+  padding: 10px 12px;
 }
 
 .canvas-frame {
   position: relative;
-  height: min(72vh, 860px);
+  height: min(78vh, 980px);
   border-radius: 28px;
   padding: 12px;
   background:
@@ -188,6 +194,62 @@ button {
 
 .action-rail {
   gap: 12px;
+}
+
+.compact-header {
+  gap: 8px;
+}
+
+.run-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.run-stat-list {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.run-stat {
+  min-width: 76px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: var(--panel-soft);
+  display: grid;
+  gap: 2px;
+}
+
+.run-stat span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.run-stat strong {
+  font-size: 0.98rem;
+}
+
+.recruitment-drawer-panel {
+  border-color: rgba(255, 205, 118, 0.22);
+}
+
+.recruit-summary-list .run-stat {
+  min-width: 92px;
+}
+
+.compact-offer-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+}
+
+.recruitment-empty {
+  display: grid;
+  gap: 10px;
 }
 
 .panel {
@@ -739,8 +801,8 @@ em {
   }
 
   .canvas-frame {
-    height: min(56vh, 620px);
-  }
+      height: min(62vh, 720px);
+    }
 
   .battle-canvas {
     min-height: 0;
@@ -763,9 +825,13 @@ em {
   }
 
   .inventory-drawer {
-    width: min(420px, calc(100vw - 24px));
-    left: 12px;
-    top: 12px;
-    bottom: 12px;
+      width: min(420px, calc(100vw - 24px));
+      left: 12px;
+      top: 12px;
+      bottom: 12px;
+    }
+
+    .compact-offer-list {
+      grid-template-columns: 1fr;
+    }
   }
-}

@@ -2,8 +2,8 @@ import type { GameContent } from '../game/types';
 
 export const gameContent: GameContent = {
   config: {
-    gridRadius: 4,
-    buildRadius: 3,
+    gridRadius: 6,
+    buildRadius: 5,
     saunaHp: 72,
     startingSisu: 10,
     sisuAbilityCost: 5,
@@ -33,12 +33,12 @@ export const gameContent: GameContent = {
     lowSaunaHintRatio: 0.45,
     metaShopUnlockCost: 4,
     spawnLanes: [
-      { q: 0, r: -4 },
-      { q: 4, r: -4 },
-      { q: 4, r: 0 },
-      { q: 0, r: 4 },
-      { q: -4, r: 4 },
-      { q: -4, r: 0 }
+      { q: 0, r: -6 },
+      { q: 6, r: -6 },
+      { q: 6, r: 0 },
+      { q: 0, r: 6 },
+      { q: -6, r: 6 },
+      { q: -6, r: 0 }
     ]
   },
   defenderTemplates: {

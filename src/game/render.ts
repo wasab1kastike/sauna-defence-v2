@@ -67,11 +67,11 @@ let enemyPortraits: Array<HTMLImageElement | null | undefined> | undefined;
 let defenderSpriteSheet: HTMLImageElement | null | undefined;
 
 function getBoardLayout(width: number, height: number, radius: number): BoardLayout {
-  const padding = Math.max(24, Math.min(width, height) * 0.06);
+  const padding = Math.max(14, Math.min(width, height) * 0.04);
   const horizontalCapacity = (width - padding * 2) / (SQRT3 * (radius * 2 + 1.5));
   const verticalCapacity = (height - padding * 2) / (radius * 3 + 2.4);
   return {
-    hexSize: Math.max(18, Math.min(horizontalCapacity, verticalCapacity)),
+    hexSize: Math.max(14, Math.min(horizontalCapacity, verticalCapacity)),
     centerX: width / 2,
     centerY: height / 2
   };

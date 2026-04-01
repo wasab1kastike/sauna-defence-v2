@@ -99,7 +99,9 @@ export function App() {
   const isPaused = snapshot?.hud.isPaused ?? false;
   const introOpen = snapshot?.hud.introOpen ?? false;
   const inventoryOpen = snapshot?.hud.inventoryOpen ?? false;
+  const recruitmentOpen = snapshot?.hud.recruitmentOpen ?? false;
   const hasRecentLoot = snapshot?.hud.hasRecentLoot ?? false;
+  const anyDrawerOpen = inventoryOpen || recruitmentOpen;
   const rosterEntries = snapshot?.hud.rosterEntries ?? [];
   const boardEntries = rosterEntries.filter((entry) => entry.location === 'board');
   const readyEntries = rosterEntries.filter((entry) => entry.location === 'ready');
@@ -146,69 +148,186 @@ export function App() {
       <section className="hero compact-hero">
         <div className="hero-copy">
           <p className="eyebrow">Sauna Defense V2</p>
-          <h1>Compact run view for fast loot and lane decisions.</h1>
+          <h1>Hold the sauna.</h1>
+          <p className="hero-mini-copy">Bigger lanes, smaller UI, same weird heat.</p>
         </div>
       </section>
 
       <section className="playfield">
         <div className="arena-column">
           {snapshot ? (
-            <section className="panel map-header-panel">
-              <div className="panel-head">
-                <h2>Run Header</h2>
-                <div className="header-actions">
-                  <button
-                    className="ghost-button"
-                    onClick={() => runtimeRef.current?.dispatch({ type: 'openIntro' })}
-                  >
-                    Help
-                  </button>
-                  <button
-                    className={inventoryOpen ? 'secondary-button' : 'ghost-button'}
-                    onClick={() => runtimeRef.current?.dispatch({ type: 'toggleInventory' })}
-                  >
-                    Loot {snapshot.hud.inventoryCount}/{snapshot.hud.inventoryCap}
-                    {hasRecentLoot ? ' · New' : ''}
-                  </button>
-                  <button
-                    className={isPaused ? 'secondary-button' : 'ghost-button'}
-                    disabled={!snapshot.hud.canPause}
-                    onClick={() => runtimeRef.current?.dispatch({ type: 'togglePause' })}
-                  >
-                    {isPaused ? 'Resume' : 'Pause'}
-                  </button>
-                </div>
-              </div>
-                <div className="metric-grid compact">
-                  <div>
-                    <span>Wave</span>
-                    <strong>{snapshot.hud.waveNumber}</strong>
+            <>
+              <section className="panel map-header-panel compact-header">
+                <div className="run-strip">
+                  <div className="run-stat-list">
+                    <div className="run-stat">
+                      <span>Wave</span>
+                      <strong>{snapshot.hud.waveNumber}</strong>
+                    </div>
+                    <div className="run-stat">
+                      <span>SISU</span>
+                      <strong>{snapshot.hud.sisu}</strong>
+                    </div>
+                    <div className="run-stat">
+                      <span>Steam</span>
+                      <strong>{snapshot.hud.steamEarned}</strong>
+                    </div>
+                    <div className="run-stat">
+                      <span>Sauna HP</span>
+                      <strong>{snapshot.hud.saunaHp}/{snapshot.hud.maxSaunaHp}</strong>
+                    </div>
+                    <div className="run-stat">
+                      <span>Sauna</span>
+                      <strong>{snapshot.hud.saunaOccupancyLabel}</strong>
+                    </div>
                   </div>
-                <div>
-                  <span>SISU</span>
-                  <strong>{snapshot.hud.sisu}</strong>
-                </div>
-                <div>
-                  <span>Steam</span>
-                  <strong>{snapshot.hud.steamEarned}</strong>
-                </div>
-                  <div>
-                    <span>Sauna HP</span>
-                    <strong>{snapshot.hud.saunaHp}/{snapshot.hud.maxSaunaHp}</strong>
+                  <div className="header-actions">
+                    <button
+                      className="ghost-button"
+                      onClick={() => runtimeRef.current?.dispatch({ type: 'openIntro' })}
+                    >
+                      Help
+                    </button>
+                    <button
+                      className={inventoryOpen ? 'secondary-button' : 'ghost-button'}
+                      onClick={() => runtimeRef.current?.dispatch({ type: 'toggleInventory' })}
+                    >
+                      Loot {snapshot.hud.inventoryCount}/{snapshot.hud.inventoryCap}
+                      {hasRecentLoot ? ' · New' : ''}
+                    </button>
+                    <button
+                      className={recruitmentOpen ? 'secondary-button' : 'ghost-button'}
+                      disabled={!snapshot.hud.canOpenRecruitment}
+                      onClick={() => runtimeRef.current?.dispatch({ type: 'toggleRecruitment' })}
+                    >
+                      Recruit
+                    </button>
+                    <button
+                      className={isPaused ? 'secondary-button' : 'ghost-button'}
+                      disabled={!snapshot.hud.canPause}
+                      onClick={() => runtimeRef.current?.dispatch({ type: 'togglePause' })}
+                    >
+                      {isPaused ? 'Resume' : 'Pause'}
+                    </button>
                   </div>
-                  <div>
-                    <span>Sauna</span>
-                    <strong>{snapshot.hud.saunaOccupancyLabel}</strong>
-                  </div>
                 </div>
-              <div className="tag-row">
-                <span className="tag">{snapshot.hud.nextWaveThreat}</span>
-                <span className="tag">{snapshot.hud.nextWavePattern}</span>
-                {snapshot.hud.pressureSignals.map((signal) => (
-                  <span key={signal} className="tag warning-tag">{signal}</span>
-                ))}
-              </div>
-            </section>
+                <div className="tag-row compact-tags">
+                  <span className="tag">{snapshot.hud.nextWaveThreat}</span>
+                  <span className="tag">{snapshot.hud.nextWavePattern}</span>
+                  {snapshot.hud.pressureSignals.map((signal) => (
+                    <span key={signal} className="tag warning-tag">{signal}</span>
+                  ))}
+                </div>
+              </section>
+
+              {recruitmentOpen ? (
+                <section className="panel recruitment-drawer-panel">
+                  <div className="panel-head">
+                    <h2>Recruitment Market</h2>
+                    <div className="header-actions">
+                      <span>{openRecruitSlots} open slots</span>
+                      <button
+                        className="ghost-button"
+                        onClick={() => runtimeRef.current?.dispatch({ type: 'toggleRecruitment' })}
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                  <div className="run-stat-list recruit-summary-list">
+                    <div className="run-stat">
+                      <span>Board</span>
+                      <strong>{snapshot.hud.boardCount}</strong>
+                    </div>
+                    <div className="run-stat">
+                      <span>Bench</span>
+                      <strong>{snapshot.hud.readyBenchCount}</strong>
+                    </div>
+                    <div className="run-stat">
+                      <span>Sauna</span>
+                      <strong>{snapshot.hud.saunaOccupancyLabel}</strong>
+                    </div>
+                    <div className="run-stat">
+                      <span>Free Slots</span>
+                      <strong>{snapshot.hud.freeRecruitSlots}</strong>
+                    </div>
+                    <div className="run-stat">
+                      <span>SISU</span>
+                      <strong>{snapshot.hud.sisu}</strong>
+                    </div>
+                    <div className="run-stat">
+                      <span>Scout Cost</span>
+                      <strong>{snapshot.hud.recruitRollCost} SISU</strong>
+                    </div>
+                  </div>
+                  {snapshot.hud.hasRecruitOffers ? (
+                    <div className="offer-list compact-offer-list">
+                      {snapshot.hud.recruitOffers.map((offer) => (
+                        <div key={offer.id} className={`offer-card offer-${offer.quality}`}>
+                          <div className="offer-head">
+                            <div>
+                              <strong>{offer.name} <em>{offer.title}</em></strong>
+                              <small>{offer.roleName}</small>
+                            </div>
+                            <span className="tag">{offer.price} SISU</span>
+                          </div>
+                          <p className="panel-copy small-copy">{offer.roleSummary}</p>
+                          <p className="panel-copy flavor-copy small-copy">{offer.lore}</p>
+                          <div className="tag-row compact-tags">
+                            <span className="tag">HP {offer.hp}</span>
+                            <span className="tag">ATK {offer.damage}</span>
+                            <span className="tag">Heal {offer.heal}</span>
+                            <span className="tag">Range {offer.range}</span>
+                          </div>
+                          <button
+                            className="mini-button"
+                            disabled={snapshot.hud.sisu < offer.price || openRecruitSlots <= 0 || isIntermission}
+                            onClick={() => runtimeRef.current?.dispatch({ type: 'recruitOffer', offerId: offer.id })}
+                          >
+                            Recruit For {offer.price}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : openRecruitSlots > 0 ? (
+                    <div className="recruitment-empty">
+                      <p className="panel-copy small-copy">
+                        Scout three named weirdos at a time, compare prices and vibes, then recruit exactly one.
+                      </p>
+                      <div className="open-slot-list compact-offer-list">
+                        {Array.from({ length: 3 }).map((_, index) => (
+                          <div key={index} className="open-slot-card">
+                            <strong>Offer Slot</strong>
+                            <small>Scout candidates to fill this lane-holding vacancy.</small>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="panel-copy small-copy">
+                      Roster is full for this run. Lose someone or raise capacity in the metashop later.
+                    </p>
+                  )}
+                  <div className="button-row tight">
+                    <button
+                      className="secondary-button"
+                      disabled={!snapshot.hud.canRollRecruitOffers}
+                      onClick={() => runtimeRef.current?.dispatch({ type: 'rollRecruitOffers' })}
+                    >
+                      {snapshot.hud.hasRecruitOffers ? 'Refresh Offers' : 'Roll Offers'} ({snapshot.hud.recruitRollCost} SISU)
+                    </button>
+                    {snapshot.hud.hasRecruitOffers ? (
+                      <button
+                        className="ghost-button"
+                        onClick={() => runtimeRef.current?.dispatch({ type: 'clearRecruitOffers' })}
+                      >
+                        Clear Offers
+                      </button>
+                    ) : null}
+                  </div>
+                </section>
+              ) : null}
+            </>
           ) : null}
 
           <div className="canvas-frame">
@@ -412,102 +531,6 @@ export function App() {
                 {renderRosterGroup('Ready Bench', readyEntries, 'No recruited defenders waiting on the bench.')}
                 {renderRosterGroup('Fallen', deadEntries, 'Nobody has fallen this run.')}
               </section>
-
-              <section className="panel recruitment-panel">
-                <div className="panel-head">
-                  <h2>Recruitment: Market Offers</h2>
-                  <span>{openRecruitSlots} open slots</span>
-                </div>
-                <p className="panel-copy">
-                  Scout three named weirdos at a time, compare prices and vibes, then recruit exactly one.
-                </p>
-                <div className="metric-grid compact">
-                  <div>
-                    <span>Board</span>
-                    <strong>{snapshot.hud.boardCount}</strong>
-                  </div>
-                  <div>
-                    <span>Bench</span>
-                    <strong>{snapshot.hud.readyBenchCount}</strong>
-                  </div>
-                  <div>
-                    <span>Sauna</span>
-                    <strong>{snapshot.hud.saunaOccupancyLabel}</strong>
-                  </div>
-                  <div>
-                    <span>Free Slots</span>
-                    <strong>{snapshot.hud.freeRecruitSlots}</strong>
-                  </div>
-                  <div>
-                    <span>SISU</span>
-                    <strong>{snapshot.hud.sisu}</strong>
-                  </div>
-                  <div>
-                    <span>Scout Cost</span>
-                    <strong>{snapshot.hud.recruitRollCost} SISU</strong>
-                  </div>
-                </div>
-                {snapshot.hud.hasRecruitOffers ? (
-                  <div className="offer-list">
-                    {snapshot.hud.recruitOffers.map((offer) => (
-                      <div key={offer.id} className={`offer-card offer-${offer.quality}`}>
-                        <div className="offer-head">
-                          <div>
-                            <strong>{offer.name} <em>{offer.title}</em></strong>
-                            <small>{offer.roleName}</small>
-                          </div>
-                          <span className="tag">{offer.price} SISU</span>
-                        </div>
-                        <p className="panel-copy small-copy">{offer.roleSummary}</p>
-                        <p className="panel-copy flavor-copy small-copy">{offer.lore}</p>
-                        <div className="tag-row compact-tags">
-                          <span className="tag">HP {offer.hp}</span>
-                          <span className="tag">ATK {offer.damage}</span>
-                          <span className="tag">Heal {offer.heal}</span>
-                          <span className="tag">Range {offer.range}</span>
-                        </div>
-                        <button
-                          className="mini-button"
-                          disabled={snapshot.hud.sisu < offer.price || openRecruitSlots <= 0 || isIntermission}
-                          onClick={() => runtimeRef.current?.dispatch({ type: 'recruitOffer', offerId: offer.id })}
-                        >
-                          Recruit For {offer.price}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : openRecruitSlots > 0 ? (
-                  <div className="open-slot-list">
-                    {Array.from({ length: Math.min(3, openRecruitSlots) }).map((_, index) => (
-                      <div key={index} className="open-slot-card">
-                        <strong>Offer Slot</strong>
-                        <small>Scout candidates to fill this lane-holding vacancy.</small>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="panel-copy small-copy">
-                    Roster is full for this run. Lose someone or raise capacity in the metashop later.
-                  </p>
-                )}
-                <div className="button-row tight">
-                  <button
-                    className="secondary-button"
-                    disabled={!snapshot.hud.canRollRecruitOffers}
-                    onClick={() => runtimeRef.current?.dispatch({ type: 'rollRecruitOffers' })}
-                  >
-                    {snapshot.hud.hasRecruitOffers ? 'Refresh Offers' : 'Roll Offers'} ({snapshot.hud.recruitRollCost} SISU)
-                  </button>
-                  {snapshot.hud.hasRecruitOffers ? (
-                    <button
-                      className="ghost-button"
-                      onClick={() => runtimeRef.current?.dispatch({ type: 'clearRecruitOffers' })}
-                    >
-                      Clear Offers
-                    </button>
-                  ) : null}
-                </div>
-              </section>
             </>
           ) : (
             <section className="panel">
@@ -521,8 +544,16 @@ export function App() {
       {snapshot && !isIntermission ? (
         <>
           <div
-            className={inventoryOpen ? 'drawer-backdrop visible' : 'drawer-backdrop'}
-            onClick={() => runtimeRef.current?.dispatch({ type: 'toggleInventory' })}
+            className={anyDrawerOpen ? 'drawer-backdrop visible' : 'drawer-backdrop'}
+            onClick={() =>
+              runtimeRef.current?.dispatch(
+                inventoryOpen
+                  ? { type: 'toggleInventory' }
+                  : recruitmentOpen
+                    ? { type: 'toggleRecruitment' }
+                    : { type: 'clearSelection' }
+              )
+            }
           />
           <aside className={inventoryOpen ? 'inventory-drawer open' : 'inventory-drawer'}>
             <section className="panel drawer-panel">

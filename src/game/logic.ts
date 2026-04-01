@@ -1073,6 +1073,7 @@ export function createInitialState(
     phase: 'prep',
     overlayMode: showIntermission ? 'intermission' : 'none',
     inventoryOpen: false,
+    recruitmentOpen: false,
     introOpen,
     timeMs: 0,
     waveIndex: 1,
@@ -1177,7 +1178,18 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     case 'toggleInventory':
       if (next.overlayMode === 'intermission') return next;
       next.inventoryOpen = !next.inventoryOpen;
+      if (next.inventoryOpen) {
+        next.recruitmentOpen = false;
+      }
       if (!next.inventoryOpen) {
+        next.selectedInventoryDropId = null;
+      }
+      return next;
+    case 'toggleRecruitment':
+      if (next.overlayMode !== 'none' || next.phase !== 'prep') return next;
+      next.recruitmentOpen = !next.recruitmentOpen;
+      if (next.recruitmentOpen) {
+        next.inventoryOpen = false;
         next.selectedInventoryDropId = null;
       }
       return next;
@@ -1235,6 +1247,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         next.message = 'Place at least one defender first.';
         return next;
       }
+      next.recruitmentOpen = false;
       startWaveState(
         next,
         next.currentWave,
@@ -1256,6 +1269,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       }
       next.sisu.current -= cost;
       rollRecruitOffersIntoState(next, content);
+      next.recruitmentOpen = true;
       next.message =
         next.recruitOffers.length > 0
           ? `Three new recruits walked in for inspection. Prices start at ${Math.min(...next.recruitOffers.map((offer) => offer.price))} SISU.`
@@ -1278,12 +1292,14 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.gambleCount += 1;
       next.defenders.push(offer.candidate);
       next.recruitOffers = [];
+      next.recruitmentOpen = false;
       next.message = `${offer.candidate.name} ${offer.candidate.title} joined for ${offer.price} SISU.`;
       return next;
     }
     case 'clearRecruitOffers':
       if (next.overlayMode !== 'none') return next;
       next.recruitOffers = [];
+      next.recruitmentOpen = false;
       next.message = 'Recruit offers dismissed.';
       return next;
     case 'equipInventoryDrop': {
@@ -1421,6 +1437,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     inventoryCount: state.inventory.length,
     inventoryCap: inventoryCap(state, content),
     inventoryOpen: state.inventoryOpen,
+    recruitmentOpen: state.recruitmentOpen,
     hasRecentLoot: state.recentDropId !== null,
     saunaOccupantName: saunaDefender?.name ?? null,
     saunaOccupancyLabel: `${saunaOccupancy(state)}/${content.config.saunaCap}`,
@@ -1431,6 +1448,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     canUseSisu: state.overlayMode === 'none' && canUseSisu(state, content),
     sisuLabel: activeMs > 0 ? `SISU active ${Math.ceil(activeMs / 1000)} s` : cdMs > 0 ? `SISU cooldown ${Math.ceil(cdMs / 1000)} s` : `SISU ready (${content.config.sisuAbilityCost})`,
     canPause: state.phase === 'wave',
+    canOpenRecruitment: state.overlayMode === 'none' && state.phase === 'prep' && !state.introOpen,
     recruitCost: recruitCost(state, content),
     canRecruit: state.overlayMode === 'none' && state.phase === 'prep' && state.recruitOffers.some((offer) => state.sisu.current >= offer.price) && livingDefenders(state).length < rosterCap(state, content),
     recruitRollCost: recruitRollCost(state, content),

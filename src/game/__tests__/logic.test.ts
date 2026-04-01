@@ -401,6 +401,41 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.inventoryOpen).toBe(false);
   });
 
+  it('keeps recruitment closed by default and toggles it open', () => {
+    let state = prepState();
+
+    expect(state.recruitmentOpen).toBe(false);
+
+    state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
+    expect(state.recruitmentOpen).toBe(true);
+
+    state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
+    expect(state.recruitmentOpen).toBe(false);
+  });
+
+  it('closes recruitment when opening inventory and closes inventory when opening recruitment', () => {
+    let state = prepState();
+
+    state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
+    expect(state.recruitmentOpen).toBe(true);
+
+    state = applyAction(state, { type: 'toggleInventory' }, gameContent);
+    expect(state.inventoryOpen).toBe(true);
+    expect(state.recruitmentOpen).toBe(false);
+
+    state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
+    expect(state.recruitmentOpen).toBe(true);
+    expect(state.inventoryOpen).toBe(false);
+  });
+
+  it('uses the expanded grid configuration for the new larger battlefield', () => {
+    const snapshot = createSnapshot(prepState(), gameContent);
+
+    expect(snapshot.config.gridRadius).toBe(6);
+    expect(snapshot.tiles.length).toBe(127);
+    expect(snapshot.spawnTiles.every((tile) => Math.max(Math.abs(tile.q), Math.abs(tile.r), Math.abs(-tile.q - tile.r)) >= 6)).toBe(true);
+  });
+
   it('auto-assigns loot to the selected defender first when a slot is free', () => {
     let state = prepState();
     const target = state.defenders.find((defender) => defender.location === 'ready');
