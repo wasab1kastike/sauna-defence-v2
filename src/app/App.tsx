@@ -148,13 +148,6 @@ export function App() {
           <p className="eyebrow">Sauna Defense V2</p>
           <h1>Compact run view for fast loot and lane decisions.</h1>
         </div>
-        <div className="status-card">
-          <span>Run Mode</span>
-          <strong>
-            {isIntermission ? 'Intermission' : isPaused ? 'Paused' : snapshot?.hud.isBossWave ? 'Boss pressure' : 'Live combat'}
-          </strong>
-          <small>{snapshot?.hud.nextWavePattern ?? 'Booting sauna logic'}</small>
-        </div>
       </section>
 
       <section className="playfield">
