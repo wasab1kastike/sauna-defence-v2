@@ -72,7 +72,7 @@ export function App() {
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const runtime = runtimeRef.current;
     const nextSnapshot = snapshot;
-    if (!runtime || !nextSnapshot) {
+    if (!runtime || !nextSnapshot || nextSnapshot.hud.introOpen) {
       return;
     }
     const tile = pickTileAtCanvasPoint(
@@ -85,19 +85,24 @@ export function App() {
       runtime.dispatch({ type: 'clearSelection' });
       return;
     }
+    if (tile.q === 0 && tile.r === 0) {
+      runtime.dispatch({ type: 'selectSauna' });
+      return;
+    }
     runtime.dispatch({ type: 'placeSelectedDefender', tile });
   };
 
   const selectedDefender = snapshot?.hud.selectedDefender ?? null;
+  const selectedSauna = snapshot?.hud.selectedSauna ?? null;
   const selectedLoot = snapshot?.hud.selectedInventoryEntry ?? null;
   const isIntermission = snapshot?.hud.showIntermission ?? false;
   const isPaused = snapshot?.hud.isPaused ?? false;
+  const introOpen = snapshot?.hud.introOpen ?? false;
   const inventoryOpen = snapshot?.hud.inventoryOpen ?? false;
   const hasRecentLoot = snapshot?.hud.hasRecentLoot ?? false;
   const rosterEntries = snapshot?.hud.rosterEntries ?? [];
   const boardEntries = rosterEntries.filter((entry) => entry.location === 'board');
   const readyEntries = rosterEntries.filter((entry) => entry.location === 'ready');
-  const saunaEntries = rosterEntries.filter((entry) => entry.location === 'sauna');
   const deadEntries = rosterEntries.filter((entry) => entry.location === 'dead');
   const openRecruitSlots = snapshot ? Math.max(0, snapshot.hud.rosterCap - snapshot.hud.rosterCount) : 0;
   const nextWavePreview = snapshot?.hud.wavePreview ?? [];
@@ -160,6 +165,12 @@ export function App() {
                 <h2>Run Header</h2>
                 <div className="header-actions">
                   <button
+                    className="ghost-button"
+                    onClick={() => runtimeRef.current?.dispatch({ type: 'openIntro' })}
+                  >
+                    Help
+                  </button>
+                  <button
                     className={inventoryOpen ? 'secondary-button' : 'ghost-button'}
                     onClick={() => runtimeRef.current?.dispatch({ type: 'toggleInventory' })}
                   >
@@ -175,11 +186,11 @@ export function App() {
                   </button>
                 </div>
               </div>
-              <div className="metric-grid compact">
-                <div>
-                  <span>Wave</span>
-                  <strong>{snapshot.hud.waveNumber}</strong>
-                </div>
+                <div className="metric-grid compact">
+                  <div>
+                    <span>Wave</span>
+                    <strong>{snapshot.hud.waveNumber}</strong>
+                  </div>
                 <div>
                   <span>SISU</span>
                   <strong>{snapshot.hud.sisu}</strong>
@@ -188,11 +199,15 @@ export function App() {
                   <span>Steam</span>
                   <strong>{snapshot.hud.steamEarned}</strong>
                 </div>
-                <div>
-                  <span>Sauna HP</span>
-                  <strong>{snapshot.hud.saunaHp}/{snapshot.hud.maxSaunaHp}</strong>
+                  <div>
+                    <span>Sauna HP</span>
+                    <strong>{snapshot.hud.saunaHp}/{snapshot.hud.maxSaunaHp}</strong>
+                  </div>
+                  <div>
+                    <span>Sauna</span>
+                    <strong>{snapshot.hud.saunaOccupancyLabel}</strong>
+                  </div>
                 </div>
-              </div>
               <div className="tag-row">
                 <span className="tag">{snapshot.hud.nextWaveThreat}</span>
                 <span className="tag">{snapshot.hud.nextWavePattern}</span>
@@ -211,6 +226,40 @@ export function App() {
               onPointerLeave={handlePointerLeave}
               onPointerDown={handlePointerDown}
             />
+            {selectedSauna ? (
+              <div className="sauna-popup">
+                <div className="panel sauna-popup-card">
+                  <div className="panel-head">
+                    <h2>Sauna</h2>
+                    <div className="header-actions">
+                      <span>{selectedSauna.occupancyLabel}</span>
+                      <button
+                        className="ghost-button"
+                        onClick={() => runtimeRef.current?.dispatch({ type: 'closeSaunaPopup' })}
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                  {selectedSauna.occupantName ? (
+                    <>
+                      <strong>
+                        {selectedSauna.occupantName} <em>{selectedSauna.occupantTitle}</em>
+                      </strong>
+                      <small>{selectedSauna.occupantRole}</small>
+                      <small>HP {selectedSauna.occupantHp}/{selectedSauna.occupantMaxHp}</small>
+                      <p className="panel-copy small-copy">{selectedSauna.occupantLore}</p>
+                    </>
+                  ) : (
+                    <p className="panel-copy small-copy">Sauna is empty. Send one board hero here during prep to create a reserve.</p>
+                  )}
+                  <div className="tag-row compact-tags">
+                    <span className="tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy ready' : 'Auto Deploy locked'}</span>
+                    <span className="tag">{selectedSauna.slapSwapUnlocked ? 'Läpystävaihto ready' : 'Läpystävaihto locked'}</span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -257,10 +306,45 @@ export function App() {
 
               <section className="panel selected-panel">
                 <div className="panel-head">
-                  <h2>Selected Hero</h2>
-                  <span>{selectedDefender ? selectedDefender.location : 'No hero selected'}</span>
+                  <h2>{selectedSauna ? 'Selected Sauna' : 'Selected Hero'}</h2>
+                  <span>{selectedSauna ? selectedSauna.occupancyLabel : selectedDefender ? selectedDefender.location : 'No selection'}</span>
                 </div>
-                {selectedDefender ? (
+                {selectedSauna ? (
+                  <div className="detail-card hero-detail">
+                    <div className="detail-copy">
+                      <strong>Sauna Reserve</strong>
+                      <small>Occupancy {selectedSauna.occupancyLabel}</small>
+                      <p className="panel-copy flavor-copy">
+                        {selectedSauna.occupantName
+                          ? `${selectedSauna.occupantName} ${selectedSauna.occupantTitle} is warming up inside.`
+                          : 'Nobody is inside right now.'}
+                      </p>
+                    </div>
+                    {selectedSauna.occupantName ? (
+                      <>
+                        <div className="metric-grid compact">
+                          <div>
+                            <span>Hero</span>
+                            <strong>{selectedSauna.occupantName}</strong>
+                          </div>
+                          <div>
+                            <span>Role</span>
+                            <strong>{selectedSauna.occupantRole}</strong>
+                          </div>
+                          <div>
+                            <span>HP</span>
+                            <strong>{selectedSauna.occupantHp}/{selectedSauna.occupantMaxHp}</strong>
+                          </div>
+                        </div>
+                        <p className="panel-copy small-copy">{selectedSauna.occupantLore}</p>
+                      </>
+                    ) : null}
+                    <div className="tag-row compact-tags">
+                      <span className="tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy armed' : 'Auto Deploy locked'}</span>
+                      <span className="tag">{selectedSauna.slapSwapUnlocked ? 'Läpystävaihto armed' : 'Läpystävaihto locked'}</span>
+                    </div>
+                  </div>
+                ) : selectedDefender ? (
                   <div className="detail-card hero-detail">
                     <div className="detail-copy">
                       <strong>
@@ -318,28 +402,27 @@ export function App() {
                   </div>
                 ) : (
                   <p className="panel-copy">
-                    Pick a hero to inspect their stats, lore, loadout and sauna actions.
+                    Pick a hero or click the sauna to inspect reserves, stats and upgrades.
                   </p>
                 )}
               </section>
 
               <section className="panel">
                 <div className="panel-head">
-                  <h2>Roster</h2>
+                  <h2>Roster: Owned Heroes</h2>
                   <span>{snapshot.hud.rosterCount} recruited</span>
                 </div>
                 <p className="panel-copy small-copy">
-                  This window only shows heroes you already recruited, grouped by where they currently are.
+                  Owned heroes only. Sauna occupants are handled from the sauna itself.
                 </p>
                 {renderRosterGroup('On Board', boardEntries, 'No defenders on the board right now.')}
                 {renderRosterGroup('Ready Bench', readyEntries, 'No recruited defenders waiting on the bench.')}
-                {renderRosterGroup('Sauna Slot', saunaEntries, 'The sauna slot is empty.')}
                 {renderRosterGroup('Fallen', deadEntries, 'Nobody has fallen this run.')}
               </section>
 
               <section className="panel recruitment-panel">
                 <div className="panel-head">
-                  <h2>Recruitment</h2>
+                  <h2>Recruitment: Market Offers</h2>
                   <span>{openRecruitSlots} open slots</span>
                 </div>
                 <p className="panel-copy">
@@ -347,8 +430,24 @@ export function App() {
                 </p>
                 <div className="metric-grid compact">
                   <div>
-                    <span>Recruited</span>
-                    <strong>{snapshot.hud.rosterCount}/{snapshot.hud.rosterCap}</strong>
+                    <span>Board</span>
+                    <strong>{snapshot.hud.boardCount}</strong>
+                  </div>
+                  <div>
+                    <span>Bench</span>
+                    <strong>{snapshot.hud.readyBenchCount}</strong>
+                  </div>
+                  <div>
+                    <span>Sauna</span>
+                    <strong>{snapshot.hud.saunaOccupancyLabel}</strong>
+                  </div>
+                  <div>
+                    <span>Free Slots</span>
+                    <strong>{snapshot.hud.freeRecruitSlots}</strong>
+                  </div>
+                  <div>
+                    <span>SISU</span>
+                    <strong>{snapshot.hud.sisu}</strong>
                   </div>
                   <div>
                     <span>Scout Cost</span>
@@ -529,6 +628,51 @@ export function App() {
             </section>
           </aside>
         </>
+      ) : null}
+
+      {snapshot && introOpen ? (
+        <div className="overlay-shell intro-shell">
+          <section className="overlay-card intro-card">
+            <div className="panel-head">
+              <h2>Welcome To Sauna Defense</h2>
+              <button
+                className="ghost-button"
+                onClick={() => runtimeRef.current?.dispatch({ type: 'closeIntro' })}
+              >
+                Skip
+              </button>
+            </div>
+            <p className="panel-copy">
+              One quick briefing, then the weird heat-defense begins.
+            </p>
+            <div className="intermission-grid intro-grid">
+              <div className="inventory-card">
+                <strong>Board, Bench, Sauna</strong>
+                <small>Board heroes fight, bench heroes wait, and one reserve hero can recover in the sauna.</small>
+              </div>
+              <div className="inventory-card">
+                <strong>SISU Does Two Jobs</strong>
+                <small>Spend SISU on combat bursts or scout recruitment offers between waves.</small>
+              </div>
+              <div className="inventory-card">
+                <strong>Loot Needs A Home</strong>
+                <small>Open Loot, inspect drops, auto-assign them, or equip them to a selected hero.</small>
+              </div>
+              <div className="inventory-card">
+                <strong>Runs Build In Cycles</strong>
+                <small>Normal waves chain forward, bosses create a break, and the metashop only appears between runs.</small>
+              </div>
+            </div>
+            <div className="button-row intermission-actions">
+              <button
+                className="primary-button"
+                onClick={() => runtimeRef.current?.dispatch({ type: 'closeIntro' })}
+              >
+                Start The Shift
+              </button>
+            </div>
+          </section>
+        </div>
       ) : null}
 
       {snapshot && isIntermission ? (

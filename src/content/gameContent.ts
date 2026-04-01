@@ -266,6 +266,22 @@ export const gameContent: GameContent = {
       baseCost: 6,
       costStep: 5,
       maxLevel: 2
+    },
+    sauna_auto_deploy: {
+      id: 'sauna_auto_deploy',
+      name: 'Auto Deploy',
+      description: 'When a board hero dies, the sauna hero jumps in automatically.',
+      baseCost: 7,
+      costStep: 0,
+      maxLevel: 1
+    },
+    sauna_slap_swap: {
+      id: 'sauna_slap_swap',
+      name: 'Lapystavaihto',
+      description: 'Once per wave, a badly hurt board hero swaps with the sauna hero.',
+      baseCost: 12,
+      costStep: 0,
+      maxLevel: 1
     }
   },
   namePools: {

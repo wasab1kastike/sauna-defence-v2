@@ -3,6 +3,7 @@ import { paintSnapshot } from './render';
 import type { GameRuntime, GameRuntimeConfig, GameSnapshot, InputAction, MetaProgress, RunState } from './types';
 
 const META_STORAGE_KEY = 'sauna-defense-v2-meta';
+const INTRO_STORAGE_KEY = 'sauna-defense-v2-intro-seen';
 
 function loadMeta(storage?: Storage | null): MetaProgress {
   if (!storage) {
@@ -36,9 +37,31 @@ function saveMeta(storage: Storage | null | undefined, meta: MetaProgress) {
   storage.setItem(META_STORAGE_KEY, JSON.stringify(meta));
 }
 
+function loadIntroSeen(storage?: Storage | null): boolean {
+  if (!storage) {
+    return false;
+  }
+  try {
+    return storage.getItem(INTRO_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function saveIntroSeen(storage?: Storage | null, value = true) {
+  if (!storage) {
+    return;
+  }
+  try {
+    storage.setItem(INTRO_STORAGE_KEY, value ? 'true' : 'false');
+  } catch {
+    // Ignore localStorage errors.
+  }
+}
+
 export function createGameRuntime(config: GameRuntimeConfig): GameRuntime {
   const storage = config.storage ?? (typeof window !== 'undefined' ? window.localStorage : null);
-  let state: RunState = createInitialState(config.content, loadMeta(storage), Date.now() >>> 0);
+  let state: RunState = createInitialState(config.content, loadMeta(storage), Date.now() >>> 0, false, !loadIntroSeen(storage));
   let snapshot: GameSnapshot = createSnapshot(state, config.content);
   let animationFrameId = 0;
   let lastFrameMs = 0;
@@ -121,6 +144,9 @@ export function createGameRuntime(config: GameRuntimeConfig): GameRuntime {
 
     dispatch(action: InputAction) {
       state = applyAction(state, action, config.content);
+      if (action.type === 'closeIntro') {
+        saveIntroSeen(storage, true);
+      }
       sync(true);
     },
 

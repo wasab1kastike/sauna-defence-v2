@@ -53,6 +53,18 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.phase).toBe('prep');
   });
 
+  it('shows intro when requested and lets the player close it', () => {
+    let state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false, true);
+
+    expect(state.introOpen).toBe(true);
+
+    state = applyAction(state, { type: 'closeIntro' }, gameContent);
+    expect(state.introOpen).toBe(false);
+
+    state = applyAction(state, { type: 'openIntro' }, gameContent);
+    expect(state.introOpen).toBe(true);
+  });
+
   it('enforces board cap of four defenders', () => {
     let state = prepState();
     const ready = state.defenders.filter((defender) => defender.location === 'ready');
@@ -93,6 +105,17 @@ describe('Sauna Defense V2 logic', () => {
     expect(next.pendingSpawns.length).toBeGreaterThan(0);
     expect(healed?.hp).toBeGreaterThan(1);
     expect(next.steamEarned).toBe(1);
+  });
+
+  it('selects the sauna separately and exposes its popup data', () => {
+    let state = prepState();
+    state = applyAction(state, { type: 'selectSauna' }, gameContent);
+
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(snapshot.hud.saunaSelected).toBe(true);
+    expect(snapshot.hud.selectedSauna?.occupancyLabel).toBe('1/1');
+    expect(snapshot.hud.selectedSauna?.occupantName).toBeTruthy();
   });
 
   it('allows placing a ready defender during an active wave', () => {
@@ -244,6 +267,75 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(state.meta.steam).toBeLessThan(beforePurchase);
     expect(state.meta.upgrades.inventory_slots).toBe(1);
+  });
+
+  it('auto deploys the sauna defender when a board defender dies', () => {
+    let state = prepState();
+    const boardDefender = state.defenders.find((defender) => defender.location === 'ready');
+    const saunaDefender = state.defenders.find((defender) => defender.location === 'sauna');
+    expect(boardDefender).toBeTruthy();
+    expect(saunaDefender).toBeTruthy();
+
+    boardDefender!.location = 'board';
+    boardDefender!.tile = { q: 0, r: -1 };
+    boardDefender!.hp = 4;
+    boardDefender!.attackReadyAtMs = 999999;
+    state.meta.upgrades.sauna_auto_deploy = 1;
+    state.phase = 'wave';
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'brute',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -2 },
+      hp: 22,
+      attackReadyAtMs: 0,
+      moveReadyAtMs: 999999
+    }];
+    state.pendingSpawns = [];
+
+    state = stepState(state, 16, gameContent);
+
+    const boardAfter = state.defenders.find((defender) => defender.id === boardDefender!.id);
+    const saunaAfter = state.defenders.find((defender) => defender.id === saunaDefender!.id);
+    expect(boardAfter?.location).toBe('dead');
+    expect(saunaAfter?.location).toBe('board');
+    expect(saunaAfter?.tile).toEqual({ q: 0, r: -1 });
+    expect(state.saunaDefenderId).toBeNull();
+  });
+
+  it('uses lapystavaihto once per wave when a board defender drops low', () => {
+    let state = prepState();
+    const boardDefender = state.defenders.find((defender) => defender.location === 'ready');
+    const saunaDefender = state.defenders.find((defender) => defender.location === 'sauna');
+    expect(boardDefender).toBeTruthy();
+    expect(saunaDefender).toBeTruthy();
+
+    boardDefender!.location = 'board';
+    boardDefender!.tile = { q: 0, r: -1 };
+    boardDefender!.hp = 11;
+    boardDefender!.attackReadyAtMs = 999999;
+    state.meta.upgrades.sauna_slap_swap = 1;
+    state.phase = 'wave';
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'brute',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -2 },
+      hp: 22,
+      attackReadyAtMs: 0,
+      moveReadyAtMs: 999999
+    }];
+    state.pendingSpawns = [];
+
+    state = stepState(state, 16, gameContent);
+
+    const boardAfter = state.defenders.find((defender) => defender.id === boardDefender!.id);
+    const saunaAfter = state.defenders.find((defender) => defender.id === saunaDefender!.id);
+    expect(boardAfter?.location).toBe('sauna');
+    expect(saunaAfter?.location).toBe('board');
+    expect(saunaAfter?.tile).toEqual({ q: 0, r: -1 });
+    expect(state.saunaDefenderId).toBe(boardDefender!.id);
+    expect(state.waveSwapUsed).toBe(true);
   });
 
   it('shows intermission after a run and requires a one-time shop unlock', () => {

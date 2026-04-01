@@ -643,6 +643,18 @@ export function paintSnapshot(
   ctx.arc(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.29, 0, Math.PI * 2);
   ctx.fillStyle = '#76411f';
   ctx.fill();
+  if (snapshot.hud.saunaSelected) {
+    ctx.beginPath();
+    ctx.arc(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.82, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(234, 255, 250, 0.95)';
+    ctx.lineWidth = 2.8;
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#fff2da';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `700 ${Math.max(10, layout.hexSize * 0.32)}px Trebuchet MS`;
+  ctx.fillText(snapshot.hud.saunaOccupancyLabel, saunaCenter.x, saunaCenter.y - layout.hexSize * 0.96);
 
   for (const defender of snapshot.state.defenders) {
     if (defender.location !== 'board' || !defender.tile) continue;

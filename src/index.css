@@ -147,6 +147,7 @@ button {
 }
 
 .canvas-frame {
+  position: relative;
   height: min(72vh, 860px);
   border-radius: 28px;
   padding: 12px;
@@ -161,6 +162,20 @@ button {
   display: block;
   border-radius: 20px;
   touch-action: none;
+}
+
+.sauna-popup {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -62%);
+  width: min(320px, calc(100% - 28px));
+  z-index: 3;
+}
+
+.sauna-popup-card {
+  gap: 8px;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.42);
 }
 
 .sidebar {
@@ -681,6 +696,18 @@ button {
   gap: 18px;
 }
 
+.intro-shell {
+  z-index: 11;
+}
+
+.intro-card {
+  width: min(760px, 100%);
+}
+
+.intro-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .intermission-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -728,6 +755,10 @@ em {
   }
 
   .intermission-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .intro-grid {
     grid-template-columns: 1fr;
   }
 

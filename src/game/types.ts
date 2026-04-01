@@ -16,12 +16,15 @@ export type DefenderLocation = 'ready' | 'board' | 'sauna' | 'dead';
 export type WavePattern = 'tutorial' | 'split' | 'staggered' | 'spearhead' | 'surge' | 'boss_pressure' | 'boss_breach';
 export type BossCategory = 'pressure' | 'breach';
 export type CombatFxKind = 'hit' | 'heal' | 'fireball' | 'spin' | 'blink' | 'boss_hit';
+export type MapTarget = 'defender' | 'sauna';
 export type MetaUpgradeId =
   | 'roster_capacity'
   | 'inventory_slots'
   | 'loot_luck'
   | 'loot_rarity'
-  | 'item_slots';
+  | 'item_slots'
+  | 'sauna_auto_deploy'
+  | 'sauna_slap_swap';
 
 export interface UnitStats {
   maxHp: number;
@@ -234,11 +237,13 @@ export interface RunState {
   phase: Phase;
   overlayMode: OverlayMode;
   inventoryOpen: boolean;
+  introOpen: boolean;
   timeMs: number;
   waveIndex: number;
   waveElapsedMs: number;
   currentWave: WaveDefinition;
   seed: number;
+  selectedMapTarget: MapTarget | null;
   selectedDefenderId: string | null;
   hoveredTile: AxialCoord | null;
   defenders: DefenderInstance[];
@@ -259,6 +264,7 @@ export interface RunState {
   steamEarned: number;
   gambleCount: number;
   saunaHp: number;
+  waveSwapUsed: boolean;
   meta: MetaProgress;
   message: string;
   metaAwarded: boolean;
@@ -314,6 +320,18 @@ export interface HudSelectedDefender {
   location: DefenderLocation;
 }
 
+export interface HudSelectedSauna {
+  occupancyLabel: string;
+  occupantName: string | null;
+  occupantTitle: string | null;
+  occupantRole: string | null;
+  occupantLore: string | null;
+  occupantHp: number | null;
+  occupantMaxHp: number | null;
+  autoDeployUnlocked: boolean;
+  slapSwapUnlocked: boolean;
+}
+
 export interface HudMetaUpgradeEntry {
   id: MetaUpgradeId;
   name: string;
@@ -345,6 +363,7 @@ export interface HudViewModel {
   overlayMode: OverlayMode;
   isPaused: boolean;
   showIntermission: boolean;
+  introOpen: boolean;
   waveNumber: number;
   enemiesRemaining: number;
   isBossWave: boolean;
@@ -360,6 +379,8 @@ export interface HudViewModel {
   inventoryOpen: boolean;
   hasRecentLoot: boolean;
   saunaOccupantName: string | null;
+  saunaOccupancyLabel: string;
+  saunaSelected: boolean;
   saunaHp: number;
   maxSaunaHp: number;
   sisu: number;
@@ -379,11 +400,14 @@ export interface HudViewModel {
   metaShopUnlocked: boolean;
   actionTitle: string;
   actionBody: string;
+  readyBenchCount: number;
+  freeRecruitSlots: number;
   rosterEntries: HudRosterEntry[];
   inventoryEntries: HudInventoryEntry[];
   selectedInventoryEntry: HudInventoryEntry | null;
   canAutoAssignSelectedLoot: boolean;
   selectedDefender: HudSelectedDefender | null;
+  selectedSauna: HudSelectedSauna | null;
   wavePreview: WavePreviewEntry[];
   metaUpgrades: HudMetaUpgradeEntry[];
 }
@@ -404,9 +428,13 @@ export interface GameSnapshot {
 
 export type InputAction =
   | { type: 'selectDefender'; defenderId: string }
+  | { type: 'selectSauna' }
   | { type: 'clearSelection' }
+  | { type: 'closeSaunaPopup' }
   | { type: 'selectInventoryDrop'; dropId: number }
   | { type: 'clearSelectedInventoryDrop' }
+  | { type: 'openIntro' }
+  | { type: 'closeIntro' }
   | { type: 'toggleInventory' }
   | { type: 'placeSelectedDefender'; tile: AxialCoord }
   | { type: 'hoverTile'; tile: AxialCoord | null }
