@@ -41,6 +41,18 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.phase).toBe('prep');
   });
 
+  it('does not open intermission on boot even if previous runs exist in meta', () => {
+    const meta = createDefaultMetaProgress();
+    meta.completedRuns = 3;
+    meta.shopUnlocked = true;
+    meta.steam = 11;
+
+    const state = createInitialState(gameContent, meta, 42);
+
+    expect(state.overlayMode).toBe('none');
+    expect(state.phase).toBe('prep');
+  });
+
   it('enforces board cap of four defenders', () => {
     let state = prepState();
     const ready = state.defenders.filter((defender) => defender.location === 'ready');

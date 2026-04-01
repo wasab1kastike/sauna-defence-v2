@@ -977,7 +977,7 @@ export function createInitialState(
   content: GameContent,
   meta: MetaProgress = createDefaultMetaProgress(),
   seed = 123456789,
-  showIntermission = meta.completedRuns > 0
+  showIntermission = false
 ): RunState {
   const state: RunState = {
     phase: 'prep',
@@ -1025,7 +1025,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       content,
       state.meta,
       (Date.now() >>> 0) || 1,
-      state.meta.completedRuns > 0
+      false
     );
   }
   if (action.type === 'startNextRun') {
