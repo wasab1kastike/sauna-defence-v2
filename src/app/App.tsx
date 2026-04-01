@@ -185,7 +185,7 @@ export function App() {
   const rosterEntries = snapshot?.hud.rosterEntries ?? [];
   const boardEntries = rosterEntries.filter((entry) => entry.location === 'board');
   const readyEntries = rosterEntries.filter((entry) => entry.location === 'ready');
-  const deadEntries = rosterEntries.filter((entry) => entry.location === 'dead');
+  const deathLogEntries = snapshot?.hud.deathLogEntries ?? [];
   const openRecruitSlots = snapshot ? Math.max(0, snapshot.hud.rosterCap - snapshot.hud.rosterCount) : 0;
   const recruitReplacementName =
     openRecruitSlots <= 0
@@ -514,12 +514,6 @@ export function App() {
                   >
                     Activate SISU ({gameContent.config.sisuAbilityCost})
                   </button>
-                  <button
-                    className="ghost-button"
-                    onClick={() => runtimeRef.current?.dispatch({ type: 'restartRun' })}
-                  >
-                    Reset Run
-                  </button>
                 </div>
                 <div className="incoming-strip">
                   {nextWavePreview.map((entry) => (
@@ -644,7 +638,26 @@ export function App() {
                 </p>
                 {renderRosterGroup('On Board', boardEntries, 'No defenders on the board right now.')}
                 {renderRosterGroup('Bench Reserves', readyEntries, 'No recruited defenders waiting on the bench.')}
-                {renderRosterGroup('Fallen', deadEntries, 'Nobody has fallen this run.')}
+              </section>
+
+              <section className="panel">
+                <div className="panel-head">
+                  <h2>Death Log</h2>
+                  <span>{deathLogEntries.length}/5 shown</span>
+                </div>
+                {deathLogEntries.length > 0 ? (
+                  <div className="button-stack roster-stack">
+                    {deathLogEntries.map((entry) => (
+                      <div key={entry.id} className="roster-card death-log-card">
+                        <strong>Wave {entry.wave}</strong>
+                        <small>{entry.heroName}</small>
+                        <small>{entry.text}</small>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="panel-copy small-copy">No heroes have fallen this run.</p>
+                )}
               </section>
             </>
           ) : (

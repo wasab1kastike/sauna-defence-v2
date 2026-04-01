@@ -52,6 +52,23 @@ const NON_BOSS_PATTERNS: Array<Exclude<WavePattern, 'tutorial' | 'boss_pressure'
   'surge'
 ];
 const CENTER: AxialCoord = { q: 0, r: 0 };
+const DEATH_LINES: Record<EnemyUnitId, string[]> = {
+  raider: [
+    'got splashed with cold water at exactly the wrong moment',
+    'slipped on a stolen birch whisk and vanished under the steam',
+    'lost an argument with a bucket of goblin bathwater'
+  ],
+  brute: [
+    'was flattened like a sauna bench under a stone-handed shove',
+    'ate a boulder-sized ladle swing and never found the towel back',
+    'got folded into the floorboards by a rock-solid body check'
+  ],
+  chieftain: [
+    'was launched into the hot rafters by a steam hog headbutt',
+    'took a royal steam blast straight to the dignity',
+    'was trampled into legend under a hog-sized heat tantrum'
+  ]
+};
 
 export function coordKey(coord: AxialCoord): string {
   return `${coord.q},${coord.r}`;
@@ -220,7 +237,8 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
     attackReadyAtMs: 0,
     items: [],
     skills: [],
-    kills: 0
+    kills: 0,
+    lastHitByEnemyId: null
   };
 }
 
@@ -780,6 +798,17 @@ function maybeDrop(state: RunState, enemyId: EnemyUnitId, content: GameContent):
   state.message = `${drop.name} looted. Pause if you want to think before equipping it.`;
 }
 
+function createDeathLogText(state: RunState, defender: DefenderInstance, content: GameContent): { enemyName: string; text: string } {
+  const enemyId = defender.lastHitByEnemyId;
+  const enemyName = enemyId ? content.enemyArchetypes[enemyId].name : 'Mysterious Steam';
+  const lines = enemyId ? DEATH_LINES[enemyId] : ['was claimed by the sauna in a suspiciously dramatic accident'];
+  const line = pick(state, lines);
+  return {
+    enemyName,
+    text: `Wave ${state.currentWave.index} · ${defender.name} ${defender.title} fell when ${enemyName} ${line}.`
+  };
+}
+
 function resolveEnemyDeaths(state: RunState, content: GameContent): void {
   const living: EnemyInstance[] = [];
   for (const enemy of state.enemies) {
@@ -797,16 +826,27 @@ function resolveDefenderDeaths(state: RunState, content: GameContent): void {
     if (defender.location !== 'dead' && defender.hp <= 0) {
       const wasBoard = defender.location === 'board';
       const fallenTile = defender.tile ? { ...defender.tile } : null;
+      const deathLog = createDeathLogText(state, defender, content);
       defender.location = 'dead';
       defender.tile = null;
       if (state.saunaDefenderId === defender.id) state.saunaDefenderId = null;
       if (state.selectedDefenderId === defender.id) state.selectedDefenderId = null;
+      state.deathLog.unshift({
+        id: state.nextDeathLogEntryId++,
+        wave: state.currentWave.index,
+        heroName: defender.name,
+        heroTitle: defender.title,
+        enemyName: deathLog.enemyName,
+        text: deathLog.text
+      });
       if (wasBoard && hasSaunaAutoDeploy(state)) {
         const deployed = deploySaunaOccupant(state, content, fallenTile);
         if (deployed) {
           state.message = `${deployed.name} rushes out of the sauna to hold the line.`;
+          continue;
         }
       }
+      state.message = deathLog.text;
     }
   }
 }
@@ -875,6 +915,7 @@ function enemyStep(state: RunState, enemy: EnemyInstance, content: GameContent):
     }
     if (target) {
       target.hp -= archetype.damage;
+      target.lastHitByEnemyId = enemy.archetypeId;
       if (target.tile) {
         pushFx(state, enemy.archetypeId === 'chieftain' ? 'boss_hit' : 'defender_hit', target.tile, enemy.archetypeId === 'chieftain' ? 240 : 190, enemy.tile);
       }
@@ -1207,10 +1248,12 @@ export function createInitialState(
     nextLootInstanceId: 1,
     nextRecruitOfferId: 1,
     nextFxEventId: 1,
+    nextDeathLogEntryId: 1,
     inventory: [],
     selectedInventoryDropId: null,
     recentDropId: null,
     recruitOffers: [],
+    deathLog: [],
     sisu: { current: content.config.startingSisu, activeUntilMs: 0, cooldownUntilMs: 0 },
     steamEarned: 0,
     gambleCount: 0,
@@ -1601,7 +1644,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     actionBody: action.body,
     readyBenchCount,
     freeRecruitSlots,
-    rosterEntries: [...state.defenders].sort((left, right) => {
+    rosterEntries: state.defenders.filter((defender) => defender.location !== 'dead').sort((left, right) => {
       const order: Record<DefenderLocation, number> = { board: 0, sauna: 1, ready: 2, dead: 3 };
       return (order[left.location] - order[right.location]) || left.name.localeCompare(right.name);
     }).map((defender) => ({
@@ -1626,6 +1669,13 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       range: statsWithItems(defender, content).range,
       location: defender.location,
       selected: state.selectedDefenderId === defender.id
+    })),
+    deathLogEntries: state.deathLog.slice(0, 5).map((entry) => ({
+      id: entry.id,
+      wave: entry.wave,
+      heroName: entry.heroName,
+      enemyName: entry.enemyName,
+      text: entry.text
     })),
     inventoryEntries: state.inventory.map((drop) => ({
       id: drop.instanceId,

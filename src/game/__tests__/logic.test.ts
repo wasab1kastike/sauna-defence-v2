@@ -300,6 +300,9 @@ describe('Sauna Defense V2 logic', () => {
     expect(saunaAfter?.location).toBe('board');
     expect(saunaAfter?.tile).toEqual({ q: 0, r: -1 });
     expect(state.saunaDefenderId).toBeNull();
+    expect(state.deathLog).toHaveLength(1);
+    expect(state.deathLog[0].wave).toBe(state.currentWave.index);
+    expect(state.deathLog[0].enemyName).toBe('Stone Brute');
   });
 
   it('uses lapystavaihto once per wave when a board defender drops low', () => {
@@ -674,5 +677,29 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(state.saunaHp).toBeLessThan(saunaHpBefore);
     expect(state.fxEvents.some((event) => event.kind === 'sauna_hit')).toBe(true);
+  });
+
+  it('does not show dead defenders in roster entries and keeps only five death log items in the hud', () => {
+    const state = prepState();
+    for (let index = 0; index < 6; index += 1) {
+      state.deathLog.push({
+        id: index + 1,
+        wave: index + 1,
+        heroName: `Hero ${index + 1}`,
+        heroTitle: 'Test',
+        enemyName: 'Goblin Raider',
+        text: `Wave ${index + 1} · Hero ${index + 1} fell in a very silly way.`
+      });
+    }
+    const defender = state.defenders.find((entry) => entry.location === 'ready');
+    expect(defender).toBeTruthy();
+    defender!.location = 'dead';
+
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(snapshot.hud.rosterEntries.some((entry) => entry.id === defender!.id)).toBe(false);
+    expect(snapshot.hud.deathLogEntries).toHaveLength(5);
+    expect(snapshot.hud.deathLogEntries[0].wave).toBe(1);
+    expect(snapshot.hud.deathLogEntries[4].wave).toBe(5);
   });
 });

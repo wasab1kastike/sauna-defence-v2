@@ -107,6 +107,15 @@ export interface RecruitOffer {
   candidate: DefenderInstance;
 }
 
+export interface DeathLogEntry {
+  id: number;
+  wave: number;
+  heroName: string;
+  heroTitle: string;
+  enemyName: string;
+  text: string;
+}
+
 export interface CombatFxEvent {
   id: number;
   kind: CombatFxKind;
@@ -131,6 +140,7 @@ export interface DefenderInstance {
   items: ItemId[];
   skills: SkillId[];
   kills: number;
+  lastHitByEnemyId: EnemyUnitId | null;
 }
 
 export interface EnemyInstance {
@@ -257,10 +267,12 @@ export interface RunState {
   nextLootInstanceId: number;
   nextRecruitOfferId: number;
   nextFxEventId: number;
+  nextDeathLogEntryId: number;
   inventory: InventoryDrop[];
   selectedInventoryDropId: number | null;
   recentDropId: number | null;
   recruitOffers: RecruitOffer[];
+  deathLog: DeathLogEntry[];
   sisu: SisuState;
   steamEarned: number;
   gambleCount: number;
@@ -348,6 +360,14 @@ export interface HudMetaUpgradeEntry {
   maxed: boolean;
 }
 
+export interface HudDeathLogEntry {
+  id: number;
+  wave: number;
+  heroName: string;
+  enemyName: string;
+  text: string;
+}
+
 export interface HudRecruitOfferEntry {
   id: number;
   price: number;
@@ -413,6 +433,7 @@ export interface HudViewModel {
   readyBenchCount: number;
   freeRecruitSlots: number;
   rosterEntries: HudRosterEntry[];
+  deathLogEntries: HudDeathLogEntry[];
   inventoryEntries: HudInventoryEntry[];
   selectedInventoryEntry: HudInventoryEntry | null;
   canAutoAssignSelectedLoot: boolean;
