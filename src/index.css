@@ -236,6 +236,8 @@ button {
 
 .recruitment-drawer-panel {
   border-color: rgba(255, 205, 118, 0.22);
+  position: relative;
+  z-index: 9;
 }
 
 .recruit-summary-list .run-stat {

@@ -1353,7 +1353,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.defenders.push(offer.candidate);
       next.recruitOffers = [];
       next.recruitmentOpen = false;
-      next.message = `${offer.candidate.name} ${offer.candidate.title} joined the bench for ${offer.price} SISU.`;
+      next.message = `${offer.candidate.name} ${offer.candidate.title} joined your reserve bench for ${offer.price} SISU.`;
       return next;
     }
     case 'clearRecruitOffers':

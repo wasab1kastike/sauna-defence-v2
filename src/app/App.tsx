@@ -630,7 +630,7 @@ export function App() {
                   Owned heroes only. Sauna occupants are handled from the sauna itself.
                 </p>
                 {renderRosterGroup('On Board', boardEntries, 'No defenders on the board right now.')}
-                {renderRosterGroup('Ready Bench', readyEntries, 'No recruited defenders waiting on the bench.')}
+                {renderRosterGroup('Bench Reserves', readyEntries, 'No recruited defenders waiting on the bench.')}
                 {renderRosterGroup('Fallen', deadEntries, 'Nobody has fallen this run.')}
               </section>
             </>
