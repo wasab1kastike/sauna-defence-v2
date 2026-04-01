@@ -440,48 +440,155 @@ export function App() {
             </>
           ) : null}
 
-          <div className="canvas-frame">
-            <canvas
-              ref={canvasRef}
-              className="battle-canvas"
-              onPointerMove={handlePointerMove}
-              onPointerLeave={handlePointerLeave}
-              onPointerDown={handlePointerDown}
-            />
-            {selectedSauna ? (
-              <div className="sauna-popup">
-                <div className="panel sauna-popup-card">
-                  <div className="panel-head">
-                    <h2>Sauna</h2>
-                    <div className="header-actions">
-                      <span>{selectedSauna.occupancyLabel}</span>
-                      <button
-                        className="ghost-button"
-                        onClick={() => runtimeRef.current?.dispatch({ type: 'closeSaunaPopup' })}
-                      >
-                        Close
-                      </button>
-                    </div>
+          <div className="arena-stage">
+            <section className="panel selected-panel selected-panel-compact">
+              <div className="panel-head">
+                <h2>{selectedSauna ? 'Selected Sauna' : 'Selected Hero'}</h2>
+                <span>{selectedSauna ? selectedSauna.occupancyLabel : selectedDefender ? formatLocationLabel(selectedDefender.location) : 'No selection'}</span>
+              </div>
+              {selectedSauna ? (
+                <div className="detail-card hero-detail">
+                  <div className="detail-copy">
+                    <strong>Sauna Reserve</strong>
+                    <small>Occupancy {selectedSauna.occupancyLabel}</small>
+                    <p className="panel-copy flavor-copy small-copy">
+                      {selectedSauna.occupantName
+                        ? `${selectedSauna.occupantName} ${selectedSauna.occupantTitle} is warming up inside.`
+                        : 'Nobody is inside right now.'}
+                    </p>
                   </div>
                   {selectedSauna.occupantName ? (
                     <>
-                      <strong>
-                        {selectedSauna.occupantName} <em>{selectedSauna.occupantTitle}</em>
-                      </strong>
-                      <small>{selectedSauna.occupantRole}</small>
-                      <small>HP {selectedSauna.occupantHp}/{selectedSauna.occupantMaxHp}</small>
+                      <div className="metric-grid compact compact-metrics">
+                        <div>
+                          <span>Hero</span>
+                          <strong>{selectedSauna.occupantName}</strong>
+                        </div>
+                        <div>
+                          <span>Role</span>
+                          <strong>{selectedSauna.occupantRole}</strong>
+                        </div>
+                        <div>
+                          <span>HP</span>
+                          <strong>{selectedSauna.occupantHp}/{selectedSauna.occupantMaxHp}</strong>
+                        </div>
+                      </div>
                       <p className="panel-copy small-copy">{selectedSauna.occupantLore}</p>
                     </>
-                  ) : (
-                    <p className="panel-copy small-copy">Sauna is empty. Send one board hero here during prep to create a reserve.</p>
-                  )}
+                  ) : null}
                   <div className="tag-row compact-tags">
-                    <span className="tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy ready' : 'Auto Deploy locked'}</span>
-                    <span className="tag">{selectedSauna.slapSwapUnlocked ? 'Slap Swap ready' : 'Slap Swap locked'}</span>
+                    <span className="tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy armed' : 'Auto Deploy locked'}</span>
+                    <span className="tag">{selectedSauna.slapSwapUnlocked ? 'Slap Swap armed' : 'Slap Swap locked'}</span>
                   </div>
                 </div>
-              </div>
-            ) : null}
+              ) : selectedDefender ? (
+                <div className="detail-card hero-detail">
+                  <div className="detail-copy">
+                    <strong>
+                      {selectedDefender.name} <em>{selectedDefender.title}</em>
+                    </strong>
+                    <small>{selectedDefender.templateName}</small>
+                    <p className="panel-copy flavor-copy small-copy">{selectedDefender.lore}</p>
+                  </div>
+                  <div className="metric-grid compact compact-metrics">
+                    <div>
+                      <span>HP</span>
+                      <strong>{selectedDefender.hp}/{selectedDefender.maxHp}</strong>
+                    </div>
+                    <div>
+                      <span>ATK</span>
+                      <strong>{selectedDefender.damage}</strong>
+                    </div>
+                    <div>
+                      <span>Heal</span>
+                      <strong>{selectedDefender.heal}</strong>
+                    </div>
+                    <div>
+                      <span>Range</span>
+                      <strong>{selectedDefender.range}</strong>
+                    </div>
+                  </div>
+                  <p className="panel-copy small-copy">
+                    Attack cooldown: {selectedDefender.attackCooldownMs} ms
+                  </p>
+                  <div className="tag-row compact-tags">
+                    <span className="tag">Items {selectedDefender.itemNames.length}/{selectedDefender.itemSlotCount}</span>
+                    <span className="tag">Skills {selectedDefender.skillNames.length}/{selectedDefender.skillSlotCount}</span>
+                    {selectedDefender.itemNames.length === 0 && selectedDefender.skillNames.length === 0 ? (
+                      <span className="tag loadout-tag">Empty loadout</span>
+                    ) : null}
+                  </div>
+                  {(selectedDefender.itemNames.length > 0 || selectedDefender.skillNames.length > 0) ? (
+                    <div className="tag-row compact-tags">
+                      {selectedDefender.itemNames.map((name) => (
+                        <span key={name} className="tag loadout-tag">{name}</span>
+                      ))}
+                      {selectedDefender.skillNames.map((name) => (
+                        <span key={name} className="tag loadout-tag">{name}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {selectedDefender.location === 'board' && snapshot?.state.phase === 'prep' && !snapshot?.state.saunaDefenderId ? (
+                    <button
+                      className="mini-button"
+                      onClick={() =>
+                        runtimeRef.current?.dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })
+                      }
+                    >
+                      Send To Sauna
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="panel-copy small-copy">
+                  Pick a hero or click the sauna to inspect reserves, stats and upgrades.
+                </p>
+              )}
+            </section>
+
+            <div className="canvas-frame">
+              <canvas
+                ref={canvasRef}
+                className="battle-canvas"
+                onPointerMove={handlePointerMove}
+                onPointerLeave={handlePointerLeave}
+                onPointerDown={handlePointerDown}
+              />
+              {selectedSauna ? (
+                <div className="sauna-popup">
+                  <div className="panel sauna-popup-card">
+                    <div className="panel-head">
+                      <h2>Sauna</h2>
+                      <div className="header-actions">
+                        <span>{selectedSauna.occupancyLabel}</span>
+                        <button
+                          className="ghost-button"
+                          onClick={() => runtimeRef.current?.dispatch({ type: 'closeSaunaPopup' })}
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                    {selectedSauna.occupantName ? (
+                      <>
+                        <strong>
+                          {selectedSauna.occupantName} <em>{selectedSauna.occupantTitle}</em>
+                        </strong>
+                        <small>{selectedSauna.occupantRole}</small>
+                        <small>HP {selectedSauna.occupantHp}/{selectedSauna.occupantMaxHp}</small>
+                        <p className="panel-copy small-copy">{selectedSauna.occupantLore}</p>
+                      </>
+                    ) : (
+                      <p className="panel-copy small-copy">Sauna is empty. Send one board hero here during prep to create a reserve.</p>
+                    )}
+                    <div className="tag-row compact-tags">
+                      <span className="tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy ready' : 'Auto Deploy locked'}</span>
+                      <span className="tag">{selectedSauna.slapSwapUnlocked ? 'Slap Swap ready' : 'Slap Swap locked'}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -523,109 +630,6 @@ export function App() {
                     </div>
                   ))}
                 </div>
-              </section>
-
-              <section className="panel selected-panel">
-                <div className="panel-head">
-                  <h2>{selectedSauna ? 'Selected Sauna' : 'Selected Hero'}</h2>
-                  <span>{selectedSauna ? selectedSauna.occupancyLabel : selectedDefender ? formatLocationLabel(selectedDefender.location) : 'No selection'}</span>
-                </div>
-                {selectedSauna ? (
-                  <div className="detail-card hero-detail">
-                    <div className="detail-copy">
-                      <strong>Sauna Reserve</strong>
-                      <small>Occupancy {selectedSauna.occupancyLabel}</small>
-                      <p className="panel-copy flavor-copy">
-                        {selectedSauna.occupantName
-                          ? `${selectedSauna.occupantName} ${selectedSauna.occupantTitle} is warming up inside.`
-                          : 'Nobody is inside right now.'}
-                      </p>
-                    </div>
-                    {selectedSauna.occupantName ? (
-                      <>
-                        <div className="metric-grid compact">
-                          <div>
-                            <span>Hero</span>
-                            <strong>{selectedSauna.occupantName}</strong>
-                          </div>
-                          <div>
-                            <span>Role</span>
-                            <strong>{selectedSauna.occupantRole}</strong>
-                          </div>
-                          <div>
-                            <span>HP</span>
-                            <strong>{selectedSauna.occupantHp}/{selectedSauna.occupantMaxHp}</strong>
-                          </div>
-                        </div>
-                        <p className="panel-copy small-copy">{selectedSauna.occupantLore}</p>
-                      </>
-                    ) : null}
-                    <div className="tag-row compact-tags">
-                      <span className="tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy armed' : 'Auto Deploy locked'}</span>
-                      <span className="tag">{selectedSauna.slapSwapUnlocked ? 'Slap Swap armed' : 'Slap Swap locked'}</span>
-                    </div>
-                  </div>
-                ) : selectedDefender ? (
-                  <div className="detail-card hero-detail">
-                    <div className="detail-copy">
-                      <strong>
-                        {selectedDefender.name} <em>{selectedDefender.title}</em>
-                      </strong>
-                      <small>{selectedDefender.templateName}</small>
-                      <p className="panel-copy flavor-copy">{selectedDefender.lore}</p>
-                    </div>
-                    <div className="metric-grid compact">
-                      <div>
-                        <span>HP</span>
-                        <strong>{selectedDefender.hp}/{selectedDefender.maxHp}</strong>
-                      </div>
-                      <div>
-                        <span>ATK</span>
-                        <strong>{selectedDefender.damage}</strong>
-                      </div>
-                      <div>
-                        <span>Heal</span>
-                        <strong>{selectedDefender.heal}</strong>
-                      </div>
-                      <div>
-                        <span>Range</span>
-                        <strong>{selectedDefender.range}</strong>
-                      </div>
-                    </div>
-                    <p className="panel-copy small-copy">
-                      Attack cooldown: {selectedDefender.attackCooldownMs} ms
-                    </p>
-                    <div className="tag-row">
-                      <span className="tag">Items {selectedDefender.itemNames.length}/{selectedDefender.itemSlotCount}</span>
-                      <span className="tag">Skills {selectedDefender.skillNames.length}/{selectedDefender.skillSlotCount}</span>
-                    </div>
-                    <div className="tag-row compact-tags">
-                      {selectedDefender.itemNames.map((name) => (
-                        <span key={name} className="tag loadout-tag">{name}</span>
-                      ))}
-                      {selectedDefender.skillNames.map((name) => (
-                        <span key={name} className="tag loadout-tag">{name}</span>
-                      ))}
-                      {selectedDefender.itemNames.length === 0 && selectedDefender.skillNames.length === 0 ? (
-                        <span className="tag loadout-tag">Empty loadout</span>
-                      ) : null}
-                    </div>
-                    {selectedDefender.location === 'board' && snapshot.state.phase === 'prep' && !snapshot.state.saunaDefenderId ? (
-                      <button
-                        className="mini-button"
-                        onClick={() =>
-                          runtimeRef.current?.dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })
-                        }
-                      >
-                        Send To Sauna
-                      </button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <p className="panel-copy">
-                    Pick a hero or click the sauna to inspect reserves, stats and upgrades.
-                  </p>
-                )}
               </section>
 
               <section className="panel">
