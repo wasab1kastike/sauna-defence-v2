@@ -9,7 +9,7 @@ import {
 } from '../logic';
 
 function prepState() {
-  return createInitialState(gameContent, createDefaultMetaProgress(), 42);
+  return createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
 }
 
 describe('Sauna Defense V2 logic', () => {
@@ -31,6 +31,14 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.defenders).toHaveLength(5);
     expect(state.defenders.filter((defender) => defender.location === 'sauna')).toHaveLength(1);
     expect(state.defenders.every((defender) => defender.name.length > 0)).toBe(true);
+    expect(state.defenders.every((defender) => defender.lore.length > 0)).toBe(true);
+  });
+
+  it('opens the meta shop before a fresh run when requested', () => {
+    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, true);
+
+    expect(state.overlayMode).toBe('intermission');
+    expect(state.phase).toBe('prep');
   });
 
   it('enforces board cap of four defenders', () => {
@@ -87,6 +95,17 @@ describe('Sauna Defense V2 logic', () => {
     const placed = state.defenders.find((defender) => defender.id === ready!.id);
     expect(placed?.location).toBe('board');
     expect(placed?.tile).toEqual({ q: 0, r: -2 });
+  });
+
+  it('freezes combat timers while paused', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.overlayMode = 'paused';
+    state.pendingSpawns = [{ atMs: 0, enemyId: 'raider', laneIndex: 0 }];
+
+    const next = stepState(state, 500, gameContent);
+
+    expect(next).toEqual(state);
   });
 
   it('stops for prep when the next wave is a boss wave', () => {
@@ -175,6 +194,7 @@ describe('Sauna Defense V2 logic', () => {
   it('lets the player buy a meta upgrade after losing', () => {
     let state = prepState();
     state.phase = 'lost';
+    state.overlayMode = 'intermission';
     state.steamEarned = 8;
     state.meta.steam = 0;
 
@@ -182,5 +202,27 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(state.meta.steam).toBeLessThan(8);
     expect(state.meta.upgrades.inventory_slots).toBe(1);
+  });
+
+  it('tracks selected loot details with art and flavor text', () => {
+    let state = prepState();
+    state.inventory.push({
+      instanceId: 1,
+      kind: 'item',
+      definitionId: 'ladle',
+      rarity: 'common',
+      name: 'Lucky Ladle',
+      effectText: '+5 HP, -40 ms attack speed.',
+      flavorText: 'Still warm from a soup no one admits making.',
+      artPath: 'loot/lucky-ladle.svg',
+      waveFound: 1,
+      sourceEnemyId: 'raider'
+    });
+
+    state = applyAction(state, { type: 'selectInventoryDrop', dropId: 1 }, gameContent);
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(snapshot.hud.selectedInventoryEntry?.artPath).toBe('loot/lucky-ladle.svg');
+    expect(snapshot.hud.selectedInventoryEntry?.flavorText).toContain('soup');
   });
 });

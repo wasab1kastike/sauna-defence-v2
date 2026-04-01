@@ -134,7 +134,9 @@ export const gameContent: GameContent = {
       kind: 'item',
       name: 'Lucky Ladle',
       rarity: 'common',
-      description: '+5 HP, -40 ms attack speed.',
+      effectText: '+5 HP, -40 ms attack speed.',
+      flavorText: 'Still warm from a soup no one admits making.',
+      artPath: 'loot/lucky-ladle.svg',
       modifiers: {
         maxHp: 5,
         attackCooldownMs: -40
@@ -145,7 +147,9 @@ export const gameContent: GameContent = {
       kind: 'item',
       name: 'Coal Heart',
       rarity: 'rare',
-      description: '+3 damage, -2 HP. Hot hands, fragile chest.',
+      effectText: '+3 damage, -2 HP.',
+      flavorText: 'Beats angrily whenever someone throws weak löyly.',
+      artPath: 'loot/coal-heart.svg',
       modifiers: {
         damage: 3,
         maxHp: -2
@@ -156,7 +160,9 @@ export const gameContent: GameContent = {
       kind: 'item',
       name: 'Towel Wrap',
       rarity: 'common',
-      description: '+8 HP, -1 range. Hard to aim while wrapped up.',
+      effectText: '+8 HP, -1 range.',
+      flavorText: 'A heroic amount of towel for a suspiciously small warrior.',
+      artPath: 'loot/towel-wrap.svg',
       modifiers: {
         maxHp: 8,
         range: -1
@@ -167,7 +173,9 @@ export const gameContent: GameContent = {
       kind: 'item',
       name: 'Bucket Boots',
       rarity: 'rare',
-      description: '+1 range, +120 ms attack cooldown.',
+      effectText: '+1 range, +120 ms attack cooldown.',
+      flavorText: 'Clonk louder, kick farther, think slower.',
+      artPath: 'loot/bucket-boots.svg',
       modifiers: {
         range: 1,
         attackCooldownMs: 120
@@ -178,7 +186,9 @@ export const gameContent: GameContent = {
       kind: 'item',
       name: 'Birch Charm',
       rarity: 'epic',
-      description: '+2 heal, +1 damage, -60 ms attack cooldown.',
+      effectText: '+2 heal, +1 damage, -60 ms attack cooldown.',
+      flavorText: 'A blessed vihta trinket that smells like trouble and midsummer.',
+      artPath: 'loot/birch-charm.svg',
       modifiers: {
         heal: 2,
         damage: 1,
@@ -192,21 +202,27 @@ export const gameContent: GameContent = {
       kind: 'skill',
       name: 'Fireball',
       rarity: 'rare',
-      description: 'Basic attacks splash ember damage to nearby enemies.'
+      effectText: 'Basic attacks splash ember damage to nearby enemies.',
+      flavorText: 'Throws a rude little sun at anyone standing too close.',
+      artPath: 'loot/fireball.svg'
     },
     spin2win: {
       id: 'spin2win',
       kind: 'skill',
       name: 'Spin 2 Win',
       rarity: 'epic',
-      description: 'Melee hits also clip all adjacent enemies.'
+      effectText: 'Melee hits also clip all adjacent enemies.',
+      flavorText: 'Invented after one slippery sauna floor incident too many.',
+      artPath: 'loot/spin-2-win.svg'
     },
     blink_step: {
       id: 'blink_step',
       kind: 'skill',
       name: 'Blink Step',
       rarity: 'rare',
-      description: 'If no target is in range, blink one hex closer to danger.'
+      effectText: 'If no target is in range, blink one hex closer to danger.',
+      flavorText: 'A deeply unwise technique for entering rooms dramatically.',
+      artPath: 'loot/blink-step.svg'
     }
   },
   metaUpgrades: {
@@ -308,6 +324,32 @@ export const gameContent: GameContent = {
       'Loylylegenda',
       'Klapikeisari',
       'Hikihiippa'
+    ],
+    loreHooks: {
+      guardian: [
+        'swears the sauna door only opens when they glare at it first',
+        'once blocked a whole bachelor party with one towel and a bad mood',
+        'insists every proper defense begins with heavier benches'
+      ],
+      hurler: [
+        'claims every bucket toss is part of a larger artistic statement',
+        'keeps counting perfect löyly arcs nobody else can see',
+        'has not met a flammable idea they did not trust immediately'
+      ],
+      mender: [
+        'treats singed eyebrows like a sacred calling',
+        'can patch both morale and towel seams with alarming speed',
+        'believes every bruise is just a future sauna story'
+      ]
+    },
+    loreQuirks: [
+      'Refuses to enter the lauteet without a dramatic pre-sigh.',
+      'Keeps a backup vihta for emotional emergencies.',
+      'Still argues with the kiuas like it owes them money.',
+      'Thinks hydration is for cowards, then lectures everyone about hydration.',
+      'Calls every near miss a planned tactical steam feint.',
+      'Has a personal rivalry with lukewarm decisions.',
+      'Claims the towels whisper better strategy after midnight.'
     ]
   }
 };

@@ -471,7 +471,18 @@ export function paintSnapshot(
     drawHealthBar(ctx, center, layout.hexSize * 0.94, enemy.hp / archetype.maxHp, '#ff8772');
   }
 
-  if (snapshot.state.phase === 'lost') {
+  if (snapshot.state.overlayMode === 'paused') {
+    ctx.fillStyle = 'rgba(6, 12, 14, 0.48)';
+    ctx.fillRect(0, 0, viewportWidth, viewportHeight);
+    ctx.fillStyle = '#f5efe7';
+    ctx.textAlign = 'center';
+    ctx.font = '700 28px Trebuchet MS';
+    ctx.fillText('Paused', layout.centerX, 60);
+    ctx.font = '500 15px Trebuchet MS';
+    ctx.fillText('Combat is frozen while you sort heroes and loot.', layout.centerX, 86);
+  }
+
+  if (snapshot.state.phase === 'lost' && snapshot.state.overlayMode !== 'intermission') {
     ctx.fillStyle = 'rgba(6, 12, 14, 0.66)';
     ctx.fillRect(0, 0, viewportWidth, viewportHeight);
     ctx.fillStyle = '#f5efe7';

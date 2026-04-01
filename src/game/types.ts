@@ -5,6 +5,7 @@ export interface AxialCoord {
 
 export type Team = 'player' | 'enemy';
 export type Phase = 'prep' | 'wave' | 'lost';
+export type OverlayMode = 'none' | 'paused' | 'intermission';
 export type DefenderTemplateId = 'guardian' | 'hurler' | 'mender';
 export type EnemyUnitId = 'raider' | 'brute' | 'chieftain';
 export type ItemId = 'ladle' | 'coal_heart' | 'towel_wrap' | 'bucket_boots' | 'birch_charm';
@@ -66,7 +67,9 @@ export interface ItemDefinition {
   kind: 'item';
   name: string;
   rarity: Rarity;
-  description: string;
+  effectText: string;
+  flavorText: string;
+  artPath: string;
   modifiers: StatModifier;
 }
 
@@ -75,7 +78,9 @@ export interface SkillDefinition {
   kind: 'skill';
   name: string;
   rarity: Rarity;
-  description: string;
+  effectText: string;
+  flavorText: string;
+  artPath: string;
 }
 
 export interface InventoryDrop {
@@ -84,7 +89,9 @@ export interface InventoryDrop {
   definitionId: ItemId | SkillId;
   rarity: Rarity;
   name: string;
-  description: string;
+  effectText: string;
+  flavorText: string;
+  artPath: string;
   waveFound: number;
   sourceEnemyId: EnemyUnitId;
 }
@@ -94,6 +101,7 @@ export interface DefenderInstance {
   templateId: DefenderTemplateId;
   name: string;
   title: string;
+  lore: string;
   tokenStyleId: number;
   stats: UnitStats;
   hp: number;
@@ -182,6 +190,8 @@ export interface NamePools {
   first: string[];
   last: string[];
   title: string[];
+  loreHooks: Record<DefenderTemplateId, string[]>;
+  loreQuirks: string[];
 }
 
 export interface GameContent {
@@ -202,6 +212,7 @@ export interface SisuState {
 
 export interface RunState {
   phase: Phase;
+  overlayMode: OverlayMode;
   timeMs: number;
   waveIndex: number;
   waveElapsedMs: number;
@@ -216,6 +227,7 @@ export interface RunState {
   nextEnemyInstanceId: number;
   nextLootInstanceId: number;
   inventory: InventoryDrop[];
+  selectedInventoryDropId: number | null;
   recentDropId: number | null;
   sisu: SisuState;
   steamEarned: number;
@@ -249,15 +261,19 @@ export interface HudInventoryEntry {
   kind: LootKind;
   name: string;
   rarity: Rarity;
-  description: string;
+  effectText: string;
+  flavorText: string;
+  artPath: string;
   waveFound: number;
   isRecent: boolean;
+  selected: boolean;
 }
 
 export interface HudSelectedDefender {
   id: string;
   name: string;
   title: string;
+  lore: string;
   templateName: string;
   hp: number;
   maxHp: number;
@@ -285,6 +301,9 @@ export interface HudMetaUpgradeEntry {
 export interface HudViewModel {
   phaseLabel: string;
   statusText: string;
+  overlayMode: OverlayMode;
+  isPaused: boolean;
+  showIntermission: boolean;
   waveNumber: number;
   enemiesRemaining: number;
   isBossWave: boolean;
@@ -303,11 +322,16 @@ export interface HudViewModel {
   sisu: number;
   canUseSisu: boolean;
   sisuLabel: string;
+  canPause: boolean;
   recruitCost: number;
   canRecruit: boolean;
   steamEarned: number;
+  bankedSteam: number;
+  actionTitle: string;
+  actionBody: string;
   rosterEntries: HudRosterEntry[];
   inventoryEntries: HudInventoryEntry[];
+  selectedInventoryEntry: HudInventoryEntry | null;
   selectedDefender: HudSelectedDefender | null;
   wavePreview: WavePreviewEntry[];
   metaUpgrades: HudMetaUpgradeEntry[];
@@ -330,15 +354,19 @@ export interface GameSnapshot {
 export type InputAction =
   | { type: 'selectDefender'; defenderId: string }
   | { type: 'clearSelection' }
+  | { type: 'selectInventoryDrop'; dropId: number }
+  | { type: 'clearSelectedInventoryDrop' }
   | { type: 'placeSelectedDefender'; tile: AxialCoord }
   | { type: 'hoverTile'; tile: AxialCoord | null }
   | { type: 'startWave' }
+  | { type: 'togglePause' }
   | { type: 'activateSisu' }
   | { type: 'recallDefenderToSauna'; defenderId: string }
   | { type: 'gambleRecruit' }
   | { type: 'equipInventoryDrop'; dropId: number; defenderId: string }
   | { type: 'dismissRecentDrop' }
   | { type: 'buyMetaUpgrade'; upgradeId: MetaUpgradeId }
+  | { type: 'startNextRun' }
   | { type: 'restartRun' };
 
 export interface GameRuntimeConfig {

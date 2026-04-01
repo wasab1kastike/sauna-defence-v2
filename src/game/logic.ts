@@ -167,6 +167,10 @@ function generateName(state: RunState, content: GameContent): { name: string; ti
   };
 }
 
+function generateLore(state: RunState, templateId: DefenderTemplateId, content: GameContent): string {
+  return `${pick(state, content.namePools.loreHooks[templateId])}. ${pick(state, content.namePools.loreQuirks)}`;
+}
+
 function rollStat(state: RunState, base: number, spread: number, min: number): number {
   return Math.max(min, base + Math.round((rng(state) * 2 - 1) * spread));
 }
@@ -186,6 +190,7 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
     templateId,
     name: name.name,
     title: name.title,
+    lore: generateLore(state, templateId, content),
     tokenStyleId: randomInt(state, 0, 9),
     stats,
     hp: stats.maxHp,
@@ -510,13 +515,16 @@ function maybeDrop(state: RunState, enemyId: EnemyUnitId, content: GameContent):
     definitionId: chosen.id,
     rarity,
     name: chosen.name,
-    description: chosen.description,
+    effectText: chosen.effectText,
+    flavorText: chosen.flavorText,
+    artPath: chosen.artPath,
     waveFound: state.waveIndex,
     sourceEnemyId: enemyId
   };
   state.inventory.push(drop);
   state.recentDropId = drop.instanceId;
-  state.message = `${drop.name} looted.`;
+  state.selectedInventoryDropId = drop.instanceId;
+  state.message = `${drop.name} looted. Pause if you want to think before equipping it.`;
 }
 
 function resolveEnemyDeaths(state: RunState, content: GameContent): void {
@@ -633,6 +641,7 @@ function healSauna(state: RunState, content: GameContent): void {
 }
 
 function startWaveState(state: RunState, waveDef: WaveDefinition, message: string): void {
+  state.overlayMode = 'none';
   state.phase = 'wave';
   state.waveElapsedMs = 0;
   state.currentWave = waveDef;
@@ -664,6 +673,10 @@ function metaCost(state: RunState, upgradeId: MetaUpgradeId, content: GameConten
   const level = state.meta.upgrades[upgradeId];
   if (level >= def.maxLevel) return null;
   return def.baseCost + def.costStep * level;
+}
+
+function getInventoryDrop(state: RunState, dropId: number | null): InventoryDrop | null {
+  return dropId === null ? null : state.inventory.find((drop) => drop.instanceId === dropId) ?? null;
 }
 
 function awardMeta(state: RunState): void {
@@ -728,9 +741,67 @@ function pressureSignals(state: RunState, content: GameContent): string[] {
   return signals;
 }
 
-export function createInitialState(content: GameContent, meta: MetaProgress = createDefaultMetaProgress(), seed = 123456789): RunState {
+function actionCopy(state: RunState): { title: string; body: string } {
+  const selectedLoot = getInventoryDrop(state, state.selectedInventoryDropId);
+  const selectedDefender = getDefender(state, state.selectedDefenderId);
+
+  if (state.overlayMode === 'intermission') {
+    return {
+      title: state.phase === 'lost' ? 'Run Over' : 'Before The Run',
+      body: state.phase === 'lost'
+        ? 'Cash out Steam, tweak the meta shop, then launch the next batch of sauna weirdos.'
+        : 'Use the shop before the first wave if you want a stronger long-term run.'
+    };
+  }
+  if (state.overlayMode === 'paused') {
+    return {
+      title: 'Run Paused',
+      body: 'Combat is frozen. Check loot, place reinforcements, then resume when the plan feels solid.'
+    };
+  }
+  if (selectedLoot && selectedDefender) {
+    return {
+      title: 'Equip Opportunity',
+      body: `${selectedLoot.name} is ready for ${selectedDefender.name}. ${selectedLoot.effectText}`
+    };
+  }
+  if (selectedLoot) {
+    return {
+      title: 'Loot Waiting',
+      body: `${selectedLoot.name}: ${selectedLoot.flavorText}`
+    };
+  }
+  if (selectedDefender && selectedDefender.location !== 'board') {
+    return {
+      title: 'Place Defender',
+      body: `Drop ${selectedDefender.name} onto a free build hex to reinforce the sauna line.`
+    };
+  }
+  if (state.phase === 'prep') {
+    return {
+      title: state.currentWave.isBoss ? 'Boss Prep' : 'Prep Window',
+      body: state.currentWave.isBoss
+        ? 'This is the clean break before a boss. Set the board, spend SISU carefully, then start when ready.'
+        : 'Set the board, decide whether to gamble a recruit, and start when your lanes make sense.'
+    };
+  }
+  return {
+    title: state.currentWave.isBoss ? 'Boss Pressure' : 'Hold The Line',
+    body: state.currentWave.isBoss
+      ? 'Keep the center alive, use pause if you need to assign loot, and watch for direct sauna breaches.'
+      : 'Non-boss waves will keep chaining, so stabilize attrition before the next spike arrives.'
+  };
+}
+
+export function createInitialState(
+  content: GameContent,
+  meta: MetaProgress = createDefaultMetaProgress(),
+  seed = 123456789,
+  showIntermission = true
+): RunState {
   const state: RunState = {
     phase: 'prep',
+    overlayMode: showIntermission ? 'intermission' : 'none',
     timeMs: 0,
     waveIndex: 1,
     waveElapsedMs: 0,
@@ -745,13 +816,16 @@ export function createInitialState(content: GameContent, meta: MetaProgress = cr
     nextEnemyInstanceId: 1,
     nextLootInstanceId: 1,
     inventory: [],
+    selectedInventoryDropId: null,
     recentDropId: null,
     sisu: { current: content.config.startingSisu, activeUntilMs: 0, cooldownUntilMs: 0 },
     steamEarned: 0,
     gambleCount: 0,
     saunaHp: content.config.saunaHp,
     meta: clone(meta),
-    message: 'Place defenders, keep one weird hero in the sauna, then start the wave.',
+    message: showIntermission
+      ? 'Spend Steam, browse upgrades, then begin the next sauna shift.'
+      : 'Place defenders, keep one weird hero in the sauna, then start the wave.',
     metaAwarded: false
   };
   state.defenders = buildRoster(state, content);
@@ -760,7 +834,12 @@ export function createInitialState(content: GameContent, meta: MetaProgress = cr
 }
 
 export function applyAction(state: RunState, action: InputAction, content: GameContent): RunState {
-  if (action.type === 'restartRun') return createInitialState(content, state.meta, (Date.now() >>> 0) || 1);
+  if (action.type === 'restartRun') return createInitialState(content, state.meta, (Date.now() >>> 0) || 1, true);
+  if (action.type === 'startNextRun') {
+    return state.overlayMode === 'intermission'
+      ? createInitialState(content, state.meta, (Date.now() >>> 0) || 1, false)
+      : state;
+  }
   const next = clone(state);
 
   switch (action.type) {
@@ -774,10 +853,28 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     case 'clearSelection':
       next.selectedDefenderId = null;
       return next;
+    case 'selectInventoryDrop': {
+      const drop = getInventoryDrop(next, action.dropId);
+      if (!drop) return next;
+      next.selectedInventoryDropId = drop.instanceId;
+      next.message = `${drop.name} ready to equip.`;
+      return next;
+    }
+    case 'clearSelectedInventoryDrop':
+      next.selectedInventoryDropId = null;
+      return next;
     case 'hoverTile':
       next.hoveredTile = action.tile ? { ...action.tile } : null;
       return next;
+    case 'togglePause':
+      if (next.overlayMode === 'intermission' || next.phase !== 'wave') return next;
+      next.overlayMode = next.overlayMode === 'paused' ? 'none' : 'paused';
+      next.message = next.overlayMode === 'paused'
+        ? 'Run paused. Think about loot, then jump back in.'
+        : `Wave ${next.currentWave.index} resumed.`;
+      return next;
     case 'placeSelectedDefender': {
+      if (next.overlayMode === 'intermission') return next;
       const defender = getDefender(next, next.selectedDefenderId);
       if (!defender || (defender.location !== 'ready' && defender.location !== 'sauna')) return next;
       if (!isBuildable(action.tile, content) || occupied(next, action.tile)) {
@@ -797,7 +894,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     }
     case 'recallDefenderToSauna': {
-      if (next.phase !== 'prep' || next.saunaDefenderId) return next;
+      if (next.overlayMode !== 'none' || next.phase !== 'prep' || next.saunaDefenderId) return next;
       const defender = getDefender(next, action.defenderId);
       if (!defender || defender.location !== 'board') return next;
       defender.location = 'sauna';
@@ -807,6 +904,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     }
     case 'activateSisu':
+      if (next.overlayMode !== 'none') return next;
       if (!canUseSisu(next, content)) return next;
       next.sisu.current -= content.config.sisuAbilityCost;
       next.sisu.activeUntilMs = next.timeMs + content.config.sisuDurationMs;
@@ -814,7 +912,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.message = 'SISU activated.';
       return next;
     case 'startWave':
-      if (next.phase !== 'prep' || boardDefenders(next).length === 0) {
+      if (next.overlayMode !== 'none' || next.phase !== 'prep' || boardDefenders(next).length === 0) {
         next.message = 'Place at least one defender first.';
         return next;
       }
@@ -827,7 +925,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       );
       return next;
     case 'gambleRecruit': {
-      if (next.phase !== 'prep') return next;
+      if (next.overlayMode !== 'none' || next.phase !== 'prep') return next;
       const cost = recruitCost(next, content);
       if (next.sisu.current < cost) {
         next.message = 'Not enough SISU for a recruit gamble.';
@@ -865,6 +963,10 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       }
       next.inventory.splice(dropIndex, 1);
       next.recentDropId = next.inventory.length > 0 ? next.inventory[next.inventory.length - 1].instanceId : null;
+      next.selectedInventoryDropId =
+        next.selectedInventoryDropId === drop.instanceId
+          ? next.inventory[0]?.instanceId ?? null
+          : next.selectedInventoryDropId;
       defender.hp += Math.max(0, statsWithItems(defender, content).maxHp - prevMax);
       normalizeDefender(defender, content);
       next.message = `${drop.name} equipped on ${defender.name}.`;
@@ -874,8 +976,10 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.recentDropId = null;
       return next;
     case 'buyMetaUpgrade': {
-      if (next.phase !== 'lost') return next;
-      awardMeta(next);
+      if (next.overlayMode !== 'intermission') return next;
+      if (next.phase === 'lost') {
+        awardMeta(next);
+      }
       const cost = metaCost(next, action.upgradeId, content);
       if (cost === null || next.meta.steam < cost) return next;
       next.meta.steam -= cost;
@@ -890,9 +994,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
 
 export function stepState(state: RunState, deltaMs: number, content: GameContent): RunState {
   if (deltaMs <= 0) return state;
+  if (state.overlayMode !== 'none' || state.phase !== 'wave') return state;
   const next = clone(state);
   next.timeMs += deltaMs;
-  if (next.phase !== 'wave') return next;
   next.waveElapsedMs += deltaMs;
   spawnEnemies(next, content);
   for (const defender of boardDefenders(next)) defenderAttack(next, defender, content);
@@ -902,8 +1006,9 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
   if (next.saunaHp <= 0) {
     next.saunaHp = 0;
     next.phase = 'lost';
+    next.overlayMode = 'intermission';
     awardMeta(next);
-    next.message = 'The sauna went cold. Spend your Steam and restart.';
+    next.message = 'The sauna went cold. Spend Steam, regroup, and prep the next shift.';
     return next;
   }
   if (next.pendingSpawns.length === 0 && next.enemies.length === 0) {
@@ -916,13 +1021,27 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const tiles = createHexGrid(content.config.gridRadius);
   const buildableTiles = tiles.filter((tile) => isBuildable(tile, content));
   const selected = getDefender(state, state.selectedDefenderId);
+  const selectedLoot = getInventoryDrop(state, state.selectedInventoryDropId);
   const currentWave = state.currentWave;
   const activeMs = Math.max(0, state.sisu.activeUntilMs - state.timeMs);
   const cdMs = Math.max(0, state.sisu.cooldownUntilMs - state.timeMs);
   const saunaDefender = getDefender(state, state.saunaDefenderId);
+  const action = actionCopy(state);
   const hud: HudViewModel = {
-    phaseLabel: state.phase === 'prep' ? 'Valmistelu' : state.phase === 'wave' ? 'Aalto kaynnissa' : 'Run ohi',
+    phaseLabel:
+      state.overlayMode === 'intermission'
+        ? 'Intermission'
+        : state.overlayMode === 'paused'
+          ? 'Paused'
+          : state.phase === 'prep'
+            ? 'Valmistelu'
+            : state.phase === 'wave'
+              ? 'Aalto kaynnissa'
+              : 'Run ohi',
     statusText: state.message,
+    overlayMode: state.overlayMode,
+    isPaused: state.overlayMode === 'paused',
+    showIntermission: state.overlayMode === 'intermission',
     waveNumber: currentWave.index,
     enemiesRemaining: state.pendingSpawns.length + state.enemies.length,
     isBossWave: currentWave.isBoss,
@@ -939,11 +1058,15 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     saunaHp: state.saunaHp,
     maxSaunaHp: content.config.saunaHp,
     sisu: state.sisu.current,
-    canUseSisu: canUseSisu(state, content),
+    canUseSisu: state.overlayMode === 'none' && canUseSisu(state, content),
     sisuLabel: activeMs > 0 ? `SISU active ${Math.ceil(activeMs / 1000)} s` : cdMs > 0 ? `SISU cooldown ${Math.ceil(cdMs / 1000)} s` : `SISU ready (${content.config.sisuAbilityCost})`,
+    canPause: state.phase === 'wave',
     recruitCost: recruitCost(state, content),
-    canRecruit: state.phase === 'prep' && state.sisu.current >= recruitCost(state, content) && livingDefenders(state).length < rosterCap(state, content),
-    steamEarned: state.phase === 'lost' ? state.meta.steam : state.steamEarned,
+    canRecruit: state.overlayMode === 'none' && state.phase === 'prep' && state.sisu.current >= recruitCost(state, content) && livingDefenders(state).length < rosterCap(state, content),
+    steamEarned: state.steamEarned,
+    bankedSteam: state.meta.steam,
+    actionTitle: action.title,
+    actionBody: action.body,
     rosterEntries: [...state.defenders].sort((left, right) => {
       const order: Record<DefenderLocation, number> = { board: 0, sauna: 1, ready: 2, dead: 3 };
       return (order[left.location] - order[right.location]) || left.name.localeCompare(right.name);
@@ -963,14 +1086,30 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       kind: drop.kind,
       name: drop.name,
       rarity: drop.rarity,
-      description: drop.description,
+      effectText: drop.effectText,
+      flavorText: drop.flavorText,
+      artPath: drop.artPath,
       waveFound: drop.waveFound,
-      isRecent: drop.instanceId === state.recentDropId
+      isRecent: drop.instanceId === state.recentDropId,
+      selected: drop.instanceId === state.selectedInventoryDropId
     })),
+    selectedInventoryEntry: selectedLoot ? {
+      id: selectedLoot.instanceId,
+      kind: selectedLoot.kind,
+      name: selectedLoot.name,
+      rarity: selectedLoot.rarity,
+      effectText: selectedLoot.effectText,
+      flavorText: selectedLoot.flavorText,
+      artPath: selectedLoot.artPath,
+      waveFound: selectedLoot.waveFound,
+      isRecent: selectedLoot.instanceId === state.recentDropId,
+      selected: true
+    } : null,
     selectedDefender: selected ? {
       id: selected.id,
       name: selected.name,
       title: selected.title,
+      lore: selected.lore,
       templateName: content.defenderTemplates[selected.templateId].name,
       hp: selected.hp,
       maxHp: statsWithItems(selected, content).maxHp,

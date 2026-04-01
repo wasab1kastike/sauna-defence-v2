@@ -10,6 +10,10 @@ function formatRarity(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function assetUrl(path: string) {
+  return `${import.meta.env.BASE_URL}${path}`;
+}
+
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const runtimeRef = useRef<GameRuntime | null>(null);
@@ -84,82 +88,62 @@ export function App() {
     runtime.dispatch({ type: 'placeSelectedDefender', tile });
   };
 
-  const selectedDefender = snapshot?.hud.selectedDefender;
+  const selectedDefender = snapshot?.hud.selectedDefender ?? null;
+  const selectedLoot = snapshot?.hud.selectedInventoryEntry ?? null;
+  const isIntermission = snapshot?.hud.showIntermission ?? false;
+  const isPaused = snapshot?.hud.isPaused ?? false;
 
   return (
     <main className="shell">
-      <section className="hero">
+      <section className="hero compact-hero">
         <div className="hero-copy">
           <p className="eyebrow">Sauna Defense V2</p>
-          <h1>Draft a cursed sauna crew and survive the endless waves.</h1>
+          <h1>Pause, loot, regroup, then throw the next weird hero into the heat.</h1>
           <p className="lede">
-            Every run builds a tiny named roster with oddball stats, random token looks, loot drops and
-            a small meta loop. Keep the sauna burning, rotate one hero through the heat and gamble SISU
-            when the roster starts to fall apart.
+            Survive chain waves, freeze combat when loot decisions matter, and spend Steam only between
+            runs while the next cursed sauna crew waits outside.
           </p>
-          <div className="hero-pills">
-            <span className="hero-pill">10 hero tokens</span>
-            <span className="hero-pill">5 enemy token families</span>
-            <span className="hero-pill">Boss every 5th wave</span>
-          </div>
         </div>
         <div className="status-card">
-          <span>Live Build</span>
-          <strong>Endless roster run</strong>
-          <small>{snapshot?.hud.isBossWave ? 'Boss pressure incoming' : 'Regular wave cadence'}</small>
+          <span>Run Mode</span>
+          <strong>
+            {isIntermission ? 'Intermission' : isPaused ? 'Paused' : snapshot?.hud.isBossWave ? 'Boss pressure' : 'Live combat'}
+          </strong>
+          <small>{snapshot?.hud.nextWavePattern ?? 'Booting sauna logic'}</small>
         </div>
       </section>
 
       <section className="playfield">
         <div className="arena-column">
-          <section className="panel inventory-panel">
+          <section className="panel loot-dock">
             <div className="panel-head">
-              <h2>Loot Inventory</h2>
-              <span>{snapshot?.hud.inventoryCount ?? 0} stored</span>
+              <h2>Loot Dock</h2>
+              <span>{snapshot?.hud.inventoryCount ?? 0}/{snapshot?.hud.inventoryCap ?? 0}</span>
             </div>
             {snapshot && snapshot.hud.inventoryEntries.length > 0 ? (
-              <div className="inventory-grid">
+              <div className="loot-grid">
                 {snapshot.hud.inventoryEntries.map((entry) => (
-                  <div key={entry.id} className={entry.isRecent ? 'inventory-card recent' : 'inventory-card'}>
-                    <div>
-                      <strong>
-                        {entry.name} · {formatRarity(entry.rarity)}
-                      </strong>
-                      <small>
-                        {entry.kind} from wave {entry.waveFound}
-                      </small>
-                      <small>{entry.description}</small>
-                    </div>
-                    <div className="button-row tight">
-                      <button
-                        className="mini-button"
-                        disabled={!selectedDefender}
-                        onClick={() =>
-                          selectedDefender &&
-                          runtimeRef.current?.dispatch({
-                            type: 'equipInventoryDrop',
-                            dropId: entry.id,
-                            defenderId: selectedDefender.id
-                          })
-                        }
-                      >
-                        Equip To Selected
-                      </button>
-                      {entry.isRecent ? (
-                        <button
-                          className="mini-button ghostish"
-                          onClick={() => runtimeRef.current?.dispatch({ type: 'dismissRecentDrop' })}
-                        >
-                          Clear Ping
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
+                  <button
+                    key={entry.id}
+                    className={entry.selected ? 'loot-card selected' : 'loot-card'}
+                    onClick={() =>
+                      runtimeRef.current?.dispatch(
+                        entry.selected
+                          ? { type: 'clearSelectedInventoryDrop' }
+                          : { type: 'selectInventoryDrop', dropId: entry.id }
+                      )
+                    }
+                  >
+                    <img src={assetUrl(entry.artPath)} alt={entry.name} className="loot-art" />
+                    <span className="loot-name">{entry.name}</span>
+                    <small>{formatRarity(entry.rarity)}</small>
+                    {entry.isRecent ? <span className="loot-ping">New</span> : null}
+                  </button>
                 ))}
               </div>
             ) : (
               <p className="panel-copy">
-                Drops auto-pick up here. Equip them immediately or save them for later.
+                No loot waiting. New drops land here, and pause lets you think before equipping them.
               </p>
             )}
           </section>
@@ -175,15 +159,21 @@ export function App() {
           </div>
         </div>
 
-        <aside className="sidebar">
+        <aside className="sidebar action-rail">
           {snapshot ? (
             <>
-              <section className="panel">
+              <section className="panel run-panel">
                 <div className="panel-head">
-                  <h2>Run Status</h2>
-                  <span>{snapshot.hud.phaseLabel}</span>
+                  <h2>Run Header</h2>
+                  <button
+                    className={isPaused ? 'secondary-button' : 'ghost-button'}
+                    disabled={!snapshot.hud.canPause}
+                    onClick={() => runtimeRef.current?.dispatch({ type: 'togglePause' })}
+                  >
+                    {isPaused ? 'Resume' : 'Pause'}
+                  </button>
                 </div>
-                <div className="metric-grid">
+                <div className="metric-grid compact">
                   <div>
                     <span>Wave</span>
                     <strong>{snapshot.hud.waveNumber}</strong>
@@ -198,61 +188,62 @@ export function App() {
                   </div>
                   <div>
                     <span>Sauna HP</span>
-                    <strong>
-                      {snapshot.hud.saunaHp}/{snapshot.hud.maxSaunaHp}
-                    </strong>
+                    <strong>{snapshot.hud.saunaHp}/{snapshot.hud.maxSaunaHp}</strong>
                   </div>
                 </div>
-                <div className="metric-grid compact">
-                  <div>
-                    <span>Board</span>
-                    <strong>
-                      {snapshot.hud.boardCount}/{snapshot.hud.boardCap}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Roster</span>
-                    <strong>
-                      {snapshot.hud.rosterCount}/{snapshot.hud.rosterCap}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Inventory</span>
-                    <strong>
-                      {snapshot.hud.inventoryCount}/{snapshot.hud.inventoryCap}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Enemies</span>
-                    <strong>{snapshot.hud.enemiesRemaining}</strong>
-                  </div>
+                <div className="tag-row">
+                  <span className="tag">{snapshot.hud.nextWaveThreat}</span>
+                  <span className="tag">{snapshot.hud.nextWavePattern}</span>
+                  {snapshot.hud.pressureSignals.map((signal) => (
+                    <span key={signal} className="tag warning-tag">{signal}</span>
+                  ))}
                 </div>
-                <p className="panel-copy">{snapshot.hud.statusText}</p>
-                <p className="panel-copy muted-line status-accent">
-                  Sauna slot: {snapshot.hud.saunaOccupantName ?? 'Empty'}
-                </p>
-                <p className="panel-copy small-copy">
-                  Non-boss waves now chain automatically. You can still drop new defenders onto the board
-                  mid-wave.
-                </p>
-                {snapshot.hud.pressureSignals.length > 0 ? (
-                  <ul className="signal-list">
-                    {snapshot.hud.pressureSignals.map((signal) => (
-                      <li key={signal}>{signal}</li>
-                    ))}
-                  </ul>
-                ) : null}
               </section>
 
-              <section className="panel">
+              <section className="panel action-panel">
                 <div className="panel-head">
-                  <h2>Commands</h2>
-                  <span>{snapshot.hud.sisuLabel}</span>
+                  <h2>{snapshot.hud.actionTitle}</h2>
+                  <span>{snapshot.hud.phaseLabel}</span>
                 </div>
+                <p className="panel-copy">{snapshot.hud.actionBody}</p>
+                {selectedLoot ? (
+                  <div className="detail-card loot-detail">
+                    <img src={assetUrl(selectedLoot.artPath)} alt={selectedLoot.name} className="detail-art" />
+                    <div className="detail-copy">
+                      <strong>
+                        {selectedLoot.name} · {formatRarity(selectedLoot.rarity)}
+                      </strong>
+                      <p className="panel-copy flavor-copy">{selectedLoot.flavorText}</p>
+                      <p className="panel-copy small-copy">{selectedLoot.effectText}</p>
+                    </div>
+                    <div className="button-row">
+                      <button
+                        className="mini-button"
+                        disabled={!selectedDefender}
+                        onClick={() =>
+                          selectedDefender &&
+                          runtimeRef.current?.dispatch({
+                            type: 'equipInventoryDrop',
+                            dropId: selectedLoot.id,
+                            defenderId: selectedDefender.id
+                          })
+                        }
+                      >
+                        Equip To Selected
+                      </button>
+                      <button
+                        className="ghost-button"
+                        onClick={() => runtimeRef.current?.dispatch({ type: 'clearSelectedInventoryDrop' })}
+                      >
+                        Close Loot
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="button-stack">
                   <button
                     className="primary-button"
-                    disabled={snapshot.state.phase !== 'prep' || snapshot.hud.boardCount === 0}
+                    disabled={snapshot.state.phase !== 'prep' || snapshot.hud.boardCount === 0 || isIntermission}
                     onClick={() => runtimeRef.current?.dispatch({ type: 'startWave' })}
                   >
                     Start Wave
@@ -271,68 +262,33 @@ export function App() {
                   >
                     Gamble Recruit ({snapshot.hud.recruitCost} SISU)
                   </button>
-                </div>
-                <button
-                  className="ghost-button"
-                  onClick={() => runtimeRef.current?.dispatch({ type: 'restartRun' })}
-                >
-                  Start Fresh Run
-                </button>
-              </section>
-
-              <section className="panel">
-                <div className="panel-head">
-                  <h2>Roster</h2>
-                  <span>4 board + 1 sauna</span>
-                </div>
-                <div className="button-stack roster-stack">
-                  {snapshot.hud.rosterEntries.map((entry) => (
-                    <div key={entry.id} className={entry.selected ? 'roster-card selected' : 'roster-card'}>
-                      <button
-                        className="unit-button"
-                        onClick={() => runtimeRef.current?.dispatch({ type: 'selectDefender', defenderId: entry.id })}
-                      >
-                        <span>
-                          {entry.name} <em>{entry.title}</em>
-                        </span>
-                        <small>{entry.templateName}</small>
-                        <small>{entry.summary}</small>
-                        <small>
-                          HP {entry.hp}/{entry.maxHp}
-                        </small>
-                      </button>
-                      {entry.location === 'board' && snapshot.state.phase === 'prep' && !snapshot.state.saunaDefenderId ? (
-                        <button
-                          className="mini-button"
-                          onClick={() =>
-                            runtimeRef.current?.dispatch({ type: 'recallDefenderToSauna', defenderId: entry.id })
-                          }
-                        >
-                          Send To Sauna
-                        </button>
-                      ) : null}
-                    </div>
-                  ))}
+                  <button
+                    className="ghost-button"
+                    onClick={() => runtimeRef.current?.dispatch({ type: 'restartRun' })}
+                  >
+                    Reset To Shop
+                  </button>
                 </div>
               </section>
 
-              <section className="panel">
+              <section className="panel selected-panel">
                 <div className="panel-head">
-                  <h2>Selected</h2>
+                  <h2>Selected Hero</h2>
                   <span>{selectedDefender ? selectedDefender.location : 'No hero selected'}</span>
                 </div>
                 {selectedDefender ? (
-                  <div className="selected-card">
-                    <strong>
-                      {selectedDefender.name} <em>{selectedDefender.title}</em>
-                    </strong>
-                    <p className="panel-copy">{selectedDefender.templateName}</p>
+                  <div className="detail-card hero-detail">
+                    <div className="detail-copy">
+                      <strong>
+                        {selectedDefender.name} <em>{selectedDefender.title}</em>
+                      </strong>
+                      <small>{selectedDefender.templateName}</small>
+                      <p className="panel-copy flavor-copy">{selectedDefender.lore}</p>
+                    </div>
                     <div className="metric-grid compact">
                       <div>
                         <span>HP</span>
-                        <strong>
-                          {selectedDefender.hp}/{selectedDefender.maxHp}
-                        </strong>
+                        <strong>{selectedDefender.hp}/{selectedDefender.maxHp}</strong>
                       </div>
                       <div>
                         <span>ATK</span>
@@ -365,20 +321,52 @@ export function App() {
                         <li>Empty loadout</li>
                       ) : null}
                     </ul>
+                    {selectedDefender.location === 'board' && snapshot.state.phase === 'prep' && !snapshot.state.saunaDefenderId ? (
+                      <button
+                        className="mini-button"
+                        onClick={() =>
+                          runtimeRef.current?.dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })
+                        }
+                      >
+                        Send To Sauna
+                      </button>
+                    ) : null}
                   </div>
                 ) : (
-                  <p className="panel-copy">Select a defender to place them, equip loot or send them to the sauna.</p>
+                  <p className="panel-copy">
+                    Pick a hero to inspect their stats, lore, loadout and sauna actions.
+                  </p>
                 )}
+              </section>
+
+              <section className="panel">
+                <div className="panel-head">
+                  <h2>Roster</h2>
+                  <span>{snapshot.hud.rosterCount}/{snapshot.hud.rosterCap}</span>
+                </div>
+                <div className="button-stack roster-stack">
+                  {snapshot.hud.rosterEntries.map((entry) => (
+                    <div key={entry.id} className={entry.selected ? 'roster-card selected' : 'roster-card'}>
+                      <button
+                        className="unit-button"
+                        onClick={() => runtimeRef.current?.dispatch({ type: 'selectDefender', defenderId: entry.id })}
+                      >
+                        <span>
+                          {entry.name} <em>{entry.title}</em>
+                        </span>
+                        <small>{entry.templateName}</small>
+                        <small>{entry.summary}</small>
+                        <small>HP {entry.hp}/{entry.maxHp}</small>
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </section>
 
               <section className="panel">
                 <div className="panel-head">
                   <h2>Next Wave</h2>
                   <span>{snapshot.hud.isBossWave ? 'Boss' : 'Forecast'}</span>
-                </div>
-                <div className="tag-row">
-                  <span className="tag">{snapshot.hud.nextWaveThreat}</span>
-                  <span className="tag">{snapshot.hud.nextWavePattern}</span>
                 </div>
                 <ul className="wave-list">
                   {snapshot.hud.wavePreview.map((entry) => (
@@ -389,38 +377,6 @@ export function App() {
                   ))}
                 </ul>
               </section>
-
-              {snapshot.state.phase === 'lost' ? (
-                <section className="panel meta-panel">
-                  <div className="panel-head">
-                    <h2>Meta Shop</h2>
-                    <span>{snapshot.state.meta.steam} Steam banked</span>
-                  </div>
-                  <div className="button-stack">
-                    {snapshot.hud.metaUpgrades.map((upgrade) => (
-                      <div key={upgrade.id} className="inventory-card">
-                        <div>
-                          <strong>{upgrade.name}</strong>
-                          <small>{upgrade.description}</small>
-                          <small>
-                            Level {upgrade.level}
-                            {upgrade.maxed ? ' · MAX' : ` · Cost ${upgrade.cost}`}
-                          </small>
-                        </div>
-                        <button
-                          className="mini-button"
-                          disabled={!upgrade.affordable || upgrade.maxed}
-                          onClick={() =>
-                            runtimeRef.current?.dispatch({ type: 'buyMetaUpgrade', upgradeId: upgrade.id })
-                          }
-                        >
-                          Buy Upgrade
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
             </>
           ) : (
             <section className="panel">
@@ -430,6 +386,51 @@ export function App() {
           )}
         </aside>
       </section>
+
+      {snapshot && isIntermission ? (
+        <div className="overlay-shell">
+          <section className="overlay-card">
+            <div className="panel-head">
+              <h2>{snapshot.state.phase === 'lost' ? 'Steam Intermission' : 'Before The First Heat'}</h2>
+              <span>{snapshot.hud.bankedSteam} Steam banked</span>
+            </div>
+            <p className="panel-copy">
+              {snapshot.state.phase === 'lost'
+                ? 'The last shift ended in steam and regret. Spend what you banked, then start the next run stronger.'
+                : 'Metashop stays between runs only. Take a quick look, then step into wave one when you are ready.'}
+            </p>
+            <div className="intermission-grid">
+              {snapshot.hud.metaUpgrades.map((upgrade) => (
+                <div key={upgrade.id} className="inventory-card">
+                  <div>
+                    <strong>{upgrade.name}</strong>
+                    <small>{upgrade.description}</small>
+                    <small>
+                      Level {upgrade.level}
+                      {upgrade.maxed ? ' · MAX' : ` · Cost ${upgrade.cost}`}
+                    </small>
+                  </div>
+                  <button
+                    className="mini-button"
+                    disabled={!upgrade.affordable || upgrade.maxed}
+                    onClick={() => runtimeRef.current?.dispatch({ type: 'buyMetaUpgrade', upgradeId: upgrade.id })}
+                  >
+                    Buy Upgrade
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="button-row intermission-actions">
+              <button
+                className="primary-button"
+                onClick={() => runtimeRef.current?.dispatch({ type: 'startNextRun' })}
+              >
+                {snapshot.state.phase === 'lost' ? 'Start Next Run' : 'Enter The Run'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
