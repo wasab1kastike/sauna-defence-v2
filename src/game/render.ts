@@ -136,6 +136,112 @@ function drawTile(
   ctx.stroke();
 }
 
+function coordNoise(tile: AxialCoord) {
+  const value = Math.sin(tile.q * 127.1 + tile.r * 311.7 + (tile.q + tile.r) * 74.7) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function drawTreeCluster(ctx: CanvasRenderingContext2D, center: { x: number; y: number }, size: number, seed: number) {
+  const trunkY = center.y + size * 0.16;
+  const offset = (seed - 0.5) * size * 0.18;
+  ctx.save();
+  ctx.fillStyle = 'rgba(57, 39, 21, 0.7)';
+  ctx.fillRect(center.x - size * 0.05 + offset, trunkY, size * 0.1, size * 0.22);
+  ctx.fillStyle = 'rgba(46, 94, 70, 0.88)';
+  ctx.beginPath();
+  ctx.arc(center.x + offset, center.y - size * 0.04, size * 0.18, 0, Math.PI * 2);
+  ctx.arc(center.x - size * 0.11 + offset, center.y + size * 0.02, size * 0.12, 0, Math.PI * 2);
+  ctx.arc(center.x + size * 0.12 + offset, center.y + size * 0.04, size * 0.11, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawStoneCluster(ctx: CanvasRenderingContext2D, center: { x: number; y: number }, size: number, seed: number) {
+  const offset = (seed - 0.5) * size * 0.26;
+  ctx.save();
+  ctx.fillStyle = 'rgba(121, 136, 140, 0.46)';
+  ctx.beginPath();
+  ctx.ellipse(center.x - size * 0.08 + offset, center.y + size * 0.14, size * 0.11, size * 0.07, 0.2, 0, Math.PI * 2);
+  ctx.ellipse(center.x + size * 0.08 + offset, center.y + size * 0.17, size * 0.09, size * 0.06, -0.15, 0, Math.PI * 2);
+  ctx.ellipse(center.x + offset, center.y + size * 0.08, size * 0.08, size * 0.05, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawGrassTufts(ctx: CanvasRenderingContext2D, center: { x: number; y: number }, size: number, seed: number) {
+  const offset = (seed - 0.5) * size * 0.22;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(128, 175, 116, 0.34)';
+  ctx.lineWidth = Math.max(1, size * 0.05);
+  ctx.beginPath();
+  ctx.moveTo(center.x - size * 0.12 + offset, center.y + size * 0.2);
+  ctx.lineTo(center.x - size * 0.07 + offset, center.y + size * 0.05);
+  ctx.moveTo(center.x - size * 0.02 + offset, center.y + size * 0.2);
+  ctx.lineTo(center.x + offset, center.y + size * 0.02);
+  ctx.moveTo(center.x + size * 0.08 + offset, center.y + size * 0.18);
+  ctx.lineTo(center.x + size * 0.09 + offset, center.y + size * 0.04);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawRiverMark(ctx: CanvasRenderingContext2D, center: { x: number; y: number }, size: number, tile: AxialCoord) {
+  const angle = (tile.q - tile.r) * 0.12;
+  ctx.save();
+  ctx.translate(center.x, center.y);
+  ctx.rotate(angle);
+  ctx.strokeStyle = 'rgba(88, 185, 215, 0.48)';
+  ctx.lineWidth = Math.max(1.5, size * 0.08);
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.34, size * 0.12);
+  ctx.bezierCurveTo(-size * 0.16, -size * 0.14, size * 0.08, 0, size * 0.3, -size * 0.16);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(192, 245, 255, 0.18)';
+  ctx.lineWidth = Math.max(1, size * 0.04);
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.28, size * 0.08);
+  ctx.bezierCurveTo(-size * 0.1, -size * 0.08, size * 0.12, 0.02, size * 0.24, -size * 0.1);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawTileDecoration(
+  ctx: CanvasRenderingContext2D,
+  tile: AxialCoord,
+  center: { x: number; y: number },
+  size: number,
+  buildable: boolean,
+  spawn: boolean
+) {
+  const distance = hexDistance(tile, { q: 0, r: 0 });
+  const seed = coordNoise(tile);
+
+  if (spawn) {
+    drawStoneCluster(ctx, center, size, seed);
+    return;
+  }
+
+  if (buildable) {
+    if (seed > 0.58) {
+      drawGrassTufts(ctx, center, size, seed);
+    }
+    return;
+  }
+
+  if (distance >= 5 && Math.abs(tile.q + tile.r) <= 1) {
+    drawRiverMark(ctx, center, size, tile);
+    return;
+  }
+
+  if (seed > 0.66) {
+    drawTreeCluster(ctx, center, size, seed);
+    return;
+  }
+
+  if (seed > 0.34) {
+    drawStoneCluster(ctx, center, size, seed);
+  }
+}
+
 function drawHealthBar(
   ctx: CanvasRenderingContext2D,
   center: { x: number; y: number },
@@ -620,14 +726,16 @@ export function paintSnapshot(
     const center = axialToPixel(tile, layout);
     const key = coordKey(tile);
     const distance = hexDistance(tile, { q: 0, r: 0 });
+    const isSpawn = spawnSet.has(key);
+    const isBuildable = buildableSet.has(key);
     let fill = distance === 0 ? 'rgba(54, 94, 96, 0.92)' : 'rgba(27, 49, 54, 0.92)';
     let stroke = 'rgba(154, 219, 214, 0.12)';
     let lineWidth = 1;
 
-    if (spawnSet.has(key)) {
+    if (isSpawn) {
       fill = 'rgba(109, 43, 48, 0.94)';
       stroke = 'rgba(246, 139, 117, 0.34)';
-    } else if (buildableSet.has(key)) {
+    } else if (isBuildable) {
       fill = placementMode
         ? 'rgba(42, 108, 76, 0.96)'
         : snapshot.state.phase === 'prep'
@@ -637,16 +745,19 @@ export function paintSnapshot(
     }
 
     if (hoverKey === key) {
-      fill = buildableSet.has(key)
+      fill = isBuildable
         ? placementMode
           ? 'rgba(72, 171, 113, 0.98)'
           : 'rgba(171, 117, 58, 0.98)'
         : 'rgba(75, 92, 89, 0.96)';
-      stroke = buildableSet.has(key) && placementMode ? 'rgba(230, 255, 238, 0.92)' : 'rgba(231, 255, 250, 0.82)';
+      stroke = isBuildable && placementMode ? 'rgba(230, 255, 238, 0.92)' : 'rgba(231, 255, 250, 0.82)';
       lineWidth = 2.2;
     }
 
     drawTile(ctx, center, layout.hexSize - 1.5, fill, stroke, lineWidth);
+    if (distance > 0) {
+      drawTileDecoration(ctx, tile, center, layout.hexSize - 1.5, isBuildable, isSpawn);
+    }
   }
 
   const saunaCenter = axialToPixel({ q: 0, r: 0 }, layout);
