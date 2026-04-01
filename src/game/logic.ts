@@ -1,5 +1,6 @@
 import type {
   AxialCoord,
+  BossCategory,
   DefenderInstance,
   DefenderLocation,
   DefenderTemplateId,
@@ -17,6 +18,7 @@ import type {
   SkillId,
   UnitStats,
   WaveDefinition,
+  WavePattern,
   WavePreviewEntry,
   WaveSpawn
 } from './types';
@@ -37,6 +39,12 @@ const META_IDS: MetaUpgradeId[] = [
   'loot_luck',
   'loot_rarity',
   'item_slots'
+];
+const NON_BOSS_PATTERNS: Array<Exclude<WavePattern, 'tutorial' | 'boss_pressure' | 'boss_breach'>> = [
+  'split',
+  'staggered',
+  'spearhead',
+  'surge'
 ];
 const CENTER: AxialCoord = { q: 0, r: 0 };
 
@@ -200,17 +208,166 @@ function buildRoster(state: RunState, content: GameContent): DefenderInstance[] 
   return defenders;
 }
 
-function wave(index: number, content: GameContent): WaveDefinition {
+function wrapLane(index: number, laneCount: number): number {
+  return ((index % laneCount) + laneCount) % laneCount;
+}
+
+function cycleNumber(index: number, content: GameContent): number {
+  return Math.floor((index - 1) / content.config.bossEvery);
+}
+
+function slotInCycle(index: number, content: GameContent): number {
+  return ((index - 1) % content.config.bossEvery) + 1;
+}
+
+function spawnIntervalMs(index: number, content: GameContent, modifier = 0): number {
+  const cycle = cycleNumber(index, content);
+  const slot = slotInCycle(index, content);
+  return Math.max(
+    content.config.minSpawnIntervalMs,
+    920 - cycle * content.config.spawnIntervalStepMs - slot * 32 + modifier
+  );
+}
+
+function wavePressure(index: number, content: GameContent, isBoss: boolean): number {
+  if (index === 1) return 4;
+  if (index === 2) return 6;
+  if (index === 3) return 9;
+  if (index === 4) return 11;
+
+  const cycle = cycleNumber(index, content);
+  const slot = slotInCycle(index, content);
+  const basePressure =
+    content.config.cyclePressureBase +
+    cycle * content.config.cyclePressureStep +
+    Math.max(0, slot - 1) * content.config.wavePressureStep;
+  return isBoss ? basePressure + 7 + cycle * 2 : basePressure;
+}
+
+function rewardSisuForWave(index: number, pressure: number, isBoss: boolean, content: GameContent): number {
+  if (isBoss) {
+    return 5 + cycleNumber(index, content);
+  }
+  return Math.max(2, 2 + Math.floor(index / 5) + (pressure >= 14 ? 1 : 0));
+}
+
+function pushSpawn(spawns: WaveSpawn[], atMs: number, enemyId: EnemyUnitId, laneIndex: number, laneCount: number): number {
+  spawns.push({
+    atMs: Math.max(0, Math.round(atMs)),
+    enemyId,
+    laneIndex: wrapLane(laneIndex, laneCount)
+  });
+  return atMs;
+}
+
+function compositionForPressure(pressure: number, cycle: number, favorBrutes: number): EnemyUnitId[] {
+  const result: EnemyUnitId[] = [];
+  let remaining = pressure;
+  let brutesLeft = Math.max(0, Math.min(1 + cycle, Math.floor((pressure - 4) / 4) + favorBrutes));
+
+  while (remaining > 0) {
+    if (remaining >= 4 && brutesLeft > 0) {
+      result.push('brute');
+      remaining -= 4;
+      brutesLeft -= 1;
+      continue;
+    }
+    result.push('raider');
+    remaining -= 2;
+  }
+
+  if (result.length < 3) {
+    result.push('raider');
+  }
+
+  return result;
+}
+
+function buildPatternSpawns(
+  pattern: Exclude<WavePattern, 'tutorial' | 'boss_pressure' | 'boss_breach'>,
+  index: number,
+  content: GameContent,
+  pressure: number
+): WaveSpawn[] {
+  const laneCount = content.config.spawnLanes.length;
+  const baseLane = wrapLane(index + cycleNumber(index, content), laneCount);
+  const altLane = wrapLane(baseLane + 3, laneCount);
+  const supportLane = wrapLane(baseLane + 2, laneCount);
+  const flankLane = wrapLane(baseLane + 1, laneCount);
+  const interval = spawnIntervalMs(index, content, pattern === 'surge' ? -70 : pattern === 'staggered' ? 35 : 0);
+  const cycle = cycleNumber(index, content);
+  const enemies =
+    pattern === 'surge'
+      ? compositionForPressure(pressure + 2, cycle, 0)
+      : pattern === 'spearhead'
+        ? compositionForPressure(pressure, cycle, 1)
+        : compositionForPressure(pressure, cycle, 0);
+  const spawns: WaveSpawn[] = [];
+  let atMs = 0;
+
+  enemies.forEach((enemyId, spawnIndex) => {
+    let laneIndex = baseLane;
+    if (pattern === 'split') {
+      laneIndex = spawnIndex % 2 === 0 ? baseLane : altLane;
+    } else if (pattern === 'staggered') {
+      laneIndex = spawnIndex < 2 ? baseLane : spawnIndex % 2 === 0 ? supportLane : altLane;
+      atMs += spawnIndex === 2 ? interval * 0.8 : 0;
+    } else if (pattern === 'spearhead') {
+      laneIndex = spawnIndex === 0 || enemyId === 'brute' ? baseLane : spawnIndex % 2 === 0 ? flankLane : supportLane;
+    } else if (pattern === 'surge') {
+      const surgeLanes = [baseLane, flankLane, altLane];
+      laneIndex = surgeLanes[spawnIndex % surgeLanes.length];
+    }
+
+    pushSpawn(spawns, atMs, enemyId, laneIndex, laneCount);
+    atMs += interval;
+  });
+
+  return spawns;
+}
+
+function buildBossSpawns(index: number, content: GameContent, pressure: number, bossCategory: BossCategory): WaveSpawn[] {
+  const laneCount = content.config.spawnLanes.length;
+  const baseLane = wrapLane(index + cycleNumber(index, content) * 2, laneCount);
+  const sideA = wrapLane(baseLane + 2, laneCount);
+  const sideB = wrapLane(baseLane + 4, laneCount);
+  const interval = spawnIntervalMs(index, content, bossCategory === 'breach' ? -110 : -40);
+  const cycle = cycleNumber(index, content);
+  const supportWave = compositionForPressure(Math.max(8, pressure - 8), cycle + 1, bossCategory === 'pressure' ? 1 : 0);
+  const spawns: WaveSpawn[] = [];
+
+  if (bossCategory === 'pressure') {
+    pushSpawn(spawns, 0, 'chieftain', baseLane, laneCount);
+    supportWave.forEach((enemyId, spawnIndex) => {
+      const laneIndex = spawnIndex % 2 === 0 ? sideA : sideB;
+      pushSpawn(spawns, 650 + spawnIndex * interval, enemyId, laneIndex, laneCount);
+    });
+    pushSpawn(spawns, 900 + supportWave.length * interval, 'brute', baseLane, laneCount);
+  } else {
+    pushSpawn(spawns, 0, 'brute', baseLane, laneCount);
+    pushSpawn(spawns, interval * 0.7, 'raider', baseLane, laneCount);
+    pushSpawn(spawns, interval * 1.4, 'chieftain', baseLane, laneCount);
+    supportWave.forEach((enemyId, spawnIndex) => {
+      const laneIndex = spawnIndex % 2 === 0 ? wrapLane(baseLane + 1, laneCount) : baseLane;
+      pushSpawn(spawns, 1100 + spawnIndex * interval * 0.9, enemyId, laneIndex, laneCount);
+    });
+    pushSpawn(spawns, 1250 + supportWave.length * interval, 'brute', wrapLane(baseLane - 1, laneCount), laneCount);
+  }
+
+  return spawns.sort((left, right) => left.atMs - right.atMs);
+}
+
+export function createWaveDefinition(index: number, content: GameContent): WaveDefinition {
   const isBoss = index % content.config.bossEvery === 0;
   if (index === 1) {
-    return { index, isBoss: false, rewardSisu: 3, spawns: [
+    return { index, isBoss: false, rewardSisu: 3, pressure: 4, pattern: 'tutorial', bossCategory: null, spawns: [
       { atMs: 0, enemyId: 'raider', laneIndex: 0 },
       { atMs: 1100, enemyId: 'raider', laneIndex: 2 },
       { atMs: 2300, enemyId: 'raider', laneIndex: 4 }
     ] };
   }
   if (index === 2) {
-    return { index, isBoss: false, rewardSisu: 3, spawns: [
+    return { index, isBoss: false, rewardSisu: 3, pressure: 6, pattern: 'tutorial', bossCategory: null, spawns: [
       { atMs: 0, enemyId: 'raider', laneIndex: 0 },
       { atMs: 800, enemyId: 'raider', laneIndex: 3 },
       { atMs: 1700, enemyId: 'brute', laneIndex: 1 },
@@ -218,7 +375,7 @@ function wave(index: number, content: GameContent): WaveDefinition {
     ] };
   }
   if (index === 3) {
-    return { index, isBoss: false, rewardSisu: 4, spawns: [
+    return { index, isBoss: false, rewardSisu: 3, pressure: 9, pattern: 'split', bossCategory: null, spawns: [
       { atMs: 0, enemyId: 'brute', laneIndex: 0 },
       { atMs: 900, enemyId: 'raider', laneIndex: 2 },
       { atMs: 1600, enemyId: 'raider', laneIndex: 4 },
@@ -226,7 +383,7 @@ function wave(index: number, content: GameContent): WaveDefinition {
     ] };
   }
   if (index === 4) {
-    return { index, isBoss: false, rewardSisu: 4, spawns: [
+    return { index, isBoss: false, rewardSisu: 3, pressure: 11, pattern: 'staggered', bossCategory: null, spawns: [
       { atMs: 0, enemyId: 'raider', laneIndex: 0 },
       { atMs: 700, enemyId: 'raider', laneIndex: 2 },
       { atMs: 1400, enemyId: 'brute', laneIndex: 4 },
@@ -234,32 +391,30 @@ function wave(index: number, content: GameContent): WaveDefinition {
       { atMs: 3200, enemyId: 'brute', laneIndex: 5 }
     ] };
   }
+
+  const pressure = wavePressure(index, content, isBoss);
   if (isBoss) {
-    return { index, isBoss: true, rewardSisu: 7, spawns: [
-      { atMs: 0, enemyId: 'chieftain', laneIndex: index % 6 },
-      { atMs: 900, enemyId: 'brute', laneIndex: (index + 2) % 6 },
-      { atMs: 1800, enemyId: 'raider', laneIndex: (index + 4) % 6 },
-      { atMs: 2700, enemyId: 'brute', laneIndex: (index + 1) % 6 },
-      { atMs: 3600, enemyId: 'raider', laneIndex: (index + 3) % 6 }
-    ] };
+    const bossCategory: BossCategory = cycleNumber(index, content) % 2 === 0 ? 'pressure' : 'breach';
+    return {
+      index,
+      isBoss: true,
+      rewardSisu: rewardSisuForWave(index, pressure, true, content),
+      pressure,
+      pattern: bossCategory === 'pressure' ? 'boss_pressure' : 'boss_breach',
+      bossCategory,
+      spawns: buildBossSpawns(index, content, pressure, bossCategory)
+    };
   }
-  const spawns: WaveSpawn[] = [];
-  let budget = 6 + index * 2;
-  let lane = index % 6;
-  let atMs = 0;
-  while (budget > 0) {
-    let enemyId: EnemyUnitId = 'raider';
-    if (budget >= 9 && index > 7 && budget % 3 === 0) {
-      enemyId = 'chieftain';
-    } else if (budget >= 4 && (budget % 2 === 0 || index > 3)) {
-      enemyId = 'brute';
-    }
-    budget -= content.enemyArchetypes[enemyId].threat;
-    spawns.push({ atMs, enemyId, laneIndex: lane % 6 });
-    lane += 2;
-    atMs += 620 + Math.max(120, 900 - index * 18);
-  }
-  return { index, isBoss: false, rewardSisu: 4 + Math.floor(index / 4), spawns };
+  const pattern = NON_BOSS_PATTERNS[(index - 5) % NON_BOSS_PATTERNS.length];
+  return {
+    index,
+    isBoss: false,
+    rewardSisu: rewardSisuForWave(index, pressure, false, content),
+    pressure,
+    pattern,
+    bossCategory: null,
+    spawns: buildPatternSpawns(pattern, index, content, pressure)
+  };
 }
 
 function waveCounts(waveDef: WaveDefinition, content: GameContent): WavePreviewEntry[] {
@@ -288,7 +443,9 @@ function canUseSisu(state: RunState, content: GameContent): boolean {
 }
 
 function recruitCost(state: RunState, content: GameContent): number {
-  return content.config.recruitBaseCost + state.gambleCount * content.config.recruitCostStep;
+  const cycleTax = cycleNumber(state.waveIndex, content) * content.config.recruitWaveStep;
+  const waveTax = Math.floor(Math.max(0, state.waveIndex - 1) / 4) * content.config.recruitWaveStep;
+  return content.config.recruitBaseCost + state.gambleCount * content.config.recruitCostStep + cycleTax + waveTax;
 }
 
 function enemiesInRange(state: RunState, tile: AxialCoord, range: number): EnemyInstance[] {
@@ -486,7 +643,7 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, message: strin
 function awardWave(state: RunState, content: GameContent): void {
   const clearedWave = state.currentWave;
   state.waveIndex += 1;
-  const upcomingWave = wave(state.waveIndex, content);
+  const upcomingWave = createWaveDefinition(state.waveIndex, content);
   state.sisu.current += clearedWave.rewardSisu;
   if (state.saunaDefenderId) state.steamEarned += content.config.steamPerSaunaWave;
   healSauna(state, content);
@@ -515,13 +672,69 @@ function awardMeta(state: RunState): void {
   state.metaAwarded = true;
 }
 
+function pressureLabel(pressure: number): string {
+  if (pressure >= 24) return 'Overheated';
+  if (pressure >= 18) return 'Severe';
+  if (pressure >= 13) return 'High';
+  if (pressure >= 8) return 'Medium';
+  return 'Low';
+}
+
+function patternLabel(waveDef: WaveDefinition): string {
+  switch (waveDef.pattern) {
+    case 'tutorial':
+      return 'Warm-up lanes';
+    case 'split':
+      return 'Split pressure';
+    case 'staggered':
+      return 'Delayed rush';
+    case 'spearhead':
+      return 'Heavy spearhead';
+    case 'surge':
+      return 'Three-lane surge';
+    case 'boss_pressure':
+      return 'Pressure boss';
+    case 'boss_breach':
+      return 'Breach boss';
+    default:
+      return 'Unknown';
+  }
+}
+
+function pressureSignals(state: RunState, content: GameContent): string[] {
+  const signals: string[] = [];
+  const living = livingDefenders(state);
+  const board = boardDefenders(state);
+  const injured = living.filter((defender) => defender.hp / statsWithItems(defender, content).maxHp <= 0.45).length;
+  const nextBossSoon = !state.currentWave.isBoss && slotInCycle(state.currentWave.index, content) === content.config.bossEvery - 1;
+  const saunaThreatened =
+    state.saunaHp / content.config.saunaHp <= content.config.lowSaunaHintRatio ||
+    state.enemies.some((enemy) => hexDistance(enemy.tile, CENTER) <= 1) ||
+    state.currentWave.bossCategory === 'breach';
+
+  if (nextBossSoon || (state.phase === 'prep' && state.currentWave.isBoss)) {
+    signals.push(state.currentWave.isBoss ? 'Boss prep window' : 'Boss in 1 wave');
+  }
+  if (saunaThreatened) {
+    signals.push('Sauna under pressure');
+  }
+  if (state.sisu.current <= content.config.lowSisuThreshold) {
+    signals.push('SISU low');
+  }
+  if (living.length <= 3 || board.length <= 2 || injured >= 2) {
+    signals.push('Roster fragile');
+  }
+
+  return signals;
+}
+
 export function createInitialState(content: GameContent, meta: MetaProgress = createDefaultMetaProgress(), seed = 123456789): RunState {
   const state: RunState = {
     phase: 'prep',
     timeMs: 0,
     waveIndex: 1,
     waveElapsedMs: 0,
-    currentWave: wave(1, content),
+    currentWave: createWaveDefinition(1, content),
     seed,
     selectedDefenderId: null,
     hoveredTile: null,
@@ -710,9 +923,12 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const hud: HudViewModel = {
     phaseLabel: state.phase === 'prep' ? 'Valmistelu' : state.phase === 'wave' ? 'Aalto kaynnissa' : 'Run ohi',
     statusText: state.message,
-    waveNumber: state.waveIndex,
+    waveNumber: currentWave.index,
     enemiesRemaining: state.pendingSpawns.length + state.enemies.length,
     isBossWave: currentWave.isBoss,
+    nextWaveThreat: `${pressureLabel(currentWave.pressure)} pressure`,
+    nextWavePattern: patternLabel(currentWave),
+    pressureSignals: pressureSignals(state, content),
     boardCount: boardDefenders(state).length,
     boardCap: content.config.boardCap,
     rosterCount: livingDefenders(state).length,

@@ -342,7 +342,8 @@ button {
 }
 
 .token-list,
-.wave-list {
+.wave-list,
+.signal-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -351,7 +352,8 @@ button {
 }
 
 .token-list li,
-.wave-list li {
+.wave-list li,
+.signal-list li {
   padding: 10px 12px;
   border-radius: 14px;
   background: rgba(22, 43, 47, 0.7);
@@ -359,6 +361,13 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.signal-list li {
+  justify-content: flex-start;
+  color: var(--accent-strong);
+  border: 1px solid rgba(255, 205, 118, 0.18);
+  background: rgba(63, 46, 19, 0.4);
 }
 
 .inventory-panel {

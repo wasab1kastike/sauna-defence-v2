@@ -1,6 +1,7 @@
 import { gameContent } from '../../content/gameContent';
 import {
   applyAction,
+  createWaveDefinition,
   createDefaultMetaProgress,
   createInitialState,
   createSnapshot,
@@ -12,6 +13,18 @@ function prepState() {
 }
 
 describe('Sauna Defense V2 logic', () => {
+  it('builds a steeper early pacing curve and keeps the first boss on wave five', () => {
+    const waves = [1, 2, 3, 4, 5].map((index) => createWaveDefinition(index, gameContent));
+
+    expect(waves[0].isBoss).toBe(false);
+    expect(waves[3].isBoss).toBe(false);
+    expect(waves[4].isBoss).toBe(true);
+    expect(waves[1].pressure).toBeGreaterThan(waves[0].pressure);
+    expect(waves[2].pressure).toBeGreaterThan(waves[1].pressure);
+    expect(waves[3].pressure).toBeGreaterThan(waves[2].pressure);
+    expect(waves[4].pressure).toBeGreaterThan(waves[3].pressure);
+  });
+
   it('creates a named starter roster with one sauna defender', () => {
     const state = prepState();
 
@@ -48,7 +61,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(saunaDefender).toBeTruthy();
     saunaDefender!.hp = 1;
     state.phase = 'wave';
-    state.currentWave = { index: 1, isBoss: false, rewardSisu: 3, spawns: [] };
+    state.currentWave = { index: 1, isBoss: false, rewardSisu: 3, pressure: 4, pattern: 'tutorial', bossCategory: null, spawns: [] };
     state.pendingSpawns = [];
     state.enemies = [];
 
@@ -80,7 +93,7 @@ describe('Sauna Defense V2 logic', () => {
     let state = prepState();
     state.phase = 'wave';
     state.waveIndex = 4;
-    state.currentWave = { index: 4, isBoss: false, rewardSisu: 4, spawns: [] };
+    state.currentWave = { index: 4, isBoss: false, rewardSisu: 3, pressure: 11, pattern: 'staggered', bossCategory: null, spawns: [] };
     state.pendingSpawns = [];
     state.enemies = [];
 
@@ -112,12 +125,51 @@ describe('Sauna Defense V2 logic', () => {
       index: 5,
       isBoss: true,
       rewardSisu: 7,
+      pressure: 18,
+      pattern: 'boss_pressure',
+      bossCategory: 'pressure',
       spawns: [{ atMs: 0, enemyId: 'chieftain', laneIndex: 0 }]
     };
 
     const snapshot = createSnapshot(state, gameContent);
     expect(snapshot.hud.isBossWave).toBe(true);
     expect(snapshot.hud.wavePreview[0].id).toBe('chieftain');
+  });
+
+  it('alternates boss identities and spawn shapes across cycles', () => {
+    const firstBoss = createWaveDefinition(5, gameContent);
+    const secondBoss = createWaveDefinition(10, gameContent);
+
+    expect(firstBoss.bossCategory).toBe('pressure');
+    expect(secondBoss.bossCategory).toBe('breach');
+    expect(firstBoss.pattern).not.toBe(secondBoss.pattern);
+    expect(firstBoss.spawns.map((spawn) => spawn.laneIndex)).not.toEqual(secondBoss.spawns.map((spawn) => spawn.laneIndex));
+  });
+
+  it('surfaces pressure warnings when the run is getting unstable', () => {
+    const state = prepState();
+    state.phase = 'wave';
+    state.waveIndex = 4;
+    state.currentWave = createWaveDefinition(4, gameContent);
+    state.sisu.current = 2;
+    state.saunaHp = 18;
+    const board = state.defenders.filter((defender) => defender.location !== 'dead').slice(0, 2);
+    for (const defender of state.defenders) {
+      if (board.some((entry) => entry.id === defender.id)) {
+        defender.location = 'board';
+      } else if (defender.location !== 'sauna') {
+        defender.location = 'ready';
+        defender.tile = null;
+      }
+      defender.hp = Math.min(defender.hp, Math.max(4, Math.floor(defender.hp * 0.4)));
+    }
+
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(snapshot.hud.pressureSignals).toContain('Boss in 1 wave');
+    expect(snapshot.hud.pressureSignals).toContain('SISU low');
+    expect(snapshot.hud.pressureSignals).toContain('Sauna under pressure');
+    expect(snapshot.hud.pressureSignals).toContain('Roster fragile');
   });
 
   it('lets the player buy a meta upgrade after losing', () => {

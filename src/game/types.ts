@@ -12,6 +12,8 @@ export type SkillId = 'fireball' | 'spin2win' | 'blink_step';
 export type LootKind = 'item' | 'skill';
 export type Rarity = 'common' | 'rare' | 'epic';
 export type DefenderLocation = 'ready' | 'board' | 'sauna' | 'dead';
+export type WavePattern = 'tutorial' | 'split' | 'staggered' | 'spearhead' | 'surge' | 'boss_pressure' | 'boss_breach';
+export type BossCategory = 'pressure' | 'breach';
 export type MetaUpgradeId =
   | 'roster_capacity'
   | 'inventory_slots'
@@ -123,6 +125,9 @@ export interface WaveDefinition {
   index: number;
   isBoss: boolean;
   rewardSisu: number;
+  pressure: number;
+  pattern: WavePattern;
+  bossCategory: BossCategory | null;
   spawns: WaveSpawn[];
 }
 
@@ -162,6 +167,14 @@ export interface GameConfig {
   baseLootChance: number;
   bossLootChance: number;
   bossEvery: number;
+  cyclePressureBase: number;
+  cyclePressureStep: number;
+  wavePressureStep: number;
+  minSpawnIntervalMs: number;
+  spawnIntervalStepMs: number;
+  recruitWaveStep: number;
+  lowSisuThreshold: number;
+  lowSaunaHintRatio: number;
   spawnLanes: AxialCoord[];
 }
 
@@ -275,6 +288,9 @@ export interface HudViewModel {
   waveNumber: number;
   enemiesRemaining: number;
   isBossWave: boolean;
+  nextWaveThreat: string;
+  nextWavePattern: string;
+  pressureSignals: string[];
   boardCount: number;
   boardCap: number;
   rosterCount: number;

@@ -235,6 +235,13 @@ export function App() {
                   Non-boss waves now chain automatically. You can still drop new defenders onto the board
                   mid-wave.
                 </p>
+                {snapshot.hud.pressureSignals.length > 0 ? (
+                  <ul className="signal-list">
+                    {snapshot.hud.pressureSignals.map((signal) => (
+                      <li key={signal}>{signal}</li>
+                    ))}
+                  </ul>
+                ) : null}
               </section>
 
               <section className="panel">
@@ -368,6 +375,10 @@ export function App() {
                 <div className="panel-head">
                   <h2>Next Wave</h2>
                   <span>{snapshot.hud.isBossWave ? 'Boss' : 'Forecast'}</span>
+                </div>
+                <div className="tag-row">
+                  <span className="tag">{snapshot.hud.nextWaveThreat}</span>
+                  <span className="tag">{snapshot.hud.nextWavePattern}</span>
                 </div>
                 <ul className="wave-list">
                   {snapshot.hud.wavePreview.map((entry) => (
