@@ -91,11 +91,17 @@ export function App() {
       <section className="hero">
         <div className="hero-copy">
           <p className="eyebrow">Sauna Defense V2</p>
-          <h1>Endless loyly defense with weird hero names, loot and meta upgrades.</h1>
+          <h1>Draft a cursed sauna crew and survive the endless waves.</h1>
           <p className="lede">
-            Build a tiny named roster, keep one defender warming in the sauna, gamble new recruits with
-            SISU and try to survive long enough to cash out Steam for the next run.
+            Every run builds a tiny named roster with oddball stats, random token looks, loot drops and
+            a small meta loop. Keep the sauna burning, rotate one hero through the heat and gamble SISU
+            when the roster starts to fall apart.
           </p>
+          <div className="hero-pills">
+            <span className="hero-pill">10 hero tokens</span>
+            <span className="hero-pill">5 enemy token families</span>
+            <span className="hero-pill">Boss every 5th wave</span>
+          </div>
         </div>
         <div className="status-card">
           <span>Live Build</span>
@@ -105,14 +111,68 @@ export function App() {
       </section>
 
       <section className="playfield">
-        <div className="canvas-frame">
-          <canvas
-            ref={canvasRef}
-            className="battle-canvas"
-            onPointerMove={handlePointerMove}
-            onPointerLeave={handlePointerLeave}
-            onPointerDown={handlePointerDown}
-          />
+        <div className="arena-column">
+          <section className="panel inventory-panel">
+            <div className="panel-head">
+              <h2>Loot Inventory</h2>
+              <span>{snapshot?.hud.inventoryCount ?? 0} stored</span>
+            </div>
+            {snapshot && snapshot.hud.inventoryEntries.length > 0 ? (
+              <div className="inventory-grid">
+                {snapshot.hud.inventoryEntries.map((entry) => (
+                  <div key={entry.id} className={entry.isRecent ? 'inventory-card recent' : 'inventory-card'}>
+                    <div>
+                      <strong>
+                        {entry.name} · {formatRarity(entry.rarity)}
+                      </strong>
+                      <small>
+                        {entry.kind} from wave {entry.waveFound}
+                      </small>
+                      <small>{entry.description}</small>
+                    </div>
+                    <div className="button-row tight">
+                      <button
+                        className="mini-button"
+                        disabled={!selectedDefender}
+                        onClick={() =>
+                          selectedDefender &&
+                          runtimeRef.current?.dispatch({
+                            type: 'equipInventoryDrop',
+                            dropId: entry.id,
+                            defenderId: selectedDefender.id
+                          })
+                        }
+                      >
+                        Equip To Selected
+                      </button>
+                      {entry.isRecent ? (
+                        <button
+                          className="mini-button ghostish"
+                          onClick={() => runtimeRef.current?.dispatch({ type: 'dismissRecentDrop' })}
+                        >
+                          Clear Ping
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="panel-copy">
+                Drops auto-pick up here. Equip them immediately or save them for later.
+              </p>
+            )}
+          </section>
+
+          <div className="canvas-frame">
+            <canvas
+              ref={canvasRef}
+              className="battle-canvas"
+              onPointerMove={handlePointerMove}
+              onPointerLeave={handlePointerLeave}
+              onPointerDown={handlePointerDown}
+            />
+          </div>
         </div>
 
         <aside className="sidebar">
@@ -168,8 +228,12 @@ export function App() {
                   </div>
                 </div>
                 <p className="panel-copy">{snapshot.hud.statusText}</p>
-                <p className="panel-copy muted-line">
+                <p className="panel-copy muted-line status-accent">
                   Sauna slot: {snapshot.hud.saunaOccupantName ?? 'Empty'}
+                </p>
+                <p className="panel-copy small-copy">
+                  Non-boss waves now chain automatically. You can still drop new defenders onto the board
+                  mid-wave.
                 </p>
               </section>
 
@@ -298,56 +362,6 @@ export function App() {
                 ) : (
                   <p className="panel-copy">Select a defender to place them, equip loot or send them to the sauna.</p>
                 )}
-              </section>
-
-              <section className="panel">
-                <div className="panel-head">
-                  <h2>Loot Inventory</h2>
-                  <span>{snapshot.hud.inventoryCount} stored</span>
-                </div>
-                <div className="button-stack">
-                  {snapshot.hud.inventoryEntries.length > 0 ? (
-                    snapshot.hud.inventoryEntries.map((entry) => (
-                      <div key={entry.id} className={entry.isRecent ? 'inventory-card recent' : 'inventory-card'}>
-                        <div>
-                          <strong>
-                            {entry.name} · {formatRarity(entry.rarity)}
-                          </strong>
-                          <small>
-                            {entry.kind} from wave {entry.waveFound}
-                          </small>
-                          <small>{entry.description}</small>
-                        </div>
-                        <div className="button-row tight">
-                          <button
-                            className="mini-button"
-                            disabled={!selectedDefender}
-                            onClick={() =>
-                              selectedDefender &&
-                              runtimeRef.current?.dispatch({
-                                type: 'equipInventoryDrop',
-                                dropId: entry.id,
-                                defenderId: selectedDefender.id
-                              })
-                            }
-                          >
-                            Equip To Selected
-                          </button>
-                          {entry.isRecent ? (
-                            <button
-                              className="mini-button ghostish"
-                              onClick={() => runtimeRef.current?.dispatch({ type: 'dismissRecentDrop' })}
-                            >
-                              Clear Ping
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="panel-copy">Drops auto-pick up here. Equip them immediately or save them for later.</p>
-                  )}
-                </div>
               </section>
 
               <section className="panel">

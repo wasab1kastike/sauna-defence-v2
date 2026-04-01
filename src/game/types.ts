@@ -92,6 +92,7 @@ export interface DefenderInstance {
   templateId: DefenderTemplateId;
   name: string;
   title: string;
+  tokenStyleId: number;
   stats: UnitStats;
   hp: number;
   location: DefenderLocation;
@@ -105,6 +106,7 @@ export interface DefenderInstance {
 export interface EnemyInstance {
   instanceId: number;
   archetypeId: EnemyUnitId;
+  tokenStyleId: number;
   tile: AxialCoord;
   hp: number;
   attackReadyAtMs: number;

@@ -9,6 +9,35 @@ interface BoardLayout {
   centerY: number;
 }
 
+interface TokenPalette {
+  shell: string;
+  ring: string;
+  accent: string;
+  glow: string;
+  glyph: string;
+}
+
+const DEFENDER_TOKEN_STYLES: TokenPalette[] = [
+  { shell: '#f5d69a', ring: '#5a3f1b', accent: '#d46b2d', glow: 'rgba(255,179,92,0.28)', glyph: 'diamond' },
+  { shell: '#cddfef', ring: '#22384f', accent: '#70c7d4', glow: 'rgba(112,199,212,0.22)', glyph: 'chevrons' },
+  { shell: '#f2b58d', ring: '#6a2e23', accent: '#ffd57c', glow: 'rgba(255,140,92,0.24)', glyph: 'sun' },
+  { shell: '#d8efc8', ring: '#294734', accent: '#7bc87a', glow: 'rgba(123,200,122,0.24)', glyph: 'leaf' },
+  { shell: '#e2d0f7', ring: '#473061', accent: '#b78ff7', glow: 'rgba(183,143,247,0.24)', glyph: 'split' },
+  { shell: '#f1e7be', ring: '#5b5121', accent: '#e0ae41', glow: 'rgba(224,174,65,0.24)', glyph: 'tower' },
+  { shell: '#cce8df', ring: '#20433f', accent: '#52b8a3', glow: 'rgba(82,184,163,0.24)', glyph: 'trident' },
+  { shell: '#ffd7d2', ring: '#5e2b2b', accent: '#ef7360', glow: 'rgba(239,115,96,0.24)', glyph: 'mask' },
+  { shell: '#d5dbff', ring: '#24305c', accent: '#6b87ff', glow: 'rgba(107,135,255,0.24)', glyph: 'star' },
+  { shell: '#efe4d6', ring: '#473427', accent: '#b87c4d', glow: 'rgba(184,124,77,0.24)', glyph: 'rune' }
+];
+
+const ENEMY_TOKEN_STYLES: TokenPalette[] = [
+  { shell: '#8d332c', ring: '#250909', accent: '#ef7360', glow: 'rgba(239,115,96,0.26)', glyph: 'fangs' },
+  { shell: '#6d1f36', ring: '#210814', accent: '#f17ca3', glow: 'rgba(241,124,163,0.22)', glyph: 'eye' },
+  { shell: '#7a4320', ring: '#281305', accent: '#ffb36a', glow: 'rgba(255,179,106,0.24)', glyph: 'horns' },
+  { shell: '#5e2f63', ring: '#1f0c21', accent: '#d58bff', glow: 'rgba(213,139,255,0.22)', glyph: 'claw' },
+  { shell: '#364b27', ring: '#0d1709', accent: '#a7dd63', glow: 'rgba(167,221,99,0.2)', glyph: 'skull' }
+];
+
 function getBoardLayout(width: number, height: number, radius: number): BoardLayout {
   const padding = Math.max(24, Math.min(width, height) * 0.06);
   const horizontalCapacity = (width - padding * 2) / (SQRT3 * (radius * 2 + 1.5));
@@ -79,28 +108,6 @@ function drawTile(
   ctx.stroke();
 }
 
-function drawBadge(
-  ctx: CanvasRenderingContext2D,
-  center: { x: number; y: number },
-  radius: number,
-  fill: string,
-  outline: string,
-  label: string
-) {
-  ctx.beginPath();
-  ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = fill;
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = outline;
-  ctx.stroke();
-  ctx.fillStyle = '#fff5e6';
-  ctx.font = `700 ${Math.max(11, radius * 0.84)}px Trebuchet MS`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, center.x, center.y + 1);
-}
-
 function drawHealthBar(
   ctx: CanvasRenderingContext2D,
   center: { x: number; y: number },
@@ -109,11 +116,230 @@ function drawHealthBar(
   color: string
 ) {
   const x = center.x - width / 2;
-  const y = center.y - width * 0.82;
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+  const y = center.y - width * 0.88;
+  ctx.fillStyle = 'rgba(10, 16, 18, 0.45)';
   ctx.fillRect(x, y, width, 5);
   ctx.fillStyle = color;
   ctx.fillRect(x, y, width * Math.max(0, Math.min(1, ratio)), 5);
+}
+
+function drawPolygon(ctx: CanvasRenderingContext2D, center: { x: number; y: number }, radius: number, sides: number, rotation = 0) {
+  ctx.beginPath();
+  for (let index = 0; index < sides; index += 1) {
+    const angle = rotation + (Math.PI * 2 * index) / sides;
+    const x = center.x + radius * Math.cos(angle);
+    const y = center.y + radius * Math.sin(angle);
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
+function drawTokenBase(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  radius: number,
+  palette: TokenPalette,
+  accentColor: string
+) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, radius + 6, 0, Math.PI * 2);
+  ctx.fillStyle = palette.glow;
+  ctx.fill();
+
+  const ringGradient = ctx.createRadialGradient(center.x, center.y, radius * 0.2, center.x, center.y, radius);
+  ringGradient.addColorStop(0, palette.shell);
+  ringGradient.addColorStop(1, palette.ring);
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = ringGradient;
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, radius * 0.78, 0, Math.PI * 2);
+  ctx.fillStyle = accentColor;
+  ctx.globalAlpha = 0.24;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, radius * 0.92, 0, Math.PI * 2);
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = palette.ring;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawGlyph(ctx: CanvasRenderingContext2D, center: { x: number; y: number }, radius: number, glyph: string, color: string) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(2, radius * 0.16);
+  switch (glyph) {
+    case 'diamond':
+      drawPolygon(ctx, center, radius * 0.44, 4, Math.PI / 4);
+      ctx.fill();
+      break;
+    case 'chevrons':
+      ctx.beginPath();
+      ctx.moveTo(center.x - radius * 0.46, center.y - radius * 0.1);
+      ctx.lineTo(center.x, center.y - radius * 0.42);
+      ctx.lineTo(center.x + radius * 0.46, center.y - radius * 0.1);
+      ctx.moveTo(center.x - radius * 0.36, center.y + radius * 0.2);
+      ctx.lineTo(center.x, center.y - radius * 0.12);
+      ctx.lineTo(center.x + radius * 0.36, center.y + radius * 0.2);
+      ctx.stroke();
+      break;
+    case 'sun':
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, radius * 0.24, 0, Math.PI * 2);
+      ctx.fill();
+      for (let index = 0; index < 8; index += 1) {
+        const angle = (Math.PI * 2 * index) / 8;
+        ctx.beginPath();
+        ctx.moveTo(center.x + Math.cos(angle) * radius * 0.34, center.y + Math.sin(angle) * radius * 0.34);
+        ctx.lineTo(center.x + Math.cos(angle) * radius * 0.5, center.y + Math.sin(angle) * radius * 0.5);
+        ctx.stroke();
+      }
+      break;
+    case 'leaf':
+      ctx.beginPath();
+      ctx.moveTo(center.x, center.y - radius * 0.5);
+      ctx.quadraticCurveTo(center.x + radius * 0.38, center.y - radius * 0.14, center.x, center.y + radius * 0.46);
+      ctx.quadraticCurveTo(center.x - radius * 0.38, center.y - radius * 0.14, center.x, center.y - radius * 0.5);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(center.x, center.y - radius * 0.34);
+      ctx.lineTo(center.x, center.y + radius * 0.26);
+      ctx.stroke();
+      break;
+    case 'split':
+      drawPolygon(ctx, center, radius * 0.46, 6, Math.PI / 6);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(center.x, center.y - radius * 0.42);
+      ctx.lineTo(center.x, center.y + radius * 0.42);
+      ctx.stroke();
+      break;
+    case 'tower':
+      ctx.beginPath();
+      ctx.rect(center.x - radius * 0.28, center.y - radius * 0.34, radius * 0.56, radius * 0.68);
+      ctx.fill();
+      ctx.clearRect(center.x - radius * 0.08, center.y + radius * 0.04, radius * 0.16, radius * 0.24);
+      break;
+    case 'trident':
+      ctx.beginPath();
+      ctx.moveTo(center.x, center.y - radius * 0.48);
+      ctx.lineTo(center.x, center.y + radius * 0.42);
+      ctx.moveTo(center.x - radius * 0.3, center.y - radius * 0.04);
+      ctx.lineTo(center.x, center.y - radius * 0.48);
+      ctx.lineTo(center.x + radius * 0.3, center.y - radius * 0.04);
+      ctx.stroke();
+      break;
+    case 'mask':
+      ctx.beginPath();
+      ctx.arc(center.x - radius * 0.18, center.y - radius * 0.04, radius * 0.08, 0, Math.PI * 2);
+      ctx.arc(center.x + radius * 0.18, center.y - radius * 0.04, radius * 0.08, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(center.x - radius * 0.26, center.y + radius * 0.22);
+      ctx.quadraticCurveTo(center.x, center.y + radius * 0.36, center.x + radius * 0.26, center.y + radius * 0.22);
+      ctx.stroke();
+      break;
+    case 'star':
+      ctx.beginPath();
+      for (let index = 0; index < 10; index += 1) {
+        const angle = -Math.PI / 2 + (Math.PI * index) / 5;
+        const pointRadius = index % 2 === 0 ? radius * 0.46 : radius * 0.2;
+        const x = center.x + Math.cos(angle) * pointRadius;
+        const y = center.y + Math.sin(angle) * pointRadius;
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      break;
+    case 'rune':
+      ctx.beginPath();
+      ctx.moveTo(center.x - radius * 0.28, center.y - radius * 0.42);
+      ctx.lineTo(center.x + radius * 0.12, center.y - radius * 0.12);
+      ctx.lineTo(center.x - radius * 0.08, center.y + radius * 0.06);
+      ctx.lineTo(center.x + radius * 0.3, center.y + radius * 0.4);
+      ctx.stroke();
+      break;
+    case 'fangs':
+      drawPolygon(ctx, center, radius * 0.42, 3, -Math.PI / 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(center.x - radius * 0.16, center.y + radius * 0.06);
+      ctx.lineTo(center.x - radius * 0.08, center.y + radius * 0.38);
+      ctx.moveTo(center.x + radius * 0.16, center.y + radius * 0.06);
+      ctx.lineTo(center.x + radius * 0.08, center.y + radius * 0.38);
+      ctx.stroke();
+      break;
+    case 'eye':
+      ctx.beginPath();
+      ctx.ellipse(center.x, center.y, radius * 0.46, radius * 0.26, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, radius * 0.12, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case 'horns':
+      ctx.beginPath();
+      ctx.moveTo(center.x - radius * 0.42, center.y - radius * 0.12);
+      ctx.lineTo(center.x - radius * 0.18, center.y - radius * 0.48);
+      ctx.lineTo(center.x - radius * 0.02, center.y - radius * 0.1);
+      ctx.moveTo(center.x + radius * 0.42, center.y - radius * 0.12);
+      ctx.lineTo(center.x + radius * 0.18, center.y - radius * 0.48);
+      ctx.lineTo(center.x + radius * 0.02, center.y - radius * 0.1);
+      ctx.stroke();
+      break;
+    case 'claw':
+      for (let index = -1; index <= 1; index += 1) {
+        ctx.beginPath();
+        ctx.moveTo(center.x + index * radius * 0.16 - radius * 0.12, center.y + radius * 0.34);
+        ctx.lineTo(center.x + index * radius * 0.16 + radius * 0.06, center.y - radius * 0.36);
+        ctx.stroke();
+      }
+      break;
+    case 'skull':
+      ctx.beginPath();
+      ctx.arc(center.x, center.y - radius * 0.06, radius * 0.28, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.rect(center.x - radius * 0.18, center.y + radius * 0.08, radius * 0.36, radius * 0.18);
+      ctx.stroke();
+      break;
+    default:
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, radius * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawTokenLabel(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  radius: number,
+  text: string,
+  color: string
+) {
+  ctx.fillStyle = color;
+  ctx.font = `800 ${Math.max(9, radius * 0.44)}px Trebuchet MS`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, center.x, center.y + radius * 0.6);
+}
+
+function getDefenderStyle(styleId: number) {
+  return DEFENDER_TOKEN_STYLES[styleId % DEFENDER_TOKEN_STYLES.length];
+}
+
+function getEnemyStyle(styleId: number) {
+  return ENEMY_TOKEN_STYLES[styleId % ENEMY_TOKEN_STYLES.length];
 }
 
 export function paintSnapshot(
@@ -133,57 +359,66 @@ export function paintSnapshot(
   ctx.clearRect(0, 0, viewportWidth, viewportHeight);
 
   const background = ctx.createLinearGradient(0, 0, 0, viewportHeight);
-  background.addColorStop(0, '#2b160f');
-  background.addColorStop(1, '#120907');
+  background.addColorStop(0, '#08161a');
+  background.addColorStop(0.46, '#102127');
+  background.addColorStop(1, '#1c0e0a');
   ctx.fillStyle = background;
   ctx.fillRect(0, 0, viewportWidth, viewportHeight);
 
-  const ember = ctx.createRadialGradient(
+  const smoke = ctx.createRadialGradient(
+    layout.centerX,
+    layout.centerY + layout.hexSize,
+    layout.hexSize * 0.8,
     layout.centerX,
     layout.centerY,
-    layout.hexSize * 0.7,
-    layout.centerX,
-    layout.centerY,
-    layout.hexSize * 6.4
+    layout.hexSize * 7.5
   );
-  ember.addColorStop(0, snapshot.hud.isBossWave ? 'rgba(255, 92, 68, 0.22)' : 'rgba(255, 185, 102, 0.16)');
-  ember.addColorStop(1, 'rgba(255, 185, 102, 0)');
-  ctx.fillStyle = ember;
+  smoke.addColorStop(0, snapshot.hud.isBossWave ? 'rgba(255, 88, 64, 0.22)' : 'rgba(87, 209, 193, 0.18)');
+  smoke.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = smoke;
   ctx.fillRect(0, 0, viewportWidth, viewportHeight);
 
   for (const tile of snapshot.tiles) {
     const center = axialToPixel(tile, layout);
     const key = coordKey(tile);
     const distance = hexDistance(tile, { q: 0, r: 0 });
-    let fill = distance === 0 ? 'rgba(112, 60, 26, 0.96)' : 'rgba(63, 35, 20, 0.9)';
-    let stroke = 'rgba(246, 201, 144, 0.12)';
+    let fill = distance === 0 ? 'rgba(54, 94, 96, 0.92)' : 'rgba(27, 49, 54, 0.92)';
+    let stroke = 'rgba(154, 219, 214, 0.12)';
     let lineWidth = 1;
 
     if (spawnSet.has(key)) {
-      fill = 'rgba(112, 40, 35, 0.96)';
-      stroke = 'rgba(229, 126, 118, 0.32)';
+      fill = 'rgba(109, 43, 48, 0.94)';
+      stroke = 'rgba(246, 139, 117, 0.34)';
     } else if (buildableSet.has(key)) {
-      fill = snapshot.state.phase === 'prep' ? 'rgba(98, 58, 30, 0.96)' : 'rgba(76, 45, 27, 0.86)';
-      stroke = 'rgba(241, 169, 77, 0.26)';
+      fill = snapshot.state.phase === 'prep' ? 'rgba(110, 72, 35, 0.94)' : 'rgba(52, 65, 61, 0.92)';
+      stroke = 'rgba(255, 205, 118, 0.2)';
     }
 
     if (hoverKey === key) {
-      fill = buildableSet.has(key) ? 'rgba(154, 95, 49, 0.98)' : 'rgba(102, 56, 33, 0.96)';
-      stroke = 'rgba(255, 226, 157, 0.68)';
-      lineWidth = 2;
+      fill = buildableSet.has(key) ? 'rgba(171, 117, 58, 0.98)' : 'rgba(75, 92, 89, 0.96)';
+      stroke = 'rgba(231, 255, 250, 0.82)';
+      lineWidth = 2.2;
     }
 
     drawTile(ctx, center, layout.hexSize - 1.5, fill, stroke, lineWidth);
   }
 
   const saunaCenter = axialToPixel({ q: 0, r: 0 }, layout);
+  const saunaGlow = ctx.createRadialGradient(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.1, saunaCenter.x, saunaCenter.y, layout.hexSize * 1.4);
+  saunaGlow.addColorStop(0, 'rgba(255, 216, 126, 0.98)');
+  saunaGlow.addColorStop(0.5, 'rgba(255, 159, 88, 0.7)');
+  saunaGlow.addColorStop(1, 'rgba(255, 159, 88, 0)');
+  ctx.fillStyle = saunaGlow;
   ctx.beginPath();
-  ctx.arc(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.64, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255, 204, 118, 0.92)';
+  ctx.arc(saunaCenter.x, saunaCenter.y, layout.hexSize * 1.3, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.32, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(138, 74, 24, 0.98)';
+  ctx.arc(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.58, 0, Math.PI * 2);
+  ctx.fillStyle = '#f9ca79';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.29, 0, Math.PI * 2);
+  ctx.fillStyle = '#76411f';
   ctx.fill();
 
   for (const defender of snapshot.state.defenders) {
@@ -201,49 +436,55 @@ export function paintSnapshot(
         return total;
       },
       {
-        maxHp: template.stats.maxHp,
-        damage: template.stats.damage,
-        heal: template.stats.heal,
-        range: template.stats.range,
-        attackCooldownMs: template.stats.attackCooldownMs
+        maxHp: defender.stats.maxHp,
+        damage: defender.stats.damage,
+        heal: defender.stats.heal,
+        range: defender.stats.range,
+        attackCooldownMs: defender.stats.attackCooldownMs
       }
     );
-    const radius = layout.hexSize * 0.37;
+    const radius = layout.hexSize * 0.39;
+    const style = getDefenderStyle(defender.tokenStyleId);
 
     if (selected?.id === defender.id) {
       ctx.beginPath();
-      ctx.arc(center.x, center.y, radius + 7, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255, 233, 187, 0.78)';
-      ctx.lineWidth = 2;
+      ctx.arc(center.x, center.y, radius + 8, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(234, 255, 250, 0.9)';
+      ctx.lineWidth = 2.6;
       ctx.stroke();
     }
 
-    drawBadge(ctx, center, radius, template.fill, template.outline, template.label);
-    drawHealthBar(ctx, center, layout.hexSize * 0.88, defender.hp / Math.max(1, stats.maxHp), '#7cd69f');
+    drawTokenBase(ctx, center, radius, style, template.fill);
+    drawGlyph(ctx, center, radius, style.glyph, style.glyph === 'tower' ? style.ring : style.accent);
+    drawTokenLabel(ctx, center, radius, template.label, '#fff8ed');
+    drawHealthBar(ctx, center, layout.hexSize * 0.94, defender.hp / Math.max(1, stats.maxHp), '#7ed8c8');
   }
 
   for (const enemy of snapshot.state.enemies) {
     const center = axialToPixel(enemy.tile, layout);
     const archetype = snapshot.enemyArchetypes[enemy.archetypeId];
-    const radius = layout.hexSize * (enemy.archetypeId === 'chieftain' ? 0.39 : 0.34);
-    drawBadge(ctx, center, radius, archetype.fill, archetype.outline, archetype.label);
-    drawHealthBar(ctx, center, layout.hexSize * 0.88, enemy.hp / archetype.maxHp, '#ef7360');
+    const radius = layout.hexSize * (enemy.archetypeId === 'chieftain' ? 0.42 : 0.36);
+    const style = getEnemyStyle(enemy.tokenStyleId);
+    drawTokenBase(ctx, center, radius, style, archetype.fill);
+    drawGlyph(ctx, center, radius, style.glyph, style.accent);
+    drawTokenLabel(ctx, center, radius, archetype.label, '#fff0e8');
+    drawHealthBar(ctx, center, layout.hexSize * 0.94, enemy.hp / archetype.maxHp, '#ff8772');
   }
 
   if (snapshot.state.phase === 'lost') {
-    ctx.fillStyle = 'rgba(18, 8, 6, 0.62)';
+    ctx.fillStyle = 'rgba(6, 12, 14, 0.66)';
     ctx.fillRect(0, 0, viewportWidth, viewportHeight);
-    ctx.fillStyle = '#fff2da';
+    ctx.fillStyle = '#f5efe7';
     ctx.textAlign = 'center';
-    ctx.font = '700 28px Trebuchet MS';
-    ctx.fillText('Sauna Went Cold', layout.centerX, 56);
+    ctx.font = '700 30px Trebuchet MS';
+    ctx.fillText('Sauna Went Cold', layout.centerX, 60);
     ctx.font = '500 16px Trebuchet MS';
-    ctx.fillText(snapshot.hud.statusText, layout.centerX, 84);
+    ctx.fillText(snapshot.hud.statusText, layout.centerX, 88);
   }
 
-  ctx.fillStyle = 'rgba(255, 240, 216, 0.94)';
+  ctx.fillStyle = 'rgba(234, 247, 244, 0.96)';
   ctx.textAlign = 'left';
-  ctx.font = '600 14px Trebuchet MS';
+  ctx.font = '700 14px Trebuchet MS';
   ctx.fillText(snapshot.hud.isBossWave ? `Boss Wave ${snapshot.hud.waveNumber}` : `Wave ${snapshot.hud.waveNumber}`, 18, 24);
   ctx.fillText(`Board ${snapshot.hud.boardCount}/${snapshot.hud.boardCap}`, 18, 44);
 }

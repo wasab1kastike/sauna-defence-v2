@@ -178,6 +178,7 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
     templateId,
     name: name.name,
     title: name.title,
+    tokenStyleId: randomInt(state, 0, 9),
     stats,
     hp: stats.maxHp,
     location: 'ready',
@@ -458,6 +459,7 @@ function spawnEnemies(state: RunState, content: GameContent): void {
     state.enemies.push({
       instanceId: state.nextEnemyInstanceId++,
       archetypeId: spawn.enemyId,
+      tokenStyleId: randomInt(state, 0, 4),
       tile: { ...lane },
       hp: archetype.maxHp,
       attackReadyAtMs: state.timeMs + archetype.attackCooldownMs,
@@ -473,17 +475,31 @@ function healSauna(state: RunState, content: GameContent): void {
   saunaDefender.hp = Math.min(statsWithItems(saunaDefender, content).maxHp, saunaDefender.hp + content.config.saunaHealPerPrep);
 }
 
+function startWaveState(state: RunState, waveDef: WaveDefinition, message: string): void {
+  state.phase = 'wave';
+  state.waveElapsedMs = 0;
+  state.currentWave = waveDef;
+  state.pendingSpawns = waveDef.spawns.map((spawn) => ({ ...spawn }));
+  state.message = message;
+}
+
 function awardWave(state: RunState, content: GameContent): void {
   const clearedWave = state.currentWave;
-  state.phase = 'prep';
   state.waveIndex += 1;
-  state.waveElapsedMs = 0;
-  state.currentWave = wave(state.waveIndex, content);
-  state.pendingSpawns = [];
+  const upcomingWave = wave(state.waveIndex, content);
   state.sisu.current += clearedWave.rewardSisu;
   if (state.saunaDefenderId) state.steamEarned += content.config.steamPerSaunaWave;
   healSauna(state, content);
-  state.message = state.currentWave.isBoss ? `Boss wave ${state.currentWave.index} is coming.` : `Wave ${state.waveIndex - 1} cleared.`;
+  if (upcomingWave.isBoss) {
+    state.phase = 'prep';
+    state.waveElapsedMs = 0;
+    state.currentWave = upcomingWave;
+    state.pendingSpawns = [];
+    state.message = `Boss wave ${upcomingWave.index} is coming. Reposition before it hits.`;
+    return;
+  }
+
+  startWaveState(state, upcomingWave, `Wave ${upcomingWave.index} rolls in without a break.`);
 }
 
 function metaCost(state: RunState, upgradeId: MetaUpgradeId, content: GameContent): number | null {
@@ -550,7 +566,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     case 'placeSelectedDefender': {
       const defender = getDefender(next, next.selectedDefenderId);
-      if (next.phase !== 'prep' || !defender || (defender.location !== 'ready' && defender.location !== 'sauna')) return next;
+      if (!defender || (defender.location !== 'ready' && defender.location !== 'sauna')) return next;
       if (!isBuildable(action.tile, content) || occupied(next, action.tile)) {
         next.message = 'That hex is not available.';
         return next;
@@ -589,10 +605,13 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         next.message = 'Place at least one defender first.';
         return next;
       }
-      next.phase = 'wave';
-      next.waveElapsedMs = 0;
-      next.pendingSpawns = next.currentWave.spawns.map((spawn) => ({ ...spawn }));
-      next.message = next.currentWave.isBoss ? `Boss wave ${next.currentWave.index} started.` : `Wave ${next.currentWave.index} started.`;
+      startWaveState(
+        next,
+        next.currentWave,
+        next.currentWave.isBoss
+          ? `Boss wave ${next.currentWave.index} started.`
+          : `Wave ${next.currentWave.index} started.`
+      );
       return next;
     case 'gambleRecruit': {
       if (next.phase !== 'prep') return next;

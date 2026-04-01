@@ -1,16 +1,17 @@
 :root {
   color-scheme: dark;
-  --bg: #120b07;
-  --bg-deep: #24120b;
-  --panel: rgba(35, 20, 12, 0.84);
-  --panel-soft: rgba(62, 33, 18, 0.72);
-  --panel-line: rgba(244, 183, 104, 0.22);
-  --text: #f6ead7;
-  --muted: #d2bea7;
-  --accent: #f1a94d;
-  --accent-strong: #ffcf72;
-  --danger: #ef7360;
-  --good: #7cd69f;
+  --bg: #07161a;
+  --bg-deep: #102126;
+  --panel: rgba(17, 35, 40, 0.84);
+  --panel-soft: rgba(28, 55, 58, 0.72);
+  --panel-line: rgba(132, 230, 220, 0.18);
+  --text: #eff5ef;
+  --muted: #a9c0bb;
+  --accent: #ffb661;
+  --accent-strong: #ffdca0;
+  --accent-cool: #7de0d1;
+  --danger: #ff7f6d;
+  --good: #8fe3ae;
   --shadow: rgba(0, 0, 0, 0.35);
   --font-display: 'Trebuchet MS', 'Gill Sans', 'Segoe UI', sans-serif;
   --font-body: 'Segoe UI', 'Trebuchet MS', sans-serif;
@@ -32,9 +33,10 @@ body {
   font-family: var(--font-body);
   color: var(--text);
   background:
-    radial-gradient(circle at top, rgba(255, 188, 92, 0.18), transparent 36%),
-    radial-gradient(circle at bottom left, rgba(170, 83, 47, 0.28), transparent 32%),
-    linear-gradient(180deg, #120b07 0%, #1b0f09 48%, #0f0806 100%);
+    radial-gradient(circle at top left, rgba(125, 224, 209, 0.14), transparent 34%),
+    radial-gradient(circle at top right, rgba(255, 182, 97, 0.14), transparent 28%),
+    radial-gradient(circle at bottom left, rgba(255, 127, 109, 0.12), transparent 30%),
+    linear-gradient(180deg, #07161a 0%, #0d2024 48%, #160d0a 100%);
 }
 
 button,
@@ -65,8 +67,8 @@ button {
 .hero-copy h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(2rem, 4vw, 3.2rem);
-  line-height: 0.98;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.02;
 }
 
 .eyebrow {
@@ -79,16 +81,32 @@ button {
 
 .lede {
   margin: 12px 0 0;
-  max-width: 78ch;
+  max-width: 72ch;
   color: var(--muted);
   line-height: 1.5;
+}
+
+.hero-pills {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.hero-pill {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(132, 230, 220, 0.18);
+  background: rgba(16, 46, 49, 0.62);
+  color: var(--accent-strong);
+  font-size: 0.84rem;
 }
 
 .status-card,
 .panel,
 .canvas-frame {
   border: 1px solid var(--panel-line);
-  background: linear-gradient(180deg, rgba(48, 27, 17, 0.9), rgba(28, 15, 10, 0.84));
+  background: linear-gradient(180deg, rgba(18, 38, 44, 0.92), rgba(14, 22, 25, 0.9));
   box-shadow: 0 16px 40px var(--shadow);
 }
 
@@ -114,13 +132,19 @@ button {
   align-items: start;
 }
 
+.arena-column {
+  display: grid;
+  gap: 16px;
+  min-height: 0;
+}
+
 .canvas-frame {
   height: min(72vh, 860px);
   border-radius: 28px;
   padding: 12px;
   background:
-    radial-gradient(circle at top, rgba(255, 189, 98, 0.08), transparent 35%),
-    linear-gradient(180deg, rgba(43, 23, 13, 0.92), rgba(18, 10, 7, 0.96));
+    radial-gradient(circle at top, rgba(125, 224, 209, 0.08), transparent 35%),
+    linear-gradient(180deg, rgba(17, 40, 45, 0.95), rgba(12, 20, 22, 0.98));
 }
 
 .battle-canvas {
@@ -135,6 +159,8 @@ button {
   display: grid;
   gap: 14px;
   align-content: start;
+  position: sticky;
+  top: 18px;
 }
 
 .panel {
@@ -173,6 +199,10 @@ button {
 .small-copy,
 .muted-line {
   font-size: 0.92rem;
+}
+
+.status-accent {
+  color: var(--accent-strong);
 }
 
 .metric-grid {
@@ -231,7 +261,7 @@ button {
 .roster-card,
 .inventory-card,
 .selected-card {
-  background: rgba(74, 41, 24, 0.7);
+  background: rgba(20, 46, 49, 0.74);
   color: var(--text);
 }
 
@@ -243,22 +273,22 @@ button {
 }
 
 .primary-button {
-  background: linear-gradient(135deg, #f1a94d, #ce7c28);
-  color: #2b160c;
+  background: linear-gradient(135deg, #ffcf7b, #ff9954);
+  color: #182021;
   font-weight: 700;
 }
 
 .secondary-button,
 .mini-button {
-  background: rgba(100, 131, 106, 0.22);
-  border-color: rgba(124, 214, 159, 0.36);
+  background: rgba(58, 99, 98, 0.34);
+  border-color: rgba(125, 224, 209, 0.34);
   color: var(--text);
 }
 
 .ghost-button,
 .ghostish {
   background: transparent;
-  border-color: rgba(255, 226, 157, 0.16);
+  border-color: rgba(255, 220, 160, 0.18);
   color: var(--muted);
 }
 
@@ -286,15 +316,15 @@ button {
 .selected-card {
   border-radius: 16px;
   padding: 12px;
-  border: 1px solid rgba(255, 226, 157, 0.08);
+  border: 1px solid rgba(132, 230, 220, 0.1);
   display: grid;
   gap: 10px;
 }
 
 .roster-card.selected,
 .inventory-card.recent {
-  border-color: rgba(255, 210, 115, 0.52);
-  box-shadow: inset 0 0 0 1px rgba(255, 210, 115, 0.15);
+  border-color: rgba(255, 205, 118, 0.48);
+  box-shadow: inset 0 0 0 1px rgba(255, 205, 118, 0.14);
 }
 
 .tag-row {
@@ -306,8 +336,8 @@ button {
 .tag {
   padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(255, 208, 126, 0.12);
-  border: 1px solid rgba(255, 208, 126, 0.2);
+  background: rgba(125, 224, 209, 0.12);
+  border: 1px solid rgba(125, 224, 209, 0.2);
   font-size: 0.82rem;
 }
 
@@ -324,10 +354,20 @@ button {
 .wave-list li {
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(73, 39, 23, 0.7);
+  background: rgba(22, 43, 47, 0.7);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+}
+
+.inventory-panel {
+  padding-bottom: 14px;
+}
+
+.inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
 
@@ -344,6 +384,10 @@ em {
   .hero,
   .playfield {
     grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
   }
 
   .canvas-frame {

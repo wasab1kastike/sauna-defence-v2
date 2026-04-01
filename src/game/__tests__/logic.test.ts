@@ -42,7 +42,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.message).toContain('Board cap');
   });
 
-  it('heals the sauna defender when a wave resolves', () => {
+  it('heals the sauna defender and auto-continues to the next non-boss wave', () => {
     let state = prepState();
     const saunaDefender = state.defenders.find((defender) => defender.location === 'sauna');
     expect(saunaDefender).toBeTruthy();
@@ -55,9 +55,40 @@ describe('Sauna Defense V2 logic', () => {
     const next = stepState(state, 16, gameContent);
     const healed = next.defenders.find((defender) => defender.id === saunaDefender!.id);
 
-    expect(next.phase).toBe('prep');
+    expect(next.phase).toBe('wave');
+    expect(next.currentWave.index).toBe(2);
+    expect(next.pendingSpawns.length).toBeGreaterThan(0);
     expect(healed?.hp).toBeGreaterThan(1);
     expect(next.steamEarned).toBe(1);
+  });
+
+  it('allows placing a ready defender during an active wave', () => {
+    let state = prepState();
+    const ready = state.defenders.find((defender) => defender.location === 'ready');
+    expect(ready).toBeTruthy();
+    state.phase = 'wave';
+
+    state = applyAction(state, { type: 'selectDefender', defenderId: ready!.id }, gameContent);
+    state = applyAction(state, { type: 'placeSelectedDefender', tile: { q: 0, r: -2 } }, gameContent);
+
+    const placed = state.defenders.find((defender) => defender.id === ready!.id);
+    expect(placed?.location).toBe('board');
+    expect(placed?.tile).toEqual({ q: 0, r: -2 });
+  });
+
+  it('stops for prep when the next wave is a boss wave', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.waveIndex = 4;
+    state.currentWave = { index: 4, isBoss: false, rewardSisu: 4, spawns: [] };
+    state.pendingSpawns = [];
+    state.enemies = [];
+
+    const next = stepState(state, 16, gameContent);
+
+    expect(next.phase).toBe('prep');
+    expect(next.currentWave.index).toBe(5);
+    expect(next.currentWave.isBoss).toBe(true);
   });
 
   it('recruit gamble consumes more SISU each time', () => {
