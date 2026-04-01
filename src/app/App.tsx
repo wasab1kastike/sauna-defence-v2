@@ -92,17 +92,56 @@ export function App() {
   const selectedLoot = snapshot?.hud.selectedInventoryEntry ?? null;
   const isIntermission = snapshot?.hud.showIntermission ?? false;
   const isPaused = snapshot?.hud.isPaused ?? false;
+  const inventoryOpen = snapshot?.hud.inventoryOpen ?? false;
+  const hasRecentLoot = snapshot?.hud.hasRecentLoot ?? false;
+  const rosterEntries = snapshot?.hud.rosterEntries ?? [];
+  const boardEntries = rosterEntries.filter((entry) => entry.location === 'board');
+  const readyEntries = rosterEntries.filter((entry) => entry.location === 'ready');
+  const saunaEntries = rosterEntries.filter((entry) => entry.location === 'sauna');
+  const deadEntries = rosterEntries.filter((entry) => entry.location === 'dead');
+  const openRecruitSlots = snapshot ? Math.max(0, snapshot.hud.rosterCap - snapshot.hud.rosterCount) : 0;
+  const nextWavePreview = snapshot?.hud.wavePreview ?? [];
+
+  const renderRosterGroup = (
+    title: string,
+    entries: typeof rosterEntries,
+    emptyText: string
+  ) => (
+    <div className="roster-group">
+      <div className="group-head">
+        <strong>{title}</strong>
+        <span>{entries.length}</span>
+      </div>
+      {entries.length > 0 ? (
+        <div className="button-stack roster-stack">
+          {entries.map((entry) => (
+            <div key={entry.id} className={entry.selected ? 'roster-card selected' : 'roster-card'}>
+              <button
+                className="unit-button"
+                onClick={() => runtimeRef.current?.dispatch({ type: 'selectDefender', defenderId: entry.id })}
+              >
+                <span>
+                  {entry.name} <em>{entry.title}</em>
+                </span>
+                <small>{entry.templateName}</small>
+                <small>{entry.summary}</small>
+                <small>HP {entry.hp}/{entry.maxHp}</small>
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="panel-copy small-copy">{emptyText}</p>
+      )}
+    </div>
+  );
 
   return (
     <main className="shell">
       <section className="hero compact-hero">
         <div className="hero-copy">
           <p className="eyebrow">Sauna Defense V2</p>
-          <h1>Pause, loot, regroup, then throw the next weird hero into the heat.</h1>
-          <p className="lede">
-            Survive chain waves, freeze combat when loot decisions matter, and spend Steam only between
-            runs while the next cursed sauna crew waits outside.
-          </p>
+          <h1>Compact run view for fast loot and lane decisions.</h1>
         </div>
         <div className="status-card">
           <span>Run Mode</span>
@@ -115,38 +154,54 @@ export function App() {
 
       <section className="playfield">
         <div className="arena-column">
-          <section className="panel loot-dock">
-            <div className="panel-head">
-              <h2>Loot Dock</h2>
-              <span>{snapshot?.hud.inventoryCount ?? 0}/{snapshot?.hud.inventoryCap ?? 0}</span>
-            </div>
-            {snapshot && snapshot.hud.inventoryEntries.length > 0 ? (
-              <div className="loot-grid">
-                {snapshot.hud.inventoryEntries.map((entry) => (
+          {snapshot ? (
+            <section className="panel map-header-panel">
+              <div className="panel-head">
+                <h2>Run Header</h2>
+                <div className="header-actions">
                   <button
-                    key={entry.id}
-                    className={entry.selected ? 'loot-card selected' : 'loot-card'}
-                    onClick={() =>
-                      runtimeRef.current?.dispatch(
-                        entry.selected
-                          ? { type: 'clearSelectedInventoryDrop' }
-                          : { type: 'selectInventoryDrop', dropId: entry.id }
-                      )
-                    }
+                    className={inventoryOpen ? 'secondary-button' : 'ghost-button'}
+                    onClick={() => runtimeRef.current?.dispatch({ type: 'toggleInventory' })}
                   >
-                    <img src={assetUrl(entry.artPath)} alt={entry.name} className="loot-art" />
-                    <span className="loot-name">{entry.name}</span>
-                    <small>{formatRarity(entry.rarity)}</small>
-                    {entry.isRecent ? <span className="loot-ping">New</span> : null}
+                    Loot {snapshot.hud.inventoryCount}/{snapshot.hud.inventoryCap}
+                    {hasRecentLoot ? ' · New' : ''}
                   </button>
+                  <button
+                    className={isPaused ? 'secondary-button' : 'ghost-button'}
+                    disabled={!snapshot.hud.canPause}
+                    onClick={() => runtimeRef.current?.dispatch({ type: 'togglePause' })}
+                  >
+                    {isPaused ? 'Resume' : 'Pause'}
+                  </button>
+                </div>
+              </div>
+              <div className="metric-grid compact">
+                <div>
+                  <span>Wave</span>
+                  <strong>{snapshot.hud.waveNumber}</strong>
+                </div>
+                <div>
+                  <span>SISU</span>
+                  <strong>{snapshot.hud.sisu}</strong>
+                </div>
+                <div>
+                  <span>Steam</span>
+                  <strong>{snapshot.hud.steamEarned}</strong>
+                </div>
+                <div>
+                  <span>Sauna HP</span>
+                  <strong>{snapshot.hud.saunaHp}/{snapshot.hud.maxSaunaHp}</strong>
+                </div>
+              </div>
+              <div className="tag-row">
+                <span className="tag">{snapshot.hud.nextWaveThreat}</span>
+                <span className="tag">{snapshot.hud.nextWavePattern}</span>
+                {snapshot.hud.pressureSignals.map((signal) => (
+                  <span key={signal} className="tag warning-tag">{signal}</span>
                 ))}
               </div>
-            ) : (
-              <p className="panel-copy">
-                No loot waiting. New drops land here, and pause lets you think before equipping them.
-              </p>
-            )}
-          </section>
+            </section>
+          ) : null}
 
           <div className="canvas-frame">
             <canvas
@@ -162,84 +217,12 @@ export function App() {
         <aside className="sidebar action-rail">
           {snapshot ? (
             <>
-              <section className="panel run-panel">
-                <div className="panel-head">
-                  <h2>Run Header</h2>
-                  <button
-                    className={isPaused ? 'secondary-button' : 'ghost-button'}
-                    disabled={!snapshot.hud.canPause}
-                    onClick={() => runtimeRef.current?.dispatch({ type: 'togglePause' })}
-                  >
-                    {isPaused ? 'Resume' : 'Pause'}
-                  </button>
-                </div>
-                <div className="metric-grid compact">
-                  <div>
-                    <span>Wave</span>
-                    <strong>{snapshot.hud.waveNumber}</strong>
-                  </div>
-                  <div>
-                    <span>SISU</span>
-                    <strong>{snapshot.hud.sisu}</strong>
-                  </div>
-                  <div>
-                    <span>Steam</span>
-                    <strong>{snapshot.hud.steamEarned}</strong>
-                  </div>
-                  <div>
-                    <span>Sauna HP</span>
-                    <strong>{snapshot.hud.saunaHp}/{snapshot.hud.maxSaunaHp}</strong>
-                  </div>
-                </div>
-                <div className="tag-row">
-                  <span className="tag">{snapshot.hud.nextWaveThreat}</span>
-                  <span className="tag">{snapshot.hud.nextWavePattern}</span>
-                  {snapshot.hud.pressureSignals.map((signal) => (
-                    <span key={signal} className="tag warning-tag">{signal}</span>
-                  ))}
-                </div>
-              </section>
-
               <section className="panel action-panel">
                 <div className="panel-head">
                   <h2>{snapshot.hud.actionTitle}</h2>
                   <span>{snapshot.hud.phaseLabel}</span>
                 </div>
                 <p className="panel-copy">{snapshot.hud.actionBody}</p>
-                {selectedLoot ? (
-                  <div className="detail-card loot-detail">
-                    <img src={assetUrl(selectedLoot.artPath)} alt={selectedLoot.name} className="detail-art" />
-                    <div className="detail-copy">
-                      <strong>
-                        {selectedLoot.name} · {formatRarity(selectedLoot.rarity)}
-                      </strong>
-                      <p className="panel-copy flavor-copy">{selectedLoot.flavorText}</p>
-                      <p className="panel-copy small-copy">{selectedLoot.effectText}</p>
-                    </div>
-                    <div className="button-row">
-                      <button
-                        className="mini-button"
-                        disabled={!selectedDefender}
-                        onClick={() =>
-                          selectedDefender &&
-                          runtimeRef.current?.dispatch({
-                            type: 'equipInventoryDrop',
-                            dropId: selectedLoot.id,
-                            defenderId: selectedDefender.id
-                          })
-                        }
-                      >
-                        Equip To Selected
-                      </button>
-                      <button
-                        className="ghost-button"
-                        onClick={() => runtimeRef.current?.dispatch({ type: 'clearSelectedInventoryDrop' })}
-                      >
-                        Close Loot
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
                 <div className="button-stack">
                   <button
                     className="primary-button"
@@ -256,18 +239,19 @@ export function App() {
                     Activate SISU ({gameContent.config.sisuAbilityCost})
                   </button>
                   <button
-                    className="secondary-button"
-                    disabled={!snapshot.hud.canRecruit}
-                    onClick={() => runtimeRef.current?.dispatch({ type: 'gambleRecruit' })}
-                  >
-                    Gamble Recruit ({snapshot.hud.recruitCost} SISU)
-                  </button>
-                  <button
                     className="ghost-button"
                     onClick={() => runtimeRef.current?.dispatch({ type: 'restartRun' })}
                   >
                     Reset Run
                   </button>
+                </div>
+                <div className="incoming-strip">
+                  {nextWavePreview.map((entry) => (
+                    <div key={entry.id} className="incoming-pill">
+                      <span>{entry.name}</span>
+                      <strong>{entry.count}</strong>
+                    </div>
+                  ))}
                 </div>
               </section>
 
@@ -310,17 +294,17 @@ export function App() {
                       <span className="tag">Items {selectedDefender.itemNames.length}/{selectedDefender.itemSlotCount}</span>
                       <span className="tag">Skills {selectedDefender.skillNames.length}/{selectedDefender.skillSlotCount}</span>
                     </div>
-                    <ul className="token-list">
+                    <div className="tag-row compact-tags">
                       {selectedDefender.itemNames.map((name) => (
-                        <li key={name}>{name}</li>
+                        <span key={name} className="tag loadout-tag">{name}</span>
                       ))}
                       {selectedDefender.skillNames.map((name) => (
-                        <li key={name}>{name}</li>
+                        <span key={name} className="tag loadout-tag">{name}</span>
                       ))}
                       {selectedDefender.itemNames.length === 0 && selectedDefender.skillNames.length === 0 ? (
-                        <li>Empty loadout</li>
+                        <span className="tag loadout-tag">Empty loadout</span>
                       ) : null}
-                    </ul>
+                    </div>
                     {selectedDefender.location === 'board' && snapshot.state.phase === 'prep' && !snapshot.state.saunaDefenderId ? (
                       <button
                         className="mini-button"
@@ -342,40 +326,57 @@ export function App() {
               <section className="panel">
                 <div className="panel-head">
                   <h2>Roster</h2>
-                  <span>{snapshot.hud.rosterCount}/{snapshot.hud.rosterCap}</span>
+                  <span>{snapshot.hud.rosterCount} recruited</span>
                 </div>
-                <div className="button-stack roster-stack">
-                  {snapshot.hud.rosterEntries.map((entry) => (
-                    <div key={entry.id} className={entry.selected ? 'roster-card selected' : 'roster-card'}>
-                      <button
-                        className="unit-button"
-                        onClick={() => runtimeRef.current?.dispatch({ type: 'selectDefender', defenderId: entry.id })}
-                      >
-                        <span>
-                          {entry.name} <em>{entry.title}</em>
-                        </span>
-                        <small>{entry.templateName}</small>
-                        <small>{entry.summary}</small>
-                        <small>HP {entry.hp}/{entry.maxHp}</small>
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                <p className="panel-copy small-copy">
+                  This window only shows heroes you already recruited, grouped by where they currently are.
+                </p>
+                {renderRosterGroup('On Board', boardEntries, 'No defenders on the board right now.')}
+                {renderRosterGroup('Ready Bench', readyEntries, 'No recruited defenders waiting on the bench.')}
+                {renderRosterGroup('Sauna Slot', saunaEntries, 'The sauna slot is empty.')}
+                {renderRosterGroup('Fallen', deadEntries, 'Nobody has fallen this run.')}
               </section>
 
-              <section className="panel">
+              <section className="panel recruitment-panel">
                 <div className="panel-head">
-                  <h2>Next Wave</h2>
-                  <span>{snapshot.hud.isBossWave ? 'Boss' : 'Forecast'}</span>
+                  <h2>Recruitment</h2>
+                  <span>{openRecruitSlots} open slots</span>
                 </div>
-                <ul className="wave-list">
-                  {snapshot.hud.wavePreview.map((entry) => (
-                    <li key={entry.id}>
-                      <span>{entry.name}</span>
-                      <strong>{entry.count}</strong>
-                    </li>
-                  ))}
-                </ul>
+                <p className="panel-copy">
+                  New recruits appear here conceptually. If you still have capacity, gambling SISU will add a fresh
+                  weird hero to your roster.
+                </p>
+                <div className="metric-grid compact">
+                  <div>
+                    <span>Recruited</span>
+                    <strong>{snapshot.hud.rosterCount}/{snapshot.hud.rosterCap}</strong>
+                  </div>
+                  <div>
+                    <span>Next Cost</span>
+                    <strong>{snapshot.hud.recruitCost} SISU</strong>
+                  </div>
+                </div>
+                {openRecruitSlots > 0 ? (
+                  <div className="open-slot-list">
+                    {Array.from({ length: openRecruitSlots }).map((_, index) => (
+                      <div key={index} className="open-slot-card">
+                        <strong>Open Slot</strong>
+                        <small>Waiting for the next unlucky volunteer.</small>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="panel-copy small-copy">
+                    Roster is full for this run. Lose someone or raise capacity in the metashop later.
+                  </p>
+                )}
+                <button
+                  className="secondary-button"
+                  disabled={!snapshot.hud.canRecruit}
+                  onClick={() => runtimeRef.current?.dispatch({ type: 'gambleRecruit' })}
+                >
+                  Gamble Recruit ({snapshot.hud.recruitCost} SISU)
+                </button>
               </section>
             </>
           ) : (
@@ -386,6 +387,111 @@ export function App() {
           )}
         </aside>
       </section>
+
+      {snapshot && !isIntermission ? (
+        <>
+          <div
+            className={inventoryOpen ? 'drawer-backdrop visible' : 'drawer-backdrop'}
+            onClick={() => runtimeRef.current?.dispatch({ type: 'toggleInventory' })}
+          />
+          <aside className={inventoryOpen ? 'inventory-drawer open' : 'inventory-drawer'}>
+            <section className="panel drawer-panel">
+              <div className="panel-head">
+                <h2>Inventory</h2>
+                <div className="header-actions">
+                  <span>{snapshot.hud.inventoryCount}/{snapshot.hud.inventoryCap}</span>
+                  <button
+                    className="ghost-button"
+                    onClick={() => runtimeRef.current?.dispatch({ type: 'toggleInventory' })}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+              {snapshot.hud.inventoryEntries.length > 0 ? (
+                <div className="drawer-body">
+                  <div className="loot-grid compact-loot-grid">
+                    {snapshot.hud.inventoryEntries.map((entry) => (
+                      <button
+                        key={entry.id}
+                        className={entry.selected ? 'loot-card compact selected' : 'loot-card compact'}
+                        onClick={() =>
+                          runtimeRef.current?.dispatch(
+                            entry.selected
+                              ? { type: 'clearSelectedInventoryDrop' }
+                              : { type: 'selectInventoryDrop', dropId: entry.id }
+                          )
+                        }
+                      >
+                        <img src={assetUrl(entry.artPath)} alt={entry.name} className="loot-art compact-art" />
+                        <div className="loot-copy">
+                          <span className="loot-name">{entry.name}</span>
+                          <small>{formatRarity(entry.rarity)}</small>
+                          <small>{entry.effectText}</small>
+                        </div>
+                        {entry.isRecent ? <span className="loot-ping">New</span> : null}
+                      </button>
+                    ))}
+                  </div>
+
+                  {selectedLoot ? (
+                    <div className="detail-card loot-detail compact-detail">
+                      <img src={assetUrl(selectedLoot.artPath)} alt={selectedLoot.name} className="detail-art compact-detail-art" />
+                      <div className="detail-copy">
+                        <strong>
+                          {selectedLoot.name} · {formatRarity(selectedLoot.rarity)}
+                        </strong>
+                        <p className="panel-copy flavor-copy">{selectedLoot.flavorText}</p>
+                        <p className="panel-copy small-copy">{selectedLoot.effectText}</p>
+                      </div>
+                      <div className="button-row tight">
+                        <button
+                          className="mini-button"
+                          disabled={!snapshot.hud.canAutoAssignSelectedLoot}
+                          onClick={() =>
+                            runtimeRef.current?.dispatch({
+                              type: 'autoAssignInventoryDrop',
+                              dropId: selectedLoot.id
+                            })
+                          }
+                        >
+                          Auto Assign
+                        </button>
+                        <button
+                          className="mini-button"
+                          disabled={!selectedDefender}
+                          onClick={() =>
+                            selectedDefender &&
+                            runtimeRef.current?.dispatch({
+                              type: 'equipInventoryDrop',
+                              dropId: selectedLoot.id,
+                              defenderId: selectedDefender.id
+                            })
+                          }
+                        >
+                          Equip To Selected
+                        </button>
+                        <button
+                          className="ghost-button"
+                          onClick={() => runtimeRef.current?.dispatch({ type: 'clearSelectedInventoryDrop' })}
+                        >
+                          Close Loot
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="panel-copy small-copy">
+                      Pick a loot card to inspect it, auto-assign it, or equip it to the currently selected hero.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="panel-copy">No loot waiting. Fresh drops will appear here.</p>
+              )}
+            </section>
+          </aside>
+        </>
+      ) : null}
 
       {snapshot && isIntermission ? (
         <div className="overlay-shell">

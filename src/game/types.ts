@@ -216,6 +216,7 @@ export interface SisuState {
 export interface RunState {
   phase: Phase;
   overlayMode: OverlayMode;
+  inventoryOpen: boolean;
   timeMs: number;
   waveIndex: number;
   waveElapsedMs: number;
@@ -319,6 +320,8 @@ export interface HudViewModel {
   rosterCap: number;
   inventoryCount: number;
   inventoryCap: number;
+  inventoryOpen: boolean;
+  hasRecentLoot: boolean;
   saunaOccupantName: string | null;
   saunaHp: number;
   maxSaunaHp: number;
@@ -338,6 +341,7 @@ export interface HudViewModel {
   rosterEntries: HudRosterEntry[];
   inventoryEntries: HudInventoryEntry[];
   selectedInventoryEntry: HudInventoryEntry | null;
+  canAutoAssignSelectedLoot: boolean;
   selectedDefender: HudSelectedDefender | null;
   wavePreview: WavePreviewEntry[];
   metaUpgrades: HudMetaUpgradeEntry[];
@@ -362,6 +366,7 @@ export type InputAction =
   | { type: 'clearSelection' }
   | { type: 'selectInventoryDrop'; dropId: number }
   | { type: 'clearSelectedInventoryDrop' }
+  | { type: 'toggleInventory' }
   | { type: 'placeSelectedDefender'; tile: AxialCoord }
   | { type: 'hoverTile'; tile: AxialCoord | null }
   | { type: 'startWave' }
@@ -370,6 +375,7 @@ export type InputAction =
   | { type: 'recallDefenderToSauna'; defenderId: string }
   | { type: 'gambleRecruit' }
   | { type: 'equipInventoryDrop'; dropId: number; defenderId: string }
+  | { type: 'autoAssignInventoryDrop'; dropId: number }
   | { type: 'dismissRecentDrop' }
   | { type: 'buyMetaUpgrade'; upgradeId: MetaUpgradeId }
   | { type: 'unlockMetaShop' }

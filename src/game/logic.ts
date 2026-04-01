@@ -681,6 +681,50 @@ function getInventoryDrop(state: RunState, dropId: number | null): InventoryDrop
   return dropId === null ? null : state.inventory.find((drop) => drop.instanceId === dropId) ?? null;
 }
 
+function canEquipDrop(defender: DefenderInstance, drop: InventoryDrop, state: RunState, content: GameContent): boolean {
+  if (defender.location === 'dead') return false;
+  if (drop.kind === 'item') {
+    return defender.items.length < itemSlotCap(state, content);
+  }
+  return defender.skills.length < 1;
+}
+
+function findAutoAssignTarget(state: RunState, drop: InventoryDrop, content: GameContent): DefenderInstance | null {
+  const selected = getDefender(state, state.selectedDefenderId);
+  if (selected && canEquipDrop(selected, drop, state, content)) {
+    return selected;
+  }
+
+  return livingDefenders(state).find((defender) => canEquipDrop(defender, drop, state, content)) ?? null;
+}
+
+function equipDropOnDefender(
+  state: RunState,
+  drop: InventoryDrop,
+  defender: DefenderInstance,
+  content: GameContent
+): boolean {
+  const dropIndex = state.inventory.findIndex((entry) => entry.instanceId === drop.instanceId);
+  if (dropIndex < 0 || !canEquipDrop(defender, drop, state, content)) return false;
+
+  const prevMax = statsWithItems(defender, content).maxHp;
+  if (drop.kind === 'item') {
+    defender.items.push(drop.definitionId as ItemId);
+  } else {
+    defender.skills.push(drop.definitionId as SkillId);
+  }
+
+  state.inventory.splice(dropIndex, 1);
+  state.recentDropId = state.inventory.length > 0 ? state.inventory[state.inventory.length - 1].instanceId : null;
+  state.selectedInventoryDropId =
+    state.selectedInventoryDropId === drop.instanceId
+      ? state.inventory[0]?.instanceId ?? null
+      : state.selectedInventoryDropId;
+  defender.hp += Math.max(0, statsWithItems(defender, content).maxHp - prevMax);
+  normalizeDefender(defender, content);
+  return true;
+}
+
 function awardMeta(state: RunState): void {
   if (state.metaAwarded) return;
   state.meta.steam += state.steamEarned;
@@ -773,7 +817,7 @@ function actionCopy(state: RunState): { title: string; body: string } {
   if (selectedLoot && selectedDefender) {
     return {
       title: 'Equip Opportunity',
-      body: `${selectedLoot.name} is ready for ${selectedDefender.name}. ${selectedLoot.effectText}`
+      body: `${selectedLoot.name} is ready for ${selectedDefender.name}. Equip manually or use auto assign to place it fast.`
     };
   }
   if (selectedLoot) {
@@ -813,6 +857,7 @@ export function createInitialState(
   const state: RunState = {
     phase: 'prep',
     overlayMode: showIntermission ? 'intermission' : 'none',
+    inventoryOpen: false,
     timeMs: 0,
     waveIndex: 1,
     waveElapsedMs: 0,
@@ -874,12 +919,20 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     case 'selectInventoryDrop': {
       const drop = getInventoryDrop(next, action.dropId);
       if (!drop) return next;
+      next.inventoryOpen = true;
       next.selectedInventoryDropId = drop.instanceId;
       next.message = `${drop.name} ready to equip.`;
       return next;
     }
     case 'clearSelectedInventoryDrop':
       next.selectedInventoryDropId = null;
+      return next;
+    case 'toggleInventory':
+      if (next.overlayMode === 'intermission') return next;
+      next.inventoryOpen = !next.inventoryOpen;
+      if (!next.inventoryOpen) {
+        next.selectedInventoryDropId = null;
+      }
       return next;
     case 'hoverTile':
       next.hoveredTile = action.tile ? { ...action.tile } : null;
@@ -961,33 +1014,34 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     }
     case 'equipInventoryDrop': {
-      const dropIndex = next.inventory.findIndex((drop) => drop.instanceId === action.dropId);
       const defender = getDefender(next, action.defenderId);
-      if (dropIndex < 0 || !defender || defender.location === 'dead') return next;
-      const drop = next.inventory[dropIndex];
-      const prevMax = statsWithItems(defender, content).maxHp;
+      const drop = getInventoryDrop(next, action.dropId);
+      if (!drop || !defender || defender.location === 'dead') return next;
       if (drop.kind === 'item') {
         if (defender.items.length >= itemSlotCap(next, content)) {
           next.message = `${defender.name} has no free item slot.`;
           return next;
         }
-        defender.items.push(drop.definitionId as ItemId);
       } else {
         if (defender.skills.length >= 1) {
           next.message = `${defender.name} already knows a skill.`;
           return next;
         }
-        defender.skills.push(drop.definitionId as SkillId);
       }
-      next.inventory.splice(dropIndex, 1);
-      next.recentDropId = next.inventory.length > 0 ? next.inventory[next.inventory.length - 1].instanceId : null;
-      next.selectedInventoryDropId =
-        next.selectedInventoryDropId === drop.instanceId
-          ? next.inventory[0]?.instanceId ?? null
-          : next.selectedInventoryDropId;
-      defender.hp += Math.max(0, statsWithItems(defender, content).maxHp - prevMax);
-      normalizeDefender(defender, content);
+      equipDropOnDefender(next, drop, defender, content);
       next.message = `${drop.name} equipped on ${defender.name}.`;
+      return next;
+    }
+    case 'autoAssignInventoryDrop': {
+      const drop = getInventoryDrop(next, action.dropId);
+      if (!drop) return next;
+      const target = findAutoAssignTarget(next, drop, content);
+      if (!target) {
+        next.message = `No free ${drop.kind} slot for ${drop.name}.`;
+        return next;
+      }
+      equipDropOnDefender(next, drop, target, content);
+      next.message = `${drop.name} auto-assigned to ${target.name}.`;
       return next;
     }
     case 'dismissRecentDrop':
@@ -1084,6 +1138,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     rosterCap: rosterCap(state, content),
     inventoryCount: state.inventory.length,
     inventoryCap: inventoryCap(state, content),
+    inventoryOpen: state.inventoryOpen,
+    hasRecentLoot: state.recentDropId !== null,
     saunaOccupantName: saunaDefender?.name ?? null,
     saunaHp: state.saunaHp,
     maxSaunaHp: content.config.saunaHp,
@@ -1138,6 +1194,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       isRecent: selectedLoot.instanceId === state.recentDropId,
       selected: true
     } : null,
+    canAutoAssignSelectedLoot: selectedLoot ? findAutoAssignTarget(state, selectedLoot, content) !== null : false,
     selectedDefender: selected ? {
       id: selected.id,
       name: selected.name,

@@ -52,9 +52,9 @@ button {
 
 .shell {
   min-height: 100%;
-  padding: 24px;
+  padding: 18px;
   display: grid;
-  gap: 20px;
+  gap: 14px;
 }
 
 .hero {
@@ -71,12 +71,12 @@ button {
 .hero-copy h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.8rem, 3.3vw, 2.6rem);
-  line-height: 1.06;
+  font-size: clamp(1.15rem, 2vw, 1.55rem);
+  line-height: 1.08;
 }
 
 .eyebrow {
-  margin: 0 0 8px;
+  margin: 0 0 4px;
   color: var(--accent-strong);
   text-transform: uppercase;
   letter-spacing: 0.18em;
@@ -84,7 +84,7 @@ button {
 }
 
 .lede {
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   max-width: 72ch;
   color: var(--muted);
   line-height: 1.5;
@@ -116,8 +116,8 @@ button {
 
 .status-card {
   align-self: start;
-  min-width: 250px;
-  padding: 16px 18px;
+  min-width: 220px;
+  padding: 12px 14px;
   border-radius: 18px;
   display: grid;
   gap: 4px;
@@ -132,14 +132,18 @@ button {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(320px, 420px);
-  gap: 20px;
+  gap: 16px;
   align-items: start;
 }
 
 .arena-column {
   display: grid;
-  gap: 16px;
+  gap: 12px;
   min-height: 0;
+}
+
+.map-header-panel {
+  padding: 14px 16px;
 }
 
 .canvas-frame {
@@ -161,27 +165,27 @@ button {
 
 .sidebar {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   align-content: start;
   position: sticky;
   top: 18px;
 }
 
 .action-rail {
-  gap: 16px;
+  gap: 12px;
 }
 
 .panel {
   border-radius: 22px;
-  padding: 18px;
+  padding: 14px;
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .panel h2 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 1.15rem;
+  font-size: 1rem;
 }
 
 .panel-head {
@@ -220,7 +224,7 @@ button {
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 8px;
 }
 
 .metric-grid.compact {
@@ -228,8 +232,8 @@ button {
 }
 
 .metric-grid div {
-  padding: 12px;
-  border-radius: 14px;
+  padding: 10px;
+  border-radius: 12px;
   background: var(--panel-soft);
   display: grid;
   gap: 4px;
@@ -241,7 +245,14 @@ button {
 }
 
 .metric-grid strong {
-  font-size: 1.1rem;
+  font-size: 1rem;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .button-stack,
@@ -320,17 +331,38 @@ button {
 }
 
 .roster-stack {
+  gap: 8px;
+}
+
+.roster-group {
+  display: grid;
+  gap: 10px;
+}
+
+.group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 12px;
+}
+
+.group-head strong {
+  font-size: 0.98rem;
+}
+
+.group-head span {
+  color: var(--muted);
+  font-size: 0.86rem;
 }
 
 .roster-card,
 .inventory-card,
 .selected-card {
   border-radius: 16px;
-  padding: 12px;
+  padding: 10px;
   border: 1px solid rgba(132, 230, 220, 0.1);
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .roster-card.selected,
@@ -339,18 +371,44 @@ button {
   box-shadow: inset 0 0 0 1px rgba(255, 205, 118, 0.14);
 }
 
+.recruitment-panel {
+  border-color: rgba(255, 205, 118, 0.22);
+}
+
+.open-slot-list {
+  display: grid;
+  gap: 10px;
+}
+
+.open-slot-card {
+  border-radius: 16px;
+  padding: 12px;
+  border: 1px dashed rgba(255, 205, 118, 0.26);
+  background: rgba(47, 38, 23, 0.36);
+  display: grid;
+  gap: 4px;
+}
+
+.open-slot-card strong {
+  color: var(--accent-strong);
+}
+
+.open-slot-card small {
+  color: var(--muted);
+}
+
 .tag-row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .tag {
-  padding: 6px 10px;
+  padding: 5px 8px;
   border-radius: 999px;
   background: rgba(125, 224, 209, 0.12);
   border: 1px solid rgba(125, 224, 209, 0.2);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
 }
 
 .warning-tag {
@@ -387,10 +445,6 @@ button {
   background: rgba(63, 46, 19, 0.4);
 }
 
-.loot-dock {
-  padding-bottom: 14px;
-}
-
 .loot-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
@@ -409,6 +463,19 @@ button {
   position: relative;
 }
 
+.loot-card.compact {
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px;
+}
+
+.loot-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
 .loot-card.selected {
   border-color: rgba(255, 205, 118, 0.48);
   box-shadow: inset 0 0 0 1px rgba(255, 205, 118, 0.14);
@@ -422,6 +489,11 @@ button {
   border-radius: 12px;
   background: rgba(8, 18, 20, 0.45);
   border: 1px solid rgba(125, 224, 209, 0.12);
+}
+
+.compact-art {
+  width: 54px;
+  height: 54px;
 }
 
 .loot-name {
@@ -441,7 +513,7 @@ button {
 
 .detail-card {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .loot-detail {
@@ -449,8 +521,17 @@ button {
   align-items: start;
 }
 
+.compact-detail {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.compact-detail-art {
+  width: 72px;
+  height: 72px;
+}
+
 .hero-detail {
-  gap: 12px;
+  gap: 8px;
 }
 
 .detail-copy {
@@ -465,6 +546,79 @@ button {
 .run-panel .metric-grid,
 .selected-panel .metric-grid {
   margin-top: 2px;
+}
+
+.compact-tags {
+  gap: 6px;
+}
+
+.loadout-tag {
+  background: rgba(255, 205, 118, 0.1);
+  border-color: rgba(255, 205, 118, 0.18);
+}
+
+.incoming-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.incoming-pill {
+  padding: 7px 9px;
+  border-radius: 12px;
+  background: rgba(22, 43, 47, 0.7);
+  border: 1px solid rgba(125, 224, 209, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 10, 12, 0.12);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+  z-index: 8;
+}
+
+.drawer-backdrop.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.inventory-drawer {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  bottom: 16px;
+  width: min(360px, calc(100vw - 32px));
+  transform: translateX(calc(-100% - 24px));
+  transition: transform 180ms ease;
+  z-index: 9;
+  pointer-events: none;
+}
+
+.inventory-drawer.open {
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.drawer-panel {
+  height: 100%;
+  overflow: auto;
+}
+
+.drawer-body {
+  display: grid;
+  gap: 12px;
+}
+
+.compact-loot-grid {
+  grid-template-columns: 1fr;
+  gap: 8px;
 }
 
 .overlay-shell {
@@ -535,7 +689,18 @@ em {
     grid-template-columns: 1fr;
   }
 
+  .compact-detail {
+    grid-template-columns: 1fr;
+  }
+
   .intermission-actions {
     grid-template-columns: 1fr;
+  }
+
+  .inventory-drawer {
+    width: min(420px, calc(100vw - 24px));
+    left: 12px;
+    top: 12px;
+    bottom: 12px;
   }
 }

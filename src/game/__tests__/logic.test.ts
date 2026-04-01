@@ -256,4 +256,72 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.selectedInventoryEntry?.artPath).toBe('loot/lucky-ladle.svg');
     expect(snapshot.hud.selectedInventoryEntry?.flavorText).toContain('soup');
   });
+
+  it('keeps inventory closed by default and toggles it open', () => {
+    let state = prepState();
+
+    expect(state.inventoryOpen).toBe(false);
+
+    state = applyAction(state, { type: 'toggleInventory' }, gameContent);
+    expect(state.inventoryOpen).toBe(true);
+
+    state = applyAction(state, { type: 'toggleInventory' }, gameContent);
+    expect(state.inventoryOpen).toBe(false);
+  });
+
+  it('auto-assigns loot to the selected defender first when a slot is free', () => {
+    let state = prepState();
+    const target = state.defenders.find((defender) => defender.location === 'ready');
+    expect(target).toBeTruthy();
+    state.inventory.push({
+      instanceId: 2,
+      kind: 'item',
+      definitionId: 'ladle',
+      rarity: 'common',
+      name: 'Lucky Ladle',
+      effectText: '+5 HP, -40 ms attack speed.',
+      flavorText: 'Still warm from a soup no one admits making.',
+      artPath: 'loot/lucky-ladle.svg',
+      waveFound: 1,
+      sourceEnemyId: 'raider'
+    });
+
+    state = applyAction(state, { type: 'selectDefender', defenderId: target!.id }, gameContent);
+    state = applyAction(state, { type: 'autoAssignInventoryDrop', dropId: 2 }, gameContent);
+
+    const updated = state.defenders.find((defender) => defender.id === target!.id);
+    expect(updated?.items).toContain('ladle');
+    expect(state.inventory).toHaveLength(0);
+  });
+
+  it('falls back to another defender when the selected one has no valid slot', () => {
+    let state = prepState();
+    const selected = state.defenders.find((defender) => defender.location === 'ready');
+    const backup = state.defenders.find((defender) => defender.location === 'board') ?? state.defenders.find((defender) => defender.id !== selected?.id);
+    expect(selected).toBeTruthy();
+    expect(backup).toBeTruthy();
+
+    selected!.skills.push('fireball');
+    state.inventory.push({
+      instanceId: 3,
+      kind: 'skill',
+      definitionId: 'blink_step',
+      rarity: 'rare',
+      name: 'Blink Step',
+      effectText: 'If no target is in range, blink one hex closer to danger.',
+      flavorText: 'A deeply unwise technique for entering rooms dramatically.',
+      artPath: 'loot/blink-step.svg',
+      waveFound: 1,
+      sourceEnemyId: 'raider'
+    });
+
+    state = applyAction(state, { type: 'selectDefender', defenderId: selected!.id }, gameContent);
+    state = applyAction(state, { type: 'autoAssignInventoryDrop', dropId: 3 }, gameContent);
+
+    const selectedAfter = state.defenders.find((defender) => defender.id === selected!.id);
+    const backupAfter = state.defenders.find((defender) => defender.id === backup!.id);
+    expect(selectedAfter?.skills).toEqual(['fireball']);
+    expect(backupAfter?.skills).toContain('blink_step');
+    expect(state.inventory).toHaveLength(0);
+  });
 });
