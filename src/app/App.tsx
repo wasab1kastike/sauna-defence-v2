@@ -442,115 +442,128 @@ export function App() {
           ) : null}
 
           <div className="arena-stage">
-            <section className="panel selected-panel selected-panel-compact">
-              <div className="panel-head">
-                <h2>{selectedSauna ? 'Selected Sauna' : 'Selected Hero'}</h2>
-                <span>{selectedSauna ? selectedSauna.occupancyLabel : selectedDefender ? formatLocationLabel(selectedDefender.location) : 'No selection'}</span>
-              </div>
-              {selectedSauna ? (
-                <div className="detail-card hero-detail">
-                  <div className="detail-copy">
-                    <strong>Sauna Reserve</strong>
-                    <small>Occupancy {selectedSauna.occupancyLabel}</small>
-                    <p className="panel-copy flavor-copy small-copy">
-                      {selectedSauna.occupantName
-                        ? `${selectedSauna.occupantName} ${selectedSauna.occupantTitle} is warming up inside.`
-                        : 'Nobody is inside right now.'}
-                    </p>
-                  </div>
-                  {selectedSauna.occupantName ? (
-                    <>
-                      <div className="metric-grid compact compact-metrics">
-                        <div>
-                          <span>Hero</span>
-                          <strong>{selectedSauna.occupantName}</strong>
-                        </div>
-                        <div>
-                          <span>Role</span>
-                          <strong>{selectedSauna.occupantRole}</strong>
-                        </div>
-                        <div>
-                          <span>HP</span>
-                          <strong>{selectedSauna.occupantHp}/{selectedSauna.occupantMaxHp}</strong>
-                        </div>
-                      </div>
-                      <p className="panel-copy small-copy">{selectedSauna.occupantLore}</p>
-                    </>
-                  ) : null}
-                  <div className="tag-row compact-tags">
-                    <span className="tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy armed' : 'Auto Deploy locked'}</span>
-                    <span className="tag">{selectedSauna.slapSwapUnlocked ? 'Slap Swap armed' : 'Slap Swap locked'}</span>
-                  </div>
+            <div className="arena-left-rail">
+              <section className="panel selected-panel selected-panel-compact">
+                <div className="panel-head">
+                  <h2>{selectedSauna ? 'Selected Sauna' : 'Selected Hero'}</h2>
+                  <span>{selectedSauna ? selectedSauna.occupancyLabel : selectedDefender ? formatLocationLabel(selectedDefender.location) : 'No selection'}</span>
                 </div>
-              ) : selectedDefender ? (
-                <div className="detail-card hero-detail">
-                  <div className="detail-copy">
-                    <strong>
-                      {selectedDefender.name} <em>{selectedDefender.title}</em>
-                    </strong>
-                    <small>Level {selectedDefender.level} · {selectedDefender.subclassName} · {selectedDefender.templateName}</small>
-                    <p className="panel-copy flavor-copy small-copy">{selectedDefender.lore}</p>
-                    <p className="panel-copy small-copy">{selectedDefender.subclassDescription}</p>
+                {selectedSauna ? (
+                  <div className="detail-card hero-detail">
+                    <div className="detail-copy">
+                      <strong>Sauna Reserve</strong>
+                      <small>Occupancy {selectedSauna.occupancyLabel}</small>
+                      <p className="panel-copy flavor-copy small-copy">
+                        {selectedSauna.occupantName
+                          ? `${selectedSauna.occupantName} ${selectedSauna.occupantTitle} is warming up inside.`
+                          : 'Nobody is inside right now.'}
+                      </p>
+                    </div>
+                    {selectedSauna.occupantName ? (
+                      <>
+                        <div className="metric-grid compact compact-metrics">
+                          <div>
+                            <span>Hero</span>
+                            <strong>{selectedSauna.occupantName}</strong>
+                          </div>
+                          <div>
+                            <span>Role</span>
+                            <strong>{selectedSauna.occupantRole}</strong>
+                          </div>
+                          <div>
+                            <span>HP</span>
+                            <strong>{selectedSauna.occupantHp}/{selectedSauna.occupantMaxHp}</strong>
+                          </div>
+                        </div>
+                        <p className="panel-copy small-copy">{selectedSauna.occupantLore}</p>
+                      </>
+                    ) : null}
+                    <div className="tag-row compact-tags">
+                      <span className="tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy armed' : 'Auto Deploy locked'}</span>
+                      <span className="tag">{selectedSauna.slapSwapUnlocked ? 'Slap Swap armed' : 'Slap Swap locked'}</span>
+                    </div>
                   </div>
-                  <div className="metric-grid compact compact-metrics">
-                    <div>
-                      <span>HP</span>
-                      <strong>{selectedDefender.hp}/{selectedDefender.maxHp}</strong>
+                ) : selectedDefender ? (
+                  <div className="detail-card hero-detail">
+                    <div className="detail-copy">
+                      <strong>
+                        {selectedDefender.name} <em>{selectedDefender.title}</em>
+                      </strong>
+                      <small>Level {selectedDefender.level} · {selectedDefender.subclassName} · {selectedDefender.templateName}</small>
+                      <p className="panel-copy flavor-copy small-copy">{selectedDefender.lore}</p>
+                      <p className="panel-copy small-copy">{selectedDefender.subclassDescription}</p>
                     </div>
-                    <div>
-                      <span>ATK</span>
-                      <strong>{selectedDefender.damage}</strong>
+                    <div className="metric-grid compact compact-metrics">
+                      <div>
+                        <span>HP</span>
+                        <strong>{selectedDefender.hp}/{selectedDefender.maxHp}</strong>
+                      </div>
+                      <div>
+                        <span>ATK</span>
+                        <strong>{selectedDefender.damage}</strong>
+                      </div>
+                      <div>
+                        <span>Heal</span>
+                        <strong>{selectedDefender.heal}</strong>
+                      </div>
+                      <div>
+                        <span>Range</span>
+                        <strong>{selectedDefender.range}</strong>
+                      </div>
                     </div>
-                    <div>
-                      <span>Heal</span>
-                      <strong>{selectedDefender.heal}</strong>
+                    <p className="panel-copy small-copy">
+                      Attack cooldown: {selectedDefender.attackCooldownMs} ms
+                    </p>
+                    <div className="tag-row compact-tags">
+                      <span className="tag">
+                        XP {selectedDefender.xp}
+                        {selectedDefender.nextLevelXp !== null ? ` / ${selectedDefender.nextLevelXp}` : ' · Max'}
+                      </span>
+                      <span className="tag">Items {selectedDefender.itemNames.length}/{selectedDefender.itemSlotCount}</span>
+                      <span className="tag">Skills {selectedDefender.skillNames.length}/{selectedDefender.skillSlotCount}</span>
+                      {selectedDefender.itemNames.length === 0 && selectedDefender.skillNames.length === 0 ? (
+                        <span className="tag loadout-tag">Empty loadout</span>
+                      ) : null}
                     </div>
-                    <div>
-                      <span>Range</span>
-                      <strong>{selectedDefender.range}</strong>
-                    </div>
-                  </div>
-                  <p className="panel-copy small-copy">
-                    Attack cooldown: {selectedDefender.attackCooldownMs} ms
-                  </p>
-                  <div className="tag-row compact-tags">
-                    <span className="tag">
-                      XP {selectedDefender.xp}
-                      {selectedDefender.nextLevelXp !== null ? ` / ${selectedDefender.nextLevelXp}` : ' · Max'}
-                    </span>
-                    <span className="tag">Items {selectedDefender.itemNames.length}/{selectedDefender.itemSlotCount}</span>
-                    <span className="tag">Skills {selectedDefender.skillNames.length}/{selectedDefender.skillSlotCount}</span>
-                    {selectedDefender.itemNames.length === 0 && selectedDefender.skillNames.length === 0 ? (
-                      <span className="tag loadout-tag">Empty loadout</span>
+                    {(selectedDefender.itemNames.length > 0 || selectedDefender.skillNames.length > 0) ? (
+                      <div className="tag-row compact-tags">
+                        {selectedDefender.itemNames.map((name) => (
+                          <span key={name} className="tag loadout-tag">{name}</span>
+                        ))}
+                        {selectedDefender.skillNames.map((name) => (
+                          <span key={name} className="tag loadout-tag">{name}</span>
+                        ))}
+                      </div>
+                    ) : null}
+                    {selectedDefender.location === 'board' && snapshot?.state.phase === 'prep' && !snapshot?.state.saunaDefenderId ? (
+                      <button
+                        className="mini-button"
+                        onClick={() =>
+                          runtimeRef.current?.dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })
+                        }
+                      >
+                        Send To Sauna
+                      </button>
                     ) : null}
                   </div>
-                  {(selectedDefender.itemNames.length > 0 || selectedDefender.skillNames.length > 0) ? (
-                    <div className="tag-row compact-tags">
-                      {selectedDefender.itemNames.map((name) => (
-                        <span key={name} className="tag loadout-tag">{name}</span>
-                      ))}
-                      {selectedDefender.skillNames.map((name) => (
-                        <span key={name} className="tag loadout-tag">{name}</span>
-                      ))}
-                    </div>
-                  ) : null}
-                  {selectedDefender.location === 'board' && snapshot?.state.phase === 'prep' && !snapshot?.state.saunaDefenderId ? (
-                    <button
-                      className="mini-button"
-                      onClick={() =>
-                        runtimeRef.current?.dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })
-                      }
-                    >
-                      Send To Sauna
-                    </button>
-                  ) : null}
+                ) : (
+                  <p className="panel-copy small-copy">
+                    Pick a hero or click the sauna to inspect reserves, stats and upgrades.
+                  </p>
+                )}
+              </section>
+
+              <section className="panel bench-panel">
+                <div className="panel-head">
+                  <h2>Bench Reserves</h2>
+                  <span>{readyEntries.length}</span>
                 </div>
-              ) : (
                 <p className="panel-copy small-copy">
-                  Pick a hero or click the sauna to inspect reserves, stats and upgrades.
+                  Ready heroes waiting beside the board. Select one, then place them on a green build hex.
                 </p>
-              )}
-            </section>
+                {renderRosterGroup('Bench Reserves', readyEntries, 'No recruited defenders waiting on the bench.')}
+              </section>
+            </div>
 
             <div className="canvas-frame">
               <canvas
@@ -644,10 +657,9 @@ export function App() {
                   <span>{snapshot.hud.rosterCount} recruited</span>
                 </div>
                 <p className="panel-copy small-copy">
-                  Owned heroes only. Sauna occupants are handled from the sauna itself.
+                  Boarded heroes only. Sauna occupants and bench reserves are handled next to the map.
                 </p>
                 {renderRosterGroup('On Board', boardEntries, 'No defenders on the board right now.')}
-                {renderRosterGroup('Bench Reserves', readyEntries, 'No recruited defenders waiting on the bench.')}
               </section>
 
               <section className="panel">

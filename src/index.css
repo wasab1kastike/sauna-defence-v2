@@ -156,6 +156,12 @@ button {
   min-height: 0;
 }
 
+.arena-left-rail {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
 .map-header-panel {
   padding: 10px 12px;
 }
@@ -244,6 +250,18 @@ button {
 
 .selected-panel-compact .mini-button {
   padding: 9px 11px;
+}
+
+.bench-panel {
+  padding: 12px;
+}
+
+.bench-panel .roster-group {
+  gap: 8px;
+}
+
+.bench-panel .group-head {
+  display: none;
 }
 
 .compact-header {
