@@ -1071,6 +1071,13 @@ function grantXp(state: RunState, defender: DefenderInstance, amount: number, co
   return null;
 }
 
+function grantCombatXp(state: RunState, defender: DefenderInstance, amount: number, content: GameContent): void {
+  const levelMessage = grantXp(state, defender, amount, content);
+  if (levelMessage) {
+    state.message = levelMessage;
+  }
+}
+
 function createDeathLogText(state: RunState, defender: DefenderInstance, content: GameContent): { enemyName: string; text: string } {
   const enemyId = defender.lastHitByEnemyId;
   const enemyName = enemyId ? content.enemyArchetypes[enemyId].name : 'Mysterious Steam';
@@ -1145,6 +1152,7 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
     if (ally.tile) {
       pushFx(state, 'heal', ally.tile, 320, defender.tile);
     }
+    grantCombatXp(state, defender, 1, content);
     defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
     return;
   }
@@ -1157,6 +1165,7 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
   target.hp -= Math.round(stats.damage * dmgMult);
   target.lastHitByDefenderId = defender.id;
   pushFx(state, 'hit', target.tile, 180, defender.tile);
+  grantCombatXp(state, defender, 1, content);
   if (defender.skills.includes('fireball')) {
     pushFx(state, 'fireball', target.tile, 260, defender.tile);
     for (const enemy of state.enemies) {

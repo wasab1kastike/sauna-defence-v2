@@ -686,6 +686,34 @@ describe('Sauna Defense V2 logic', () => {
     expect(attackerAfter?.level).toBeGreaterThan(1);
   });
 
+  it('grants xp from successful combat actions even without a kill', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(attacker).toBeTruthy();
+    attacker!.location = 'board';
+    attacker!.tile = { q: 0, r: -1 };
+    attacker!.attackReadyAtMs = 0;
+    attacker!.stats.damage = 2;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'brute',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 0 },
+      hp: 30,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    const attackerAfter = state.defenders.find((defender) => defender.id === attacker!.id);
+    expect(attackerAfter?.xp).toBeGreaterThan(0);
+    expect(state.enemies[0]?.hp).toBeLessThan(30);
+  });
+
   it('targets a defender before the sauna when a defender is in range', () => {
     let state = prepState();
     const defender = state.defenders.find((entry) => entry.location === 'ready');
