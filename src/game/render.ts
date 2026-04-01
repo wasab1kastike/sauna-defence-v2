@@ -1,5 +1,5 @@
 import { coordKey, hexDistance } from './logic';
-import type { AxialCoord, GameSnapshot } from './types';
+import type { AxialCoord, DefenderTemplateId, EnemyUnitId, GameSnapshot } from './types';
 
 const SQRT3 = Math.sqrt(3);
 
@@ -15,14 +15,6 @@ interface TokenPalette {
   accent: string;
   glow: string;
   glyph: string;
-}
-
-interface SpriteFrame {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  scale?: number;
 }
 
 const DEFENDER_TOKEN_STYLES: TokenPalette[] = [
@@ -46,14 +38,32 @@ const ENEMY_TOKEN_STYLES: TokenPalette[] = [
   { shell: '#364b27', ring: '#0d1709', accent: '#a7dd63', glow: 'rgba(167,221,99,0.2)', glyph: 'skull' }
 ];
 
-const DEFENDER_SPRITE_SHEET_URL = `${import.meta.env.BASE_URL}defenders/sauna-party-sheet.png`;
-const DEFENDER_SPRITE_FRAMES: SpriteFrame[] = [
-  { x: 24, y: 120, w: 360, h: 760, scale: 1.04 },
-  { x: 340, y: 120, w: 360, h: 760, scale: 1.02 },
-  { x: 650, y: 80, w: 470, h: 820, scale: 1.08 },
-  { x: 1090, y: 120, w: 330, h: 760, scale: 1.02 }
+const DEFENDER_PORTRAIT_URLS = [
+  `${import.meta.env.BASE_URL}defenders/defender_1.png`,
+  `${import.meta.env.BASE_URL}defenders/defender_2.png`,
+  `${import.meta.env.BASE_URL}defenders/defender_3.png`,
+  `${import.meta.env.BASE_URL}defenders/defender_4.png`
 ];
+const ENEMY_PORTRAIT_URLS = [
+  `${import.meta.env.BASE_URL}enemies/enemy_goblin1.png`,
+  `${import.meta.env.BASE_URL}enemies/enemy_rockmonster1.png`,
+  `${import.meta.env.BASE_URL}enemies/enemy_steamhog4.png`,
+  `${import.meta.env.BASE_URL}enemies/enemy_undead3.png`
+];
+const DEFENDER_SPRITE_SHEET_URL = `${import.meta.env.BASE_URL}defenders/sauna-party-sheet.png`;
+const DEFENDER_ROLE_PORTRAITS: Record<DefenderTemplateId, number[]> = {
+  guardian: [2],
+  hurler: [0, 1],
+  mender: [3]
+};
+const ENEMY_ROLE_PORTRAITS: Record<EnemyUnitId, number[]> = {
+  raider: [0],
+  brute: [1],
+  chieftain: [2]
+};
 
+let defenderPortraits: Array<HTMLImageElement | null | undefined> | undefined;
+let enemyPortraits: Array<HTMLImageElement | null | undefined> | undefined;
 let defenderSpriteSheet: HTMLImageElement | null | undefined;
 
 function getBoardLayout(width: number, height: number, radius: number): BoardLayout {
@@ -352,6 +362,34 @@ function drawTokenLabel(
   ctx.fillText(text, center.x, center.y + radius * 0.6);
 }
 
+function getDefenderPortrait(index: number): HTMLImageElement | null {
+  if (typeof Image === 'undefined') {
+    return null;
+  }
+  if (!defenderPortraits) {
+    defenderPortraits = DEFENDER_PORTRAIT_URLS.map((url) => {
+      const image = new Image();
+      image.src = url;
+      return image;
+    });
+  }
+  return defenderPortraits[index % defenderPortraits.length] ?? null;
+}
+
+function getEnemyPortrait(index: number): HTMLImageElement | null {
+  if (typeof Image === 'undefined') {
+    return null;
+  }
+  if (!enemyPortraits) {
+    enemyPortraits = ENEMY_PORTRAIT_URLS.map((url) => {
+      const image = new Image();
+      image.src = url;
+      return image;
+    });
+  }
+  return enemyPortraits[index % enemyPortraits.length] ?? null;
+}
+
 function getDefenderSpriteSheet(): HTMLImageElement | null {
   if (typeof Image === 'undefined') {
     return null;
@@ -367,17 +405,41 @@ function drawDefenderPortrait(
   ctx: CanvasRenderingContext2D,
   center: { x: number; y: number },
   radius: number,
-  spriteIndex: number
+  templateId: DefenderTemplateId,
+  styleIndex: number
 ): boolean {
+  const rolePortraits = DEFENDER_ROLE_PORTRAITS[templateId] ?? [0];
+  const portraitIndex = rolePortraits[styleIndex % rolePortraits.length];
+
+  const portrait = getDefenderPortrait(portraitIndex);
+  if (portrait && portrait.complete && portrait.naturalWidth > 0) {
+    const destWidth = radius * 1.9;
+    const destHeight = destWidth * (portrait.naturalHeight / portrait.naturalWidth);
+    const destX = center.x - destWidth / 2;
+    const destY = center.y - destHeight * 0.56;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, radius * 0.79, 0, Math.PI * 2);
+    ctx.clip();
+    const previousSmoothing = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(portrait, destX, destY, destWidth, destHeight);
+    ctx.imageSmoothingEnabled = previousSmoothing;
+    ctx.restore();
+    return true;
+  }
+
   const sheet = getDefenderSpriteSheet();
   if (!sheet || !sheet.complete || sheet.naturalWidth === 0) {
     return false;
   }
 
-  const frame = DEFENDER_SPRITE_FRAMES[spriteIndex % DEFENDER_SPRITE_FRAMES.length];
-  const scale = frame.scale ?? 1;
-  const destWidth = radius * 1.86 * scale;
-  const destHeight = destWidth * (frame.h / frame.w);
+  const frameWidth = sheet.naturalWidth / 4;
+  const frameHeight = sheet.naturalHeight;
+  const frameX = (portraitIndex % 4) * frameWidth;
+  const destWidth = radius * 1.86;
+  const destHeight = destWidth * (frameHeight / frameWidth);
   const destX = center.x - destWidth / 2;
   const destY = center.y - destHeight * 0.58;
 
@@ -387,7 +449,38 @@ function drawDefenderPortrait(
   ctx.clip();
   const previousSmoothing = ctx.imageSmoothingEnabled;
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(sheet, frame.x, frame.y, frame.w, frame.h, destX, destY, destWidth, destHeight);
+  ctx.drawImage(sheet, frameX, 0, frameWidth, frameHeight, destX, destY, destWidth, destHeight);
+  ctx.imageSmoothingEnabled = previousSmoothing;
+  ctx.restore();
+  return true;
+}
+
+function drawEnemyPortrait(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  radius: number,
+  archetypeId: EnemyUnitId,
+  styleIndex: number
+): boolean {
+  const rolePortraits = ENEMY_ROLE_PORTRAITS[archetypeId] ?? [0];
+  const portraitIndex = rolePortraits[styleIndex % rolePortraits.length];
+  const portrait = getEnemyPortrait(portraitIndex);
+  if (!portrait || !portrait.complete || portrait.naturalWidth === 0) {
+    return false;
+  }
+
+  const destWidth = radius * 1.78;
+  const destHeight = destWidth * (portrait.naturalHeight / portrait.naturalWidth);
+  const destX = center.x - destWidth / 2;
+  const destY = center.y - destHeight * 0.58;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, radius * 0.79, 0, Math.PI * 2);
+  ctx.clip();
+  const previousSmoothing = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(portrait, destX, destY, destWidth, destHeight);
   ctx.imageSmoothingEnabled = previousSmoothing;
   ctx.restore();
   return true;
@@ -511,13 +604,13 @@ export function paintSnapshot(
       ctx.strokeStyle = 'rgba(234, 255, 250, 0.9)';
       ctx.lineWidth = 2.6;
       ctx.stroke();
-    }
+      }
 
-    drawTokenBase(ctx, center, radius, style, template.fill);
-    if (!drawDefenderPortrait(ctx, center, radius, defender.tokenStyleId)) {
-      drawGlyph(ctx, center, radius, style.glyph, style.glyph === 'tower' ? style.ring : style.accent);
-      drawTokenLabel(ctx, center, radius, template.label, '#fff8ed');
-    }
+      drawTokenBase(ctx, center, radius, style, template.fill);
+      if (!drawDefenderPortrait(ctx, center, radius, defender.templateId, defender.tokenStyleId)) {
+        drawGlyph(ctx, center, radius, style.glyph, style.glyph === 'tower' ? style.ring : style.accent);
+        drawTokenLabel(ctx, center, radius, template.label, '#fff8ed');
+      }
     drawHealthBar(ctx, center, layout.hexSize * 0.94, defender.hp / Math.max(1, stats.maxHp), '#7ed8c8');
   }
 
@@ -527,8 +620,10 @@ export function paintSnapshot(
     const radius = layout.hexSize * (enemy.archetypeId === 'chieftain' ? 0.42 : 0.36);
     const style = getEnemyStyle(enemy.tokenStyleId);
     drawTokenBase(ctx, center, radius, style, archetype.fill);
-    drawGlyph(ctx, center, radius, style.glyph, style.accent);
-    drawTokenLabel(ctx, center, radius, archetype.label, '#fff0e8');
+    if (!drawEnemyPortrait(ctx, center, radius, enemy.archetypeId, enemy.tokenStyleId)) {
+      drawGlyph(ctx, center, radius, style.glyph, style.accent);
+      drawTokenLabel(ctx, center, radius, archetype.label, '#fff0e8');
+    }
     drawHealthBar(ctx, center, layout.hexSize * 0.94, enemy.hp / archetype.maxHp, '#ff8772');
   }
 

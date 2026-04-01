@@ -44,8 +44,8 @@ export const gameContent: GameContent = {
   defenderTemplates: {
     guardian: {
       id: 'guardian',
-      name: 'Guardian',
-      role: 'Frontline wall',
+      name: 'Frontline Tank',
+      role: 'Absorbs hits and holds the lane',
       fill: '#f0c47c',
       outline: '#5d3a15',
       label: 'G',
@@ -59,8 +59,8 @@ export const gameContent: GameContent = {
     },
     hurler: {
       id: 'hurler',
-      name: 'Hurler',
-      role: 'Backline ember thrower',
+      name: 'Backline Thrower',
+      role: 'Deals ranged damage from safer tiles',
       fill: '#ef8c54',
       outline: '#5c2414',
       label: 'H',
@@ -74,8 +74,8 @@ export const gameContent: GameContent = {
     },
     mender: {
       id: 'mender',
-      name: 'Mender',
-      role: 'Patch-up support',
+      name: 'Sauna Medic',
+      role: 'Heals allies and steadies the line',
       fill: '#90d7a3',
       outline: '#214c31',
       label: 'M',
@@ -91,7 +91,7 @@ export const gameContent: GameContent = {
   enemyArchetypes: {
     raider: {
       id: 'raider',
-      name: 'Raider',
+      name: 'Goblin Raider',
       maxHp: 12,
       damage: 4,
       range: 1,
@@ -104,7 +104,7 @@ export const gameContent: GameContent = {
     },
     brute: {
       id: 'brute',
-      name: 'Brute',
+      name: 'Stone Brute',
       maxHp: 22,
       damage: 7,
       range: 1,
@@ -117,7 +117,7 @@ export const gameContent: GameContent = {
     },
     chieftain: {
       id: 'chieftain',
-      name: 'Chieftain',
+      name: 'Steam Hog Chieftain',
       maxHp: 52,
       damage: 10,
       range: 1,
