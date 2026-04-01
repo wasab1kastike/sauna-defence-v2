@@ -89,6 +89,29 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.message).toContain('Board cap');
   });
 
+  it('moves a bench reserve into the sauna when the board becomes full and the sauna is empty', () => {
+    let state = prepState();
+    const ready = state.defenders.filter((defender) => defender.location === 'ready');
+    const saunaDefender = state.defenders.find((defender) => defender.location === 'sauna');
+    expect(ready).toHaveLength(4);
+    expect(saunaDefender).toBeTruthy();
+
+    state = applyAction(state, { type: 'selectDefender', defenderId: ready[0].id }, gameContent);
+    state = applyAction(state, { type: 'placeSelectedDefender', tile: { q: -1, r: -2 } }, gameContent);
+    state = applyAction(state, { type: 'selectDefender', defenderId: ready[1].id }, gameContent);
+    state = applyAction(state, { type: 'placeSelectedDefender', tile: { q: 0, r: -2 } }, gameContent);
+    state = applyAction(state, { type: 'selectDefender', defenderId: ready[2].id }, gameContent);
+    state = applyAction(state, { type: 'placeSelectedDefender', tile: { q: 1, r: -2 } }, gameContent);
+    state = applyAction(state, { type: 'selectDefender', defenderId: saunaDefender!.id }, gameContent);
+    state = applyAction(state, { type: 'placeSelectedDefender', tile: { q: 0, r: -1 } }, gameContent);
+
+    const movedReserve = state.defenders.find((defender) => defender.location === 'sauna');
+    expect(state.defenders.filter((defender) => defender.location === 'board')).toHaveLength(4);
+    expect(movedReserve).toBeTruthy();
+    expect(movedReserve?.id).toBe(ready[3].id);
+    expect(state.saunaDefenderId).toBe(ready[3].id);
+  });
+
   it('heals the sauna defender and auto-continues to the next non-boss wave', () => {
     let state = prepState();
     const saunaDefender = state.defenders.find((defender) => defender.location === 'sauna');
@@ -748,6 +771,170 @@ describe('Sauna Defense V2 logic', () => {
     expect(defenderAfter?.tile).toEqual({ q: 0, r: -3 });
     expect(defenderAfter?.attackReadyAtMs).toBeGreaterThan(state.timeMs);
     expect(state.saunaHp).toBeLessThan(saunaHpBefore);
+  });
+
+  it('opens a three-card global modifier draft after a boss wave is cleared', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.waveIndex = 5;
+    state.currentWave = {
+      index: 5,
+      isBoss: true,
+      rewardSisu: 7,
+      pressure: 18,
+      pattern: 'boss_pressure',
+      bossCategory: 'pressure',
+      spawns: []
+    };
+    state.pendingSpawns = [];
+    state.enemies = [];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.phase).toBe('prep');
+    expect(state.overlayMode).toBe('modifier_draft');
+    expect(state.currentWave.index).toBe(6);
+    expect(state.globalModifierDraftOffers).toHaveLength(3);
+
+    const snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.showGlobalModifierDraft).toBe(true);
+    expect(snapshot.hud.globalModifierDraftOffers).toHaveLength(3);
+    expect(snapshot.hud.globalModifierDraftOffers.every((entry) => entry.stackCount > 0)).toBe(true);
+    expect(new Set(snapshot.hud.globalModifierDraftOffers.map((entry) => entry.id)).size).toBe(3);
+  });
+
+  it('stores the picked global modifier and closes the boss reward overlay', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.waveIndex = 5;
+    state.currentWave = {
+      index: 5,
+      isBoss: true,
+      rewardSisu: 7,
+      pressure: 18,
+      pattern: 'boss_pressure',
+      bossCategory: 'pressure',
+      spawns: []
+    };
+    state.pendingSpawns = [];
+    state.enemies = [];
+
+    state = stepState(state, 16, gameContent);
+    const picked = state.globalModifierDraftOffers[0];
+    state = applyAction(state, { type: 'draftGlobalModifier', modifierId: picked }, gameContent);
+
+    expect(state.overlayMode).toBe('none');
+    expect(state.phase).toBe('prep');
+    expect(state.activeGlobalModifierIds).toContain(picked);
+    expect(state.globalModifierDraftOffers).toHaveLength(0);
+  });
+
+  it('updates global modifier stacks when items are equipped and defenders die', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready');
+    const mender = state.defenders.find((entry) => entry.templateId === 'mender');
+    expect(defender).toBeTruthy();
+    expect(mender).toBeTruthy();
+
+    state.activeGlobalModifierIds = ['whisk_discipline', 'fallen_saints'];
+    state.inventory.push({
+      instanceId: 99,
+      kind: 'item',
+      definitionId: 'iron_whisk',
+      rarity: 'rare',
+      name: gameContent.itemDefinitions.iron_whisk.name,
+      effectText: gameContent.itemDefinitions.iron_whisk.effectText,
+      flavorText: gameContent.itemDefinitions.iron_whisk.flavorText,
+      artPath: gameContent.itemDefinitions.iron_whisk.artPath,
+      waveFound: 1,
+      sourceEnemyId: 'raider'
+    });
+
+    let snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.globalModifiers.find((entry) => entry.id === 'whisk_discipline')?.stackCount).toBe(0);
+    expect(snapshot.hud.globalModifiers.find((entry) => entry.id === 'fallen_saints')?.stackCount).toBe(0);
+
+    state = applyAction(state, { type: 'equipInventoryDrop', dropId: 99, defenderId: defender!.id }, gameContent);
+    snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.globalModifiers.find((entry) => entry.id === 'whisk_discipline')?.stackCount).toBe(1);
+
+    const menderAfterEquip = state.defenders.find((entry) => entry.id === mender!.id);
+    menderAfterEquip!.location = 'dead';
+    menderAfterEquip!.tile = null;
+    menderAfterEquip!.hp = 0;
+    snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.globalModifiers.find((entry) => entry.id === 'fallen_saints')?.stackCount).toBe(1);
+  });
+
+  it('reduces incoming defender damage by defense but never below one', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready');
+    expect(defender).toBeTruthy();
+    defender!.location = 'board';
+    defender!.tile = { q: 0, r: -1 };
+    defender!.hp = 20;
+    defender!.stats.defense = 10;
+    defender!.attackReadyAtMs = 999999;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 0 },
+      hp: 12,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 0,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    const defenderAfter = state.defenders.find((entry) => entry.id === defender!.id);
+    expect(defenderAfter?.hp).toBe(19);
+  });
+
+  it('applies global regeneration once per second during a wave', () => {
+    let state = prepState();
+    const mender = state.defenders.find((entry) => entry.templateId === 'mender');
+    const target = state.defenders.find((entry) => entry.id !== mender?.id);
+    expect(mender).toBeTruthy();
+    expect(target).toBeTruthy();
+
+    state.activeGlobalModifierIds = ['triage_circle'];
+    target!.hp = Math.max(1, target!.hp - 5);
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 5, r: -5 },
+      hp: 12,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+    state.nextRegenTickAtMs = 1000;
+    const startingHp = target!.hp;
+
+    state = stepState(state, 999, gameContent);
+    expect(state.defenders.find((entry) => entry.id === target!.id)?.hp).toBe(startingHp);
+
+    state = stepState(state, 1, gameContent);
+    const regenStacks = createSnapshot(state, gameContent).hud.globalModifiers.find((entry) => entry.id === 'triage_circle')?.stackCount ?? 0;
+    expect(state.defenders.find((entry) => entry.id === target!.id)?.hp).toBe(startingHp + regenStacks);
+  });
+
+  it('clears active global modifiers when starting the next run', () => {
+    let state = prepState();
+    state.overlayMode = 'intermission';
+    state.activeGlobalModifierIds = ['shared_grit', 'triage_circle'];
+
+    state = applyAction(state, { type: 'startNextRun' }, gameContent);
+
+    expect(state.activeGlobalModifierIds).toEqual([]);
+    expect(state.globalModifierDraftOffers).toEqual([]);
   });
 
   it('does not show dead defenders in roster entries and keeps only five death log items in the hud', () => {

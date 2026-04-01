@@ -5,7 +5,7 @@ export interface AxialCoord {
 
 export type Team = 'player' | 'enemy';
 export type Phase = 'prep' | 'wave' | 'lost';
-export type OverlayMode = 'none' | 'paused' | 'intermission';
+export type OverlayMode = 'none' | 'paused' | 'intermission' | 'modifier_draft';
 export type DefenderTemplateId = 'guardian' | 'hurler' | 'mender';
 export type DefenderSubclassId =
   | 'stonewall'
@@ -39,6 +39,27 @@ export type WavePattern = 'tutorial' | 'split' | 'staggered' | 'spearhead' | 'su
 export type BossCategory = 'pressure' | 'breach';
 export type CombatFxKind = 'hit' | 'defender_hit' | 'sauna_hit' | 'heal' | 'fireball' | 'spin' | 'blink' | 'boss_hit' | 'chain';
 export type MapTarget = 'defender' | 'sauna';
+export type GlobalModifierCountScope = 'board' | 'living' | 'dead';
+export type GlobalModifierEffectStat = 'maxHp' | 'damage' | 'heal' | 'range' | 'attackCooldownMs' | 'defense' | 'regenHpPerSecond';
+export type GlobalModifierId =
+  | 'iron_brotherhood'
+  | 'triage_circle'
+  | 'fallen_saints'
+  | 'stone_oath'
+  | 'coal_echoes'
+  | 'oracle_draft'
+  | 'cinder_cadence'
+  | 'battle_psalm'
+  | 'shield_mist'
+  | 'cedar_swear'
+  | 'whisk_discipline'
+  | 'salt_sight'
+  | 'loylylordi_lineage'
+  | 'vihtavelho_vow'
+  | 'saunklonkku_requiem'
+  | 'shared_grit'
+  | 'steady_hands'
+  | 'campfire_doctrine';
 export type MetaUpgradeId =
   | 'roster_capacity'
   | 'inventory_slots'
@@ -54,6 +75,8 @@ export interface UnitStats {
   heal: number;
   range: number;
   attackCooldownMs: number;
+  defense: number;
+  regenHpPerSecond: number;
 }
 
 export interface StatModifier {
@@ -62,7 +85,17 @@ export interface StatModifier {
   heal?: number;
   range?: number;
   attackCooldownMs?: number;
+  defense?: number;
+  regenHpPerSecond?: number;
 }
+
+export type GlobalModifierSource =
+  | { kind: 'template'; templateId: DefenderTemplateId }
+  | { kind: 'subclass'; subclassId: DefenderSubclassId }
+  | { kind: 'skill'; skillId: SkillId }
+  | { kind: 'item'; itemId: ItemId }
+  | { kind: 'title'; title: string }
+  | { kind: 'roster' };
 
 export interface DefenderTemplate {
   id: DefenderTemplateId;
@@ -212,6 +245,17 @@ export interface MetaUpgradeDefinition {
   maxLevel: number;
 }
 
+export interface GlobalModifierDefinition {
+  id: GlobalModifierId;
+  name: string;
+  description: string;
+  countScope: GlobalModifierCountScope;
+  source: GlobalModifierSource;
+  effectStat: GlobalModifierEffectStat;
+  amountPerStack: number;
+  isFallback?: boolean;
+}
+
 export interface MetaProgress {
   steam: number;
   completedRuns: number;
@@ -268,6 +312,7 @@ export interface GameContent {
   enemyArchetypes: Record<EnemyUnitId, EnemyArchetype>;
   itemDefinitions: Record<ItemId, ItemDefinition>;
   skillDefinitions: Record<SkillId, SkillDefinition>;
+  globalModifierDefinitions: Record<GlobalModifierId, GlobalModifierDefinition>;
   metaUpgrades: Record<MetaUpgradeId, MetaUpgradeDefinition>;
   namePools: NamePools;
 }
@@ -307,12 +352,15 @@ export interface RunState {
   selectedInventoryDropId: number | null;
   recentDropId: number | null;
   recruitOffers: RecruitOffer[];
+  activeGlobalModifierIds: GlobalModifierId[];
+  globalModifierDraftOffers: GlobalModifierId[];
   deathLog: DeathLogEntry[];
   sisu: SisuState;
   steamEarned: number;
   gambleCount: number;
   saunaHp: number;
   waveSwapUsed: boolean;
+  nextRegenTickAtMs: number;
   meta: MetaProgress;
   message: string;
   metaAwarded: boolean;
@@ -339,6 +387,8 @@ export interface HudRosterEntry {
   damage: number;
   heal: number;
   range: number;
+  defense: number;
+  regenHpPerSecond: number;
   location: DefenderLocation;
   selected: boolean;
 }
@@ -373,6 +423,8 @@ export interface HudSelectedDefender {
   heal: number;
   range: number;
   attackCooldownMs: number;
+  defense: number;
+  regenHpPerSecond: number;
   itemSlotCount: number;
   skillSlotCount: number;
   itemNames: string[];
@@ -425,6 +477,16 @@ export interface HudRecruitOfferEntry {
   damage: number;
   heal: number;
   range: number;
+}
+
+export interface HudGlobalModifierEntry {
+  id: GlobalModifierId;
+  name: string;
+  description: string;
+  formulaText: string;
+  stackCount: number;
+  effectText: string;
+  resolvedEffectText: string;
 }
 
 export interface HudViewModel {
@@ -483,6 +545,9 @@ export interface HudViewModel {
   canAutoAssignSelectedLoot: boolean;
   selectedDefender: HudSelectedDefender | null;
   selectedSauna: HudSelectedSauna | null;
+  globalModifiers: HudGlobalModifierEntry[];
+  globalModifierDraftOffers: HudGlobalModifierEntry[];
+  showGlobalModifierDraft: boolean;
   wavePreview: WavePreviewEntry[];
   metaUpgrades: HudMetaUpgradeEntry[];
 }
@@ -494,6 +559,7 @@ export interface GameSnapshot {
   enemyArchetypes: GameContent['enemyArchetypes'];
   itemDefinitions: GameContent['itemDefinitions'];
   skillDefinitions: GameContent['skillDefinitions'];
+  globalModifierDefinitions: GameContent['globalModifierDefinitions'];
   metaUpgrades: GameContent['metaUpgrades'];
   hud: HudViewModel;
   tiles: AxialCoord[];
@@ -517,6 +583,7 @@ export type InputAction =
   | { type: 'startWave' }
   | { type: 'togglePause' }
   | { type: 'activateSisu' }
+  | { type: 'draftGlobalModifier'; modifierId: GlobalModifierId }
   | { type: 'recallDefenderToSauna'; defenderId: string }
   | { type: 'rollRecruitOffers' }
   | { type: 'recruitOffer'; offerId: number }

@@ -54,7 +54,9 @@ export const gameContent: GameContent = {
         damage: 7,
         heal: 0,
         range: 1,
-        attackCooldownMs: 1100
+        attackCooldownMs: 1100,
+        defense: 1,
+        regenHpPerSecond: 0
       }
     },
     hurler: {
@@ -69,7 +71,9 @@ export const gameContent: GameContent = {
         damage: 6,
         heal: 0,
         range: 2,
-        attackCooldownMs: 940
+        attackCooldownMs: 940,
+        defense: 0,
+        regenHpPerSecond: 0
       }
     },
     mender: {
@@ -84,7 +88,9 @@ export const gameContent: GameContent = {
         damage: 2,
         heal: 5,
         range: 2,
-        attackCooldownMs: 1180
+        attackCooldownMs: 1180,
+        defense: 0,
+        regenHpPerSecond: 1
       }
     }
   },
@@ -367,6 +373,173 @@ export const gameContent: GameContent = {
       effectText: 'Attacks also pulse a small heal into a nearby ally.',
       flavorText: 'Half prayer, half terrace chant, all morale.',
       artPath: 'loot/battle-hymn.svg'
+    }
+  },
+  globalModifierDefinitions: {
+    iron_brotherhood: {
+      id: 'iron_brotherhood',
+      name: 'Iron Brotherhood',
+      description: 'Every board Guardian hardens the whole roster.',
+      countScope: 'board',
+      source: { kind: 'template', templateId: 'guardian' },
+      effectStat: 'defense',
+      amountPerStack: 1
+    },
+    triage_circle: {
+      id: 'triage_circle',
+      name: 'Triage Circle',
+      description: 'Living Menders keep everyone slowly recovering.',
+      countScope: 'living',
+      source: { kind: 'template', templateId: 'mender' },
+      effectStat: 'regenHpPerSecond',
+      amountPerStack: 1
+    },
+    fallen_saints: {
+      id: 'fallen_saints',
+      name: 'Fallen Saints',
+      description: 'Every dead Mender steels the survivors against the next hit.',
+      countScope: 'dead',
+      source: { kind: 'template', templateId: 'mender' },
+      effectStat: 'defense',
+      amountPerStack: 1
+    },
+    stone_oath: {
+      id: 'stone_oath',
+      name: 'Stone Oath',
+      description: 'Stonewalls turn the board into a safer place for everyone.',
+      countScope: 'board',
+      source: { kind: 'subclass', subclassId: 'stonewall' },
+      effectStat: 'defense',
+      amountPerStack: 1
+    },
+    coal_echoes: {
+      id: 'coal_echoes',
+      name: 'Coal Echoes',
+      description: 'Coalflingers make the whole squad hit harder.',
+      countScope: 'living',
+      source: { kind: 'subclass', subclassId: 'coalflinger' },
+      effectStat: 'damage',
+      amountPerStack: 1
+    },
+    oracle_draft: {
+      id: 'oracle_draft',
+      name: 'Oracle Draft',
+      description: 'Towel Oracles extend everyone’s reach through the steam.',
+      countScope: 'living',
+      source: { kind: 'subclass', subclassId: 'towel_oracle' },
+      effectStat: 'range',
+      amountPerStack: 1
+    },
+    cinder_cadence: {
+      id: 'cinder_cadence',
+      name: 'Cinder Cadence',
+      description: 'Each Fireball user quickens the whole roster’s rhythm.',
+      countScope: 'living',
+      source: { kind: 'skill', skillId: 'fireball' },
+      effectStat: 'attackCooldownMs',
+      amountPerStack: -40
+    },
+    battle_psalm: {
+      id: 'battle_psalm',
+      name: 'Battle Psalm',
+      description: 'Battle Hymns lift the whole team’s healing output.',
+      countScope: 'living',
+      source: { kind: 'skill', skillId: 'battle_hymn' },
+      effectStat: 'heal',
+      amountPerStack: 1
+    },
+    shield_mist: {
+      id: 'shield_mist',
+      name: 'Shield Mist',
+      description: 'Steam Shields make the whole team tougher.',
+      countScope: 'living',
+      source: { kind: 'skill', skillId: 'steam_shield' },
+      effectStat: 'defense',
+      amountPerStack: 1
+    },
+    cedar_swear: {
+      id: 'cedar_swear',
+      name: 'Cedar Swear',
+      description: 'Cedar Rings bulk up everyone in the room.',
+      countScope: 'living',
+      source: { kind: 'item', itemId: 'cedar_ring' },
+      effectStat: 'maxHp',
+      amountPerStack: 2
+    },
+    whisk_discipline: {
+      id: 'whisk_discipline',
+      name: 'Whisk Discipline',
+      description: 'Iron Whisks teach the whole team to brace for impact.',
+      countScope: 'living',
+      source: { kind: 'item', itemId: 'iron_whisk' },
+      effectStat: 'defense',
+      amountPerStack: 1
+    },
+    salt_sight: {
+      id: 'salt_sight',
+      name: 'Salt Sight',
+      description: 'Sauna Salt sharpens the reach of every ally.',
+      countScope: 'living',
+      source: { kind: 'item', itemId: 'sauna_salt' },
+      effectStat: 'range',
+      amountPerStack: 1
+    },
+    loylylordi_lineage: {
+      id: 'loylylordi_lineage',
+      name: 'Loylylordi Lineage',
+      description: 'Every Loylylordi raises the damage ceiling for the whole roster.',
+      countScope: 'living',
+      source: { kind: 'title', title: 'Loylylordi' },
+      effectStat: 'damage',
+      amountPerStack: 1
+    },
+    vihtavelho_vow: {
+      id: 'vihtavelho_vow',
+      name: 'Vihtavelho Vow',
+      description: 'Vihtavelhot turn every heal into a slightly bigger miracle.',
+      countScope: 'living',
+      source: { kind: 'title', title: 'Vihtavelho' },
+      effectStat: 'heal',
+      amountPerStack: 1
+    },
+    saunklonkku_requiem: {
+      id: 'saunklonkku_requiem',
+      name: 'Saunklonkku Requiem',
+      description: 'Dead Saunklonkkus leave behind a harsher fighting spirit.',
+      countScope: 'dead',
+      source: { kind: 'title', title: 'Saunklonkku' },
+      effectStat: 'damage',
+      amountPerStack: 1
+    },
+    shared_grit: {
+      id: 'shared_grit',
+      name: 'Shared Grit',
+      description: 'Fallback doctrine: every living hero adds a little bulk to everyone.',
+      countScope: 'living',
+      source: { kind: 'roster' },
+      effectStat: 'maxHp',
+      amountPerStack: 1,
+      isFallback: true
+    },
+    steady_hands: {
+      id: 'steady_hands',
+      name: 'Steady Hands',
+      description: 'Fallback doctrine: a full room speeds everyone up.',
+      countScope: 'living',
+      source: { kind: 'roster' },
+      effectStat: 'attackCooldownMs',
+      amountPerStack: -15,
+      isFallback: true
+    },
+    campfire_doctrine: {
+      id: 'campfire_doctrine',
+      name: 'Campfire Doctrine',
+      description: 'Fallback doctrine: every living hero inspires a bit more healing.',
+      countScope: 'living',
+      source: { kind: 'roster' },
+      effectStat: 'heal',
+      amountPerStack: 1,
+      isFallback: true
     }
   },
   metaUpgrades: {

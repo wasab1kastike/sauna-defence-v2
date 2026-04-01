@@ -11,6 +11,8 @@ import type {
   EnemyUnitId,
   GameContent,
   GameSnapshot,
+  GlobalModifierDefinition,
+  GlobalModifierEffectStat,
   HudViewModel,
   InputAction,
   InventoryDrop,
@@ -58,6 +60,15 @@ const NON_BOSS_PATTERNS: Array<Exclude<WavePattern, 'tutorial' | 'boss_pressure'
   'surge'
 ];
 const CENTER: AxialCoord = { q: 0, r: 0 };
+const EMPTY_STATS: UnitStats = {
+  maxHp: 0,
+  damage: 0,
+  heal: 0,
+  range: 0,
+  attackCooldownMs: 0,
+  defense: 0,
+  regenHpPerSecond: 0
+};
 const DEATH_LINES: Record<EnemyUnitId, string[]> = {
   raider: [
     'got splashed with cold water at exactly the wrong moment',
@@ -157,6 +168,10 @@ function skillSlotCap(): number {
   return 1;
 }
 
+function emptyStats(): UnitStats {
+  return { ...EMPTY_STATS };
+}
+
 function saunaOccupancy(state: RunState): number {
   return state.saunaDefenderId ? 1 : 0;
 }
@@ -219,11 +234,13 @@ function levelModifiers(defender: DefenderInstance) {
     damage: Math.floor(defender.level / 2),
     heal: defender.templateId === 'mender' ? Math.floor(defender.level / 2) : 0,
     range: 0,
-    attackCooldownMs: 0
+    attackCooldownMs: 0,
+    defense: 0,
+    regenHpPerSecond: 0
   };
 }
 
-function statsWithItems(defender: DefenderInstance, content: GameContent): UnitStats {
+function baseStatsWithLoadout(defender: DefenderInstance, content: GameContent): UnitStats {
   const subclassBonus = subclassModifiers(defender, content);
   const levelBonus = levelModifiers(defender);
   const itemBonus = defender.items.reduce(
@@ -234,9 +251,11 @@ function statsWithItems(defender: DefenderInstance, content: GameContent): UnitS
       totals.heal += item.modifiers.heal ?? 0;
       totals.range += item.modifiers.range ?? 0;
       totals.attackCooldownMs += item.modifiers.attackCooldownMs ?? 0;
+      totals.defense += item.modifiers.defense ?? 0;
+      totals.regenHpPerSecond += item.modifiers.regenHpPerSecond ?? 0;
       return totals;
     },
-    { maxHp: 0, damage: 0, heal: 0, range: 0, attackCooldownMs: 0 }
+    emptyStats()
   );
 
   return {
@@ -250,12 +269,91 @@ function statsWithItems(defender: DefenderInstance, content: GameContent): UnitS
         (subclassBonus.attackCooldownMs ?? 0) +
         levelBonus.attackCooldownMs +
         itemBonus.attackCooldownMs
-    )
+    ),
+    defense: Math.max(0, defender.stats.defense + (subclassBonus.defense ?? 0) + levelBonus.defense + itemBonus.defense),
+    regenHpPerSecond: Math.max(0, defender.stats.regenHpPerSecond + (subclassBonus.regenHpPerSecond ?? 0) + levelBonus.regenHpPerSecond + itemBonus.regenHpPerSecond)
   };
 }
 
-function normalizeDefender(defender: DefenderInstance, content: GameContent): void {
-  defender.hp = Math.min(defender.hp, statsWithItems(defender, content).maxHp);
+function countScopeDefenders(state: RunState, definition: GlobalModifierDefinition): DefenderInstance[] {
+  switch (definition.countScope) {
+    case 'board':
+      return boardDefenders(state);
+    case 'dead':
+      return state.defenders.filter((defender) => defender.location === 'dead');
+    case 'living':
+    default:
+      return livingDefenders(state);
+  }
+}
+
+function globalModifierStacks(state: RunState, definition: GlobalModifierDefinition): number {
+  const defenders = countScopeDefenders(state, definition);
+  const source = definition.source;
+  switch (source.kind) {
+    case 'template':
+      return defenders.filter((defender) => defender.templateId === source.templateId).length;
+    case 'subclass':
+      return defenders.filter((defender) => defender.subclassId === source.subclassId).length;
+    case 'skill':
+      return defenders.filter((defender) => defender.skills.includes(source.skillId)).length;
+    case 'item':
+      return defenders.reduce(
+        (count, defender) => count + defender.items.filter((itemId) => itemId === source.itemId).length,
+        0
+      );
+    case 'title':
+      return defenders.filter((defender) => defender.title === source.title || defender.title.split(' ')[0] === source.title).length;
+    case 'roster':
+      return defenders.length;
+    default:
+      return 0;
+  }
+}
+
+function applyModifierAmount(stats: UnitStats, stat: GlobalModifierEffectStat, amount: number): UnitStats {
+  stats[stat] += amount;
+  return stats;
+}
+
+function globalModifierTotals(state: RunState, content: GameContent): UnitStats {
+  return state.activeGlobalModifierIds.reduce((totals, modifierId) => {
+    const definition = content.globalModifierDefinitions[modifierId];
+    const stacks = globalModifierStacks(state, definition);
+    return applyModifierAmount(totals, definition.effectStat, definition.amountPerStack * stacks);
+  }, emptyStats());
+}
+
+function derivedStats(
+  state: RunState,
+  defender: DefenderInstance,
+  content: GameContent,
+  includeGlobal = defender.location !== 'dead'
+): UnitStats {
+  const base = baseStatsWithLoadout(defender, content);
+  if (!includeGlobal) return base;
+
+  const globalBonus = globalModifierTotals(state, content);
+  return {
+    maxHp: Math.max(6, base.maxHp + globalBonus.maxHp),
+    damage: Math.max(1, base.damage + globalBonus.damage),
+    heal: Math.max(0, base.heal + globalBonus.heal),
+    range: Math.max(1, base.range + globalBonus.range),
+    attackCooldownMs: Math.max(360, base.attackCooldownMs + globalBonus.attackCooldownMs),
+    defense: Math.max(0, base.defense + globalBonus.defense),
+    regenHpPerSecond: Math.max(0, base.regenHpPerSecond + globalBonus.regenHpPerSecond)
+  };
+}
+
+function normalizeDefender(state: RunState, defender: DefenderInstance, content: GameContent): void {
+  defender.hp = Math.min(defender.hp, derivedStats(state, defender, content).maxHp);
+}
+
+function normalizeLivingDefenders(state: RunState, content: GameContent): void {
+  for (const defender of state.defenders) {
+    if (defender.location === 'dead') continue;
+    normalizeDefender(state, defender, content);
+  }
 }
 
 function generateName(state: RunState, content: GameContent): { name: string; title: string } {
@@ -282,7 +380,9 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
     damage: rollStat(state, template.stats.damage, 3, 1),
     heal: rollStat(state, template.stats.heal, 2, 0),
     range: rollStat(state, template.stats.range, 1, 1),
-    attackCooldownMs: rollStat(state, template.stats.attackCooldownMs, 200, 360)
+    attackCooldownMs: rollStat(state, template.stats.attackCooldownMs, 200, 360),
+    defense: template.stats.defense,
+    regenHpPerSecond: template.stats.regenHpPerSecond
   };
   return {
     id: `${templateId}-${Math.round(rng(state) * 1e9).toString(16)}`,
@@ -571,17 +671,32 @@ function deploySaunaOccupant(state: RunState, content: GameContent, preferredTil
 
   saunaDefender.location = 'board';
   saunaDefender.tile = tile;
-  saunaDefender.attackReadyAtMs = state.timeMs + statsWithItems(saunaDefender, content).attackCooldownMs;
+  saunaDefender.attackReadyAtMs = state.timeMs + derivedStats(state, saunaDefender, content).attackCooldownMs;
   state.saunaDefenderId = null;
+  autoFillSaunaFromBench(state, content);
   pushFx(state, 'blink', tile, 280, CENTER);
   return saunaDefender;
+}
+
+function autoFillSaunaFromBench(state: RunState, content: GameContent): DefenderInstance | null {
+  if (state.saunaDefenderId || boardDefenders(state).length < content.config.boardCap) {
+    return null;
+  }
+  const reserve = state.defenders.find((defender) => defender.location === 'ready') ?? null;
+  if (!reserve) {
+    return null;
+  }
+  reserve.location = 'sauna';
+  reserve.tile = null;
+  state.saunaDefenderId = reserve.id;
+  return reserve;
 }
 
 function maybeSaunaSlapSwap(state: RunState, defender: DefenderInstance, content: GameContent): boolean {
   if (!hasSaunaSlapSwap(state) || state.waveSwapUsed || !defender.tile || defender.location !== 'board' || defender.hp <= 0) {
     return false;
   }
-  const maxHp = statsWithItems(defender, content).maxHp;
+  const maxHp = derivedStats(state, defender, content).maxHp;
   if (defender.hp / maxHp > 0.35) return false;
   const saunaDefender = getDefender(state, state.saunaDefenderId);
   if (!saunaDefender || saunaDefender.location !== 'sauna') return false;
@@ -589,7 +704,7 @@ function maybeSaunaSlapSwap(state: RunState, defender: DefenderInstance, content
   const swapTile = { ...defender.tile };
   saunaDefender.location = 'board';
   saunaDefender.tile = swapTile;
-  saunaDefender.attackReadyAtMs = state.timeMs + statsWithItems(saunaDefender, content).attackCooldownMs;
+  saunaDefender.attackReadyAtMs = state.timeMs + derivedStats(state, saunaDefender, content).attackCooldownMs;
 
   defender.location = 'sauna';
   defender.tile = null;
@@ -616,7 +731,7 @@ function recruitRollCost(state: RunState, content: GameContent): number {
 }
 
 function canAccessRecruitment(state: RunState): boolean {
-  return !state.introOpen && state.phase !== 'lost' && state.overlayMode !== 'intermission';
+  return !state.introOpen && state.phase !== 'lost' && state.overlayMode !== 'intermission' && state.overlayMode !== 'modifier_draft';
 }
 
 function canRollRecruitOffers(state: RunState, content: GameContent): boolean {
@@ -703,6 +818,43 @@ function roleRecruitTax(templateId: DefenderTemplateId): number {
   }
 }
 
+function pickUniqueDefinitions(
+  state: RunState,
+  definitions: GlobalModifierDefinition[],
+  count: number
+): GlobalModifierDefinition[] {
+  const pool = [...definitions];
+  const picked: GlobalModifierDefinition[] = [];
+  while (pool.length > 0 && picked.length < count) {
+    const index = randomInt(state, 0, pool.length - 1);
+    picked.push(pool.splice(index, 1)[0]);
+  }
+  return picked;
+}
+
+function availableGlobalModifierDefinitions(
+  state: RunState,
+  content: GameContent,
+  includeFallback: boolean
+): GlobalModifierDefinition[] {
+  return Object.values(content.globalModifierDefinitions)
+    .filter((definition) => (includeFallback ? definition.isFallback === true : !definition.isFallback))
+    .filter((definition) => !state.activeGlobalModifierIds.includes(definition.id))
+    .filter((definition) => globalModifierStacks(state, definition) > 0);
+}
+
+function rollGlobalModifierDraftOffersIntoState(state: RunState, content: GameContent): void {
+  const picked = pickUniqueDefinitions(state, availableGlobalModifierDefinitions(state, content, false), 3);
+  if (picked.length < 3) {
+    picked.push(...pickUniqueDefinitions(state, availableGlobalModifierDefinitions(state, content, true), 3 - picked.length));
+  }
+  state.globalModifierDraftOffers = picked.map((definition) => definition.id);
+}
+
+function fillDefenderToMax(state: RunState, defender: DefenderInstance, content: GameContent): void {
+  defender.hp = derivedStats(state, defender, content).maxHp;
+}
+
 function createRecruitOffer(state: RunState, content: GameContent): RecruitOffer {
   const templateId = pick(state, DEF_IDS);
   const candidate = newDefender(state, templateId, content);
@@ -740,7 +892,7 @@ function replaceDefenderWithRecruit(
   incoming.tile = outgoing.tile ? { ...outgoing.tile } : null;
   incoming.attackReadyAtMs =
     incoming.location === 'board'
-      ? state.timeMs + statsWithItems(incoming, content).attackCooldownMs
+      ? state.timeMs + derivedStats(state, incoming, content).attackCooldownMs
       : 0;
 
   if (outgoing.location === 'sauna') {
@@ -751,11 +903,14 @@ function replaceDefenderWithRecruit(
 
   state.defenders = state.defenders.filter((defender) => defender.id !== outgoing.id);
   state.defenders.push(incoming);
+  fillDefenderToMax(state, incoming, content);
 
   if (state.selectedDefenderId === outgoing.id || state.selectedMapTarget === 'sauna') {
     state.selectedDefenderId = null;
     state.selectedMapTarget = null;
   }
+
+  autoFillSaunaFromBench(state, content);
 }
 
 function pushFx(
@@ -806,10 +961,10 @@ function alliesToHeal(state: RunState, defender: DefenderInstance, stats: UnitSt
   if (!defender.tile) return [];
   return boardDefenders(state)
     .filter((ally) => ally.id !== defender.id && ally.tile)
-    .filter((ally) => ally.hp < statsWithItems(ally, content).maxHp && hexDistance(defender.tile as AxialCoord, ally.tile as AxialCoord) <= stats.range)
+    .filter((ally) => ally.hp < derivedStats(state, ally, content).maxHp && hexDistance(defender.tile as AxialCoord, ally.tile as AxialCoord) <= stats.range)
     .sort((left, right) => {
-      const leftMissing = statsWithItems(left, content).maxHp - left.hp;
-      const rightMissing = statsWithItems(right, content).maxHp - right.hp;
+      const leftMissing = derivedStats(state, left, content).maxHp - left.hp;
+      const rightMissing = derivedStats(state, right, content).maxHp - right.hp;
       return (rightMissing - leftMissing) || (left.hp - right.hp);
     });
 }
@@ -903,13 +1058,13 @@ function maybeDrop(state: RunState, enemyId: EnemyUnitId, content: GameContent):
   state.message = `${drop.name} looted. Pause if you want to think before equipping it.`;
 }
 
-function grantXp(defender: DefenderInstance, amount: number, content: GameContent): string | null {
+function grantXp(state: RunState, defender: DefenderInstance, amount: number, content: GameContent): string | null {
   const beforeLevel = defender.level;
-  const previousMaxHp = statsWithItems(defender, content).maxHp;
+  const previousMaxHp = derivedStats(state, defender, content).maxHp;
   defender.xp += amount;
   defender.level = levelFromXp(defender.xp);
   if (defender.level > beforeLevel) {
-    const nextMaxHp = statsWithItems(defender, content).maxHp;
+    const nextMaxHp = derivedStats(state, defender, content).maxHp;
     defender.hp = Math.min(nextMaxHp, defender.hp + Math.max(0, nextMaxHp - previousMaxHp));
     return `${defender.name} hit level ${defender.level}.`;
   }
@@ -938,7 +1093,7 @@ function resolveEnemyDeaths(state: RunState, content: GameContent): void {
       const killer = getDefender(state, enemy.lastHitByDefenderId);
       if (killer && killer.location !== 'dead') {
         killer.kills += 1;
-        const levelMessage = grantXp(killer, xpForEnemy(enemy.archetypeId), content);
+        const levelMessage = grantXp(state, killer, xpForEnemy(enemy.archetypeId), content);
         if (levelMessage) {
           state.message = levelMessage;
         }
@@ -981,12 +1136,12 @@ function resolveDefenderDeaths(state: RunState, content: GameContent): void {
 
 function defenderAttack(state: RunState, defender: DefenderInstance, content: GameContent): void {
   if (!defender.tile || defender.location !== 'board' || state.timeMs < defender.attackReadyAtMs) return;
-  const stats = statsWithItems(defender, content);
+  const stats = derivedStats(state, defender, content);
   const dmgMult = state.timeMs < state.sisu.activeUntilMs ? content.config.sisuDamageMultiplier : 1;
   const cdMult = state.timeMs < state.sisu.activeUntilMs ? content.config.sisuAttackMultiplier : 1;
   const ally = stats.heal > 0 ? alliesToHeal(state, defender, stats, content)[0] : null;
   if (ally) {
-    ally.hp = Math.min(statsWithItems(ally, content).maxHp, ally.hp + Math.round(stats.heal * dmgMult));
+    ally.hp = Math.min(derivedStats(state, ally, content).maxHp, ally.hp + Math.round(stats.heal * dmgMult));
     if (ally.tile) {
       pushFx(state, 'heal', ally.tile, 320, defender.tile);
     }
@@ -1040,7 +1195,7 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
   if (defender.skills.includes('battle_hymn')) {
     const allyPulse = alliesToHeal(state, defender, { ...stats, range: 1 }, content)[0];
     if (allyPulse?.tile) {
-      allyPulse.hp = Math.min(statsWithItems(allyPulse, content).maxHp, allyPulse.hp + 2);
+      allyPulse.hp = Math.min(derivedStats(state, allyPulse, content).maxHp, allyPulse.hp + 2);
       pushFx(state, 'heal', allyPulse.tile, 240, defender.tile);
     }
   }
@@ -1070,7 +1225,8 @@ function enemyStep(state: RunState, enemy: EnemyInstance, content: GameContent):
       return;
     }
     if (target) {
-      target.hp -= archetype.damage;
+      const defense = derivedStats(state, target, content).defense;
+      target.hp -= Math.max(1, archetype.damage - defense);
       target.lastHitByEnemyId = enemy.archetypeId;
       if (target.tile) {
         pushFx(state, enemy.archetypeId === 'chieftain' ? 'boss_hit' : 'defender_hit', target.tile, enemy.archetypeId === 'chieftain' ? 240 : 190, enemy.tile);
@@ -1123,7 +1279,7 @@ function spawnEnemies(state: RunState, content: GameContent): void {
 function healSauna(state: RunState, content: GameContent): void {
   const saunaDefender = getDefender(state, state.saunaDefenderId);
   if (!saunaDefender || saunaDefender.location !== 'sauna') return;
-  saunaDefender.hp = Math.min(statsWithItems(saunaDefender, content).maxHp, saunaDefender.hp + content.config.saunaHealPerPrep);
+  saunaDefender.hp = Math.min(derivedStats(state, saunaDefender, content).maxHp, saunaDefender.hp + content.config.saunaHealPerPrep);
 }
 
 function startWaveState(state: RunState, waveDef: WaveDefinition, message: string): void {
@@ -1133,6 +1289,7 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, message: strin
   state.hitStopMs = 0;
   state.fxEvents = [];
   state.waveSwapUsed = false;
+  state.nextRegenTickAtMs = state.timeMs + 1000;
   state.currentWave = waveDef;
   state.pendingSpawns = waveDef.spawns.map((spawn) => ({ ...spawn }));
   state.message = message;
@@ -1145,6 +1302,19 @@ function awardWave(state: RunState, content: GameContent): void {
   state.sisu.current += clearedWave.rewardSisu;
   if (state.saunaDefenderId) state.steamEarned += content.config.steamPerSaunaWave;
   healSauna(state, content);
+  normalizeLivingDefenders(state, content);
+  if (clearedWave.isBoss) {
+    state.phase = 'prep';
+    state.overlayMode = 'modifier_draft';
+    state.waveElapsedMs = 0;
+    state.currentWave = upcomingWave;
+    state.pendingSpawns = [];
+    state.inventoryOpen = false;
+    state.recruitmentOpen = false;
+    rollGlobalModifierDraftOffersIntoState(state, content);
+    state.message = 'Boss down. Pick one global modifier before the next wave.';
+    return;
+  }
   if (upcomingWave.isBoss) {
     state.phase = 'prep';
     state.waveElapsedMs = 0;
@@ -1155,6 +1325,14 @@ function awardWave(state: RunState, content: GameContent): void {
   }
 
   startWaveState(state, upcomingWave, `Wave ${upcomingWave.index} rolls in without a break.`);
+}
+
+function applyGlobalRegenTick(state: RunState, content: GameContent): void {
+  for (const defender of livingDefenders(state)) {
+    const stats = derivedStats(state, defender, content);
+    if (stats.regenHpPerSecond <= 0) continue;
+    defender.hp = Math.min(stats.maxHp, defender.hp + stats.regenHpPerSecond);
+  }
 }
 
 function metaCost(state: RunState, upgradeId: MetaUpgradeId, content: GameContent): number | null {
@@ -1194,7 +1372,7 @@ function equipDropOnDefender(
   const dropIndex = state.inventory.findIndex((entry) => entry.instanceId === drop.instanceId);
   if (dropIndex < 0 || !canEquipDrop(defender, drop, state, content)) return false;
 
-  const prevMax = statsWithItems(defender, content).maxHp;
+  const prevMax = derivedStats(state, defender, content).maxHp;
   if (drop.kind === 'item') {
     defender.items.push(drop.definitionId as ItemId);
   } else {
@@ -1207,8 +1385,8 @@ function equipDropOnDefender(
     state.selectedInventoryDropId === drop.instanceId
       ? state.inventory[0]?.instanceId ?? null
       : state.selectedInventoryDropId;
-  defender.hp += Math.max(0, statsWithItems(defender, content).maxHp - prevMax);
-  normalizeDefender(defender, content);
+  defender.hp += Math.max(0, derivedStats(state, defender, content).maxHp - prevMax);
+  normalizeDefender(state, defender, content);
   return true;
 }
 
@@ -1252,7 +1430,7 @@ function pressureSignals(state: RunState, content: GameContent): string[] {
   const signals: string[] = [];
   const living = livingDefenders(state);
   const board = boardDefenders(state);
-  const injured = living.filter((defender) => defender.hp / statsWithItems(defender, content).maxHp <= 0.45).length;
+  const injured = living.filter((defender) => defender.hp / derivedStats(state, defender, content).maxHp <= 0.45).length;
   const nextBossSoon = !state.currentWave.isBoss && slotInCycle(state.currentWave.index, content) === content.config.bossEvery - 1;
   const saunaThreatened =
     state.saunaHp / content.config.saunaHp <= content.config.lowSaunaHintRatio ||
@@ -1273,6 +1451,73 @@ function pressureSignals(state: RunState, content: GameContent): string[] {
   }
 
   return signals;
+}
+
+function globalModifierScopeLabel(definition: GlobalModifierDefinition, content: GameContent): string {
+  const prefix =
+    definition.countScope === 'board'
+      ? 'board'
+      : definition.countScope === 'dead'
+        ? 'dead'
+        : 'living';
+
+  switch (definition.source.kind) {
+    case 'template':
+      return `${prefix} ${content.defenderTemplates[definition.source.templateId].name}`;
+    case 'subclass':
+      return `${prefix} ${content.defenderSubclasses[definition.source.subclassId].name}`;
+    case 'skill':
+      return `${prefix} ${content.skillDefinitions[definition.source.skillId].name}`;
+    case 'item':
+      return `${prefix} ${content.itemDefinitions[definition.source.itemId].name}`;
+    case 'title':
+      return `${prefix} ${definition.source.title}`;
+    case 'roster':
+      return `${prefix} hero`;
+    default:
+      return `${prefix} source`;
+  }
+}
+
+function globalModifierStatLabel(stat: GlobalModifierEffectStat): string {
+  switch (stat) {
+    case 'maxHp':
+      return 'max HP';
+    case 'damage':
+      return 'damage';
+    case 'heal':
+      return 'healing';
+    case 'range':
+      return 'range';
+    case 'attackCooldownMs':
+      return 'attack cooldown';
+    case 'defense':
+      return 'defense';
+    case 'regenHpPerSecond':
+      return 'HP regen/s';
+    default:
+      return stat;
+  }
+}
+
+function formatModifierAmount(amount: number, stat: GlobalModifierEffectStat): string {
+  const sign = amount >= 0 ? '+' : '';
+  const value = `${sign}${amount}`;
+  return stat === 'attackCooldownMs' ? `${value} ms` : value;
+}
+
+function globalModifierHudEntry(state: RunState, definition: GlobalModifierDefinition, content: GameContent) {
+  const stackCount = globalModifierStacks(state, definition);
+  const total = definition.amountPerStack * stackCount;
+  return {
+    id: definition.id,
+    name: definition.name,
+    description: definition.description,
+    formulaText: `${formatModifierAmount(definition.amountPerStack, definition.effectStat)} ${globalModifierStatLabel(definition.effectStat)} per ${globalModifierScopeLabel(definition, content)}`,
+    stackCount,
+    effectText: `${formatModifierAmount(definition.amountPerStack, definition.effectStat)} ${globalModifierStatLabel(definition.effectStat)}`,
+    resolvedEffectText: `${stackCount} stack${stackCount === 1 ? '' : 's'} -> ${formatModifierAmount(total, definition.effectStat)} ${globalModifierStatLabel(definition.effectStat)}`
+  };
 }
 
 function actionCopy(state: RunState, content: GameContent): { title: string; body: string } {
@@ -1303,6 +1548,12 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
     return {
       title: 'Run Paused',
       body: 'Combat is frozen. Check loot, place reinforcements, then resume when the plan feels solid.'
+    };
+  }
+  if (state.overlayMode === 'modifier_draft') {
+    return {
+      title: 'Boss Reward',
+      body: 'Pick one global modifier. Its stacks update live from your current roster, loadout and casualties.'
     };
   }
   if (state.recruitmentOpen) {
@@ -1410,12 +1661,15 @@ export function createInitialState(
     selectedInventoryDropId: null,
     recentDropId: null,
     recruitOffers: [],
+    activeGlobalModifierIds: [],
+    globalModifierDraftOffers: [],
     deathLog: [],
     sisu: { current: content.config.startingSisu, activeUntilMs: 0, cooldownUntilMs: 0 },
     steamEarned: 0,
     gambleCount: 0,
     saunaHp: content.config.saunaHp,
     waveSwapUsed: false,
+    nextRegenTickAtMs: 1000,
     meta: clone(meta),
     message: showIntermission
       ? 'Spend Steam, browse upgrades, then begin the next sauna shift.'
@@ -1450,6 +1704,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
   ) {
     return next;
   }
+  if (next.overlayMode === 'modifier_draft' && action.type !== 'draftGlobalModifier') {
+    return next;
+  }
 
   switch (action.type) {
     case 'openIntro':
@@ -1460,6 +1717,21 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.introOpen = false;
       next.message = 'Sauna briefing closed.';
       return next;
+    case 'draftGlobalModifier': {
+      if (next.overlayMode !== 'modifier_draft') return next;
+      if (!next.globalModifierDraftOffers.includes(action.modifierId)) return next;
+      if (!next.activeGlobalModifierIds.includes(action.modifierId)) {
+        next.activeGlobalModifierIds.push(action.modifierId);
+      }
+      next.globalModifierDraftOffers = [];
+      next.overlayMode = 'none';
+      next.phase = 'prep';
+      next.inventoryOpen = false;
+      next.recruitmentOpen = false;
+      normalizeLivingDefenders(next, content);
+      next.message = `${content.globalModifierDefinitions[action.modifierId].name} locked in for this run.`;
+      return next;
+    }
     case 'selectSauna':
       next.selectedDefenderId = null;
       next.selectedMapTarget = 'sauna';
@@ -1531,11 +1803,14 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       }
       defender.location = 'board';
       defender.tile = { ...action.tile };
-      defender.attackReadyAtMs = next.timeMs + statsWithItems(defender, content).attackCooldownMs;
+      defender.attackReadyAtMs = next.timeMs + derivedStats(next, defender, content).attackCooldownMs;
       if (next.saunaDefenderId === defender.id) next.saunaDefenderId = null;
       next.selectedMapTarget = null;
       next.selectedDefenderId = null;
-      next.message = `${defender.name} entered the fight.`;
+      const movedToSauna = autoFillSaunaFromBench(next, content);
+      next.message = movedToSauna
+        ? `${defender.name} entered the fight. ${movedToSauna.name} moved into the empty sauna reserve.`
+        : `${defender.name} entered the fight.`;
       return next;
     }
     case 'recallDefenderToSauna': {
@@ -1605,7 +1880,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       if (replacement) {
         replaceDefenderWithRecruit(next, replacement, offer.candidate, content);
       } else {
+        fillDefenderToMax(next, offer.candidate, content);
         next.defenders.push(offer.candidate);
+        autoFillSaunaFromBench(next, content);
       }
       next.recruitOffers = [];
       next.recruitmentOpen = false;
@@ -1695,11 +1972,16 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
   }
   next.timeMs += deltaMs;
   next.waveElapsedMs += deltaMs;
+  while (next.timeMs >= next.nextRegenTickAtMs) {
+    applyGlobalRegenTick(next, content);
+    next.nextRegenTickAtMs += 1000;
+  }
   spawnEnemies(next, content);
   for (const defender of boardDefenders(next)) defenderAttack(next, defender, content);
   for (const enemy of next.enemies) enemyStep(next, enemy, content);
   resolveEnemyDeaths(next, content);
   resolveDefenderDeaths(next, content);
+  normalizeLivingDefenders(next, content);
   if (next.saunaHp <= 0) {
     next.saunaHp = 0;
     next.phase = 'lost';
@@ -1727,12 +2009,18 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const boardCount = boardDefenders(state).length;
   const readyBenchCount = state.defenders.filter((defender) => defender.location === 'ready').length;
   const freeRecruitSlots = Math.max(0, rosterCap(state, content) - livingDefenders(state).length);
+  const activeGlobalModifiers = state.activeGlobalModifierIds
+    .map((modifierId) => globalModifierHudEntry(state, content.globalModifierDefinitions[modifierId], content));
+  const draftGlobalModifiers = state.globalModifierDraftOffers
+    .map((modifierId) => globalModifierHudEntry(state, content.globalModifierDefinitions[modifierId], content));
   const hud: HudViewModel = {
     phaseLabel:
       state.overlayMode === 'intermission'
         ? 'Intermission'
         : state.overlayMode === 'paused'
           ? 'Paused'
+          : state.overlayMode === 'modifier_draft'
+            ? 'Boss Reward'
           : state.phase === 'prep'
             ? 'Preparation'
             : state.phase === 'wave'
@@ -1776,7 +2064,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     canRollRecruitOffers: canRollRecruitOffers(state, content),
     hasRecruitOffers: state.recruitOffers.length > 0,
     recruitOffers: state.recruitOffers.map((offer) => {
-      const roleStats = statsWithItems(offer.candidate, content);
+      const roleStats = derivedStats(state, offer.candidate, content, false);
       return {
         id: offer.offerId,
         price: offer.price,
@@ -1806,31 +2094,36 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     rosterEntries: state.defenders.filter((defender) => defender.location !== 'dead').sort((left, right) => {
       const order: Record<DefenderLocation, number> = { board: 0, sauna: 1, ready: 2, dead: 3 };
       return (order[left.location] - order[right.location]) || left.name.localeCompare(right.name);
-    }).map((defender) => ({
-      id: defender.id,
-      name: defender.name,
-      title: defender.title,
-      templateName: content.defenderTemplates[defender.templateId].name,
-      subclassName: content.defenderSubclasses[defender.subclassId].name,
-      roleSummary: content.defenderTemplates[defender.templateId].role,
-      locationLabel:
-        defender.location === 'board'
-          ? 'On Board'
-          : defender.location === 'sauna'
-            ? 'In Sauna'
-            : defender.location === 'ready'
-              ? 'On Bench'
-              : 'Fallen',
-      summary: `Lvl ${defender.level} ${content.defenderSubclasses[defender.subclassId].name} · ${statsWithItems(defender, content).damage} ATK`,
-      level: defender.level,
-      hp: defender.hp,
-      maxHp: statsWithItems(defender, content).maxHp,
-      damage: statsWithItems(defender, content).damage,
-      heal: statsWithItems(defender, content).heal,
-      range: statsWithItems(defender, content).range,
-      location: defender.location,
-      selected: state.selectedDefenderId === defender.id
-    })),
+    }).map((defender) => {
+      const stats = derivedStats(state, defender, content);
+      return {
+        id: defender.id,
+        name: defender.name,
+        title: defender.title,
+        templateName: content.defenderTemplates[defender.templateId].name,
+        subclassName: content.defenderSubclasses[defender.subclassId].name,
+        roleSummary: content.defenderTemplates[defender.templateId].role,
+        locationLabel:
+          defender.location === 'board'
+            ? 'On Board'
+            : defender.location === 'sauna'
+              ? 'In Sauna'
+              : defender.location === 'ready'
+                ? 'On Bench'
+                : 'Fallen',
+        summary: `Lvl ${defender.level} ${content.defenderSubclasses[defender.subclassId].name} · ${stats.damage} ATK · ${stats.defense} DEF`,
+        level: defender.level,
+        hp: defender.hp,
+        maxHp: stats.maxHp,
+        damage: stats.damage,
+        heal: stats.heal,
+        range: stats.range,
+        defense: stats.defense,
+        regenHpPerSecond: stats.regenHpPerSecond,
+        location: defender.location,
+        selected: state.selectedDefenderId === defender.id
+      };
+    }),
     deathLogEntries: state.deathLog.slice(0, 5).map((entry) => ({
       id: entry.id,
       wave: entry.wave,
@@ -1863,29 +2156,34 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       selected: true
     } : null,
     canAutoAssignSelectedLoot: selectedLoot ? findAutoAssignTarget(state, selectedLoot, content) !== null : false,
-    selectedDefender: selected ? {
-      id: selected.id,
-      name: selected.name,
-      title: selected.title,
-      lore: selected.lore,
-      templateName: content.defenderTemplates[selected.templateId].name,
-      subclassName: content.defenderSubclasses[selected.subclassId].name,
-      subclassDescription: content.defenderSubclasses[selected.subclassId].description,
-      level: selected.level,
-      xp: selected.xp,
-      nextLevelXp: selected.level >= 5 ? null : xpForLevel(selected.level + 1),
-      hp: selected.hp,
-      maxHp: statsWithItems(selected, content).maxHp,
-      damage: statsWithItems(selected, content).damage,
-      heal: statsWithItems(selected, content).heal,
-      range: statsWithItems(selected, content).range,
-      attackCooldownMs: statsWithItems(selected, content).attackCooldownMs,
-      itemSlotCount: itemSlotCap(state, content),
-      skillSlotCount: skillSlotCap(),
-      itemNames: selected.items.map((itemId) => content.itemDefinitions[itemId].name),
-      skillNames: selected.skills.map((skillId) => content.skillDefinitions[skillId].name),
-      location: selected.location
-    } : null,
+    selectedDefender: selected ? (() => {
+      const stats = derivedStats(state, selected, content);
+      return {
+        id: selected.id,
+        name: selected.name,
+        title: selected.title,
+        lore: selected.lore,
+        templateName: content.defenderTemplates[selected.templateId].name,
+        subclassName: content.defenderSubclasses[selected.subclassId].name,
+        subclassDescription: content.defenderSubclasses[selected.subclassId].description,
+        level: selected.level,
+        xp: selected.xp,
+        nextLevelXp: selected.level >= 5 ? null : xpForLevel(selected.level + 1),
+        hp: selected.hp,
+        maxHp: stats.maxHp,
+        damage: stats.damage,
+        heal: stats.heal,
+        range: stats.range,
+        attackCooldownMs: stats.attackCooldownMs,
+        defense: stats.defense,
+        regenHpPerSecond: stats.regenHpPerSecond,
+        itemSlotCount: itemSlotCap(state, content),
+        skillSlotCount: skillSlotCap(),
+        itemNames: selected.items.map((itemId) => content.itemDefinitions[itemId].name),
+        skillNames: selected.skills.map((skillId) => content.skillDefinitions[skillId].name),
+        location: selected.location
+      };
+    })() : null,
     selectedSauna: state.selectedMapTarget === 'sauna' ? {
       occupancyLabel: `${saunaOccupancy(state)}/${content.config.saunaCap}`,
       occupantName: saunaDefender?.name ?? null,
@@ -1893,10 +2191,13 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       occupantRole: saunaDefender ? content.defenderTemplates[saunaDefender.templateId].name : null,
       occupantLore: saunaDefender?.lore ?? null,
       occupantHp: saunaDefender?.hp ?? null,
-      occupantMaxHp: saunaDefender ? statsWithItems(saunaDefender, content).maxHp : null,
+      occupantMaxHp: saunaDefender ? derivedStats(state, saunaDefender, content).maxHp : null,
       autoDeployUnlocked: hasSaunaAutoDeploy(state),
       slapSwapUnlocked: hasSaunaSlapSwap(state)
     } : null,
+    globalModifiers: activeGlobalModifiers,
+    globalModifierDraftOffers: draftGlobalModifiers,
+    showGlobalModifierDraft: state.overlayMode === 'modifier_draft',
     wavePreview: waveCounts(currentWave, content),
     metaUpgrades: META_IDS.map((upgradeId) => {
       const cost = metaCost(state, upgradeId, content);
@@ -1918,6 +2219,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     enemyArchetypes: content.enemyArchetypes,
     itemDefinitions: content.itemDefinitions,
     skillDefinitions: content.skillDefinitions,
+    globalModifierDefinitions: content.globalModifierDefinitions,
     metaUpgrades: content.metaUpgrades,
     hud,
     tiles,
