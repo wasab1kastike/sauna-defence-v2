@@ -1329,4 +1329,100 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.deathLogEntries[0].wave).toBe(1);
     expect(snapshot.hud.deathLogEntries[4].wave).toBe(5);
   });
+
+  it('unlocks the Beer Shop from the metashop and generates tier-one offers', () => {
+    let state = prepState();
+    state.overlayMode = 'intermission';
+    state.phase = 'lost';
+    state.meta.shopUnlocked = true;
+    state.meta.steam = 20;
+
+    state = applyAction(state, { type: 'buyMetaUpgrade', upgradeId: 'beer_shop_unlock' }, gameContent);
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(state.meta.upgrades.beer_shop_unlock).toBe(1);
+    expect(state.beerShopOffers).toHaveLength(3);
+    expect(snapshot.hud.beerShopUnlocked).toBe(true);
+    expect(snapshot.hud.beerActiveSlotCap).toBe(1);
+  });
+
+  it('lets the player buy and stack the same beer', () => {
+    let state = prepState();
+    state.overlayMode = 'intermission';
+    state.phase = 'lost';
+    state.meta.shopUnlocked = true;
+    state.meta.steam = 30;
+    state.meta.upgrades.beer_shop_unlock = 1;
+    state = createInitialState(gameContent, state.meta, 42, true, false);
+
+    const offer = state.beerShopOffers[0];
+    expect(offer).toBeTruthy();
+
+    state = applyAction(state, { type: 'buyBeerShopOffer', offerId: offer.offerId }, gameContent);
+    state = applyAction(state, { type: 'buyBeerShopOffer', offerId: offer.offerId }, gameContent);
+    const active = state.activeAlcohols.find((entry) => entry.alcoholId === offer.alcoholId);
+
+    expect(state.activeAlcohols).toHaveLength(1);
+    expect(active?.stacks).toBe(2);
+  });
+
+  it('blocks a different beer when active drink slots are full but still allows stacking the current one', () => {
+    let state = prepState();
+    state.overlayMode = 'intermission';
+    state.phase = 'lost';
+    state.meta.shopUnlocked = true;
+    state.meta.steam = 40;
+    state.meta.upgrades.beer_shop_unlock = 1;
+    state = createInitialState(gameContent, state.meta, 123, true, false);
+
+    expect(state.beerShopOffers.length).toBeGreaterThanOrEqual(2);
+    const first = state.beerShopOffers[0];
+    const second = state.beerShopOffers.find((offer) => offer.alcoholId !== first.alcoholId)!;
+
+    state = applyAction(state, { type: 'buyBeerShopOffer', offerId: first.offerId }, gameContent);
+    state = applyAction(state, { type: 'buyBeerShopOffer', offerId: second.offerId }, gameContent);
+
+    expect(state.activeAlcohols).toHaveLength(1);
+    expect(state.activeAlcohols[0].alcoholId).toBe(first.alcoholId);
+    expect(state.message).toContain('No free drink slot');
+
+    state = applyAction(state, { type: 'buyBeerShopOffer', offerId: first.offerId }, gameContent);
+    expect(state.activeAlcohols[0].stacks).toBe(2);
+  });
+
+  it('clears active beers on loss, then carries newly bought intermission beers into the next run', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.overlayMode = 'none';
+    state.meta.shopUnlocked = true;
+    state.meta.upgrades.beer_shop_unlock = 1;
+    state.meta.steam = 20;
+    state.saunaHp = 1;
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 0 },
+      hp: 12,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 0,
+      moveReadyAtMs: 999999
+    }];
+    state.activeAlcohols = [{ alcoholId: 'light_lager', stacks: 2 }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.overlayMode).toBe('intermission');
+    expect(state.activeAlcohols).toHaveLength(0);
+    expect(state.beerShopOffers.length).toBe(3);
+
+    const offer = state.beerShopOffers[0];
+    state = applyAction(state, { type: 'buyBeerShopOffer', offerId: offer.offerId }, gameContent);
+    state = applyAction(state, { type: 'startNextRun' }, gameContent);
+
+    expect(state.overlayMode).toBe('none');
+    expect(state.phase).toBe('prep');
+    expect(state.activeAlcohols).toEqual([{ alcoholId: offer.alcoholId, stacks: 1 }]);
+  });
 });
