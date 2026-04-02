@@ -265,7 +265,9 @@ export interface DefenderInstance {
   xp: number;
   location: DefenderLocation;
   tile: AxialCoord | null;
+  homeTile: AxialCoord | null;
   attackReadyAtMs: number;
+  blinkReadyAtMs: number;
   items: ItemId[];
   skills: SkillId[];
   kills: number;
@@ -511,6 +513,7 @@ export interface HudSelectedDefender {
   heal: number;
   range: number;
   attackCooldownMs: number;
+  blinkLabel: string | null;
   defense: number;
   regenHpPerSecond: number;
   itemSlotCount: number;

@@ -67,6 +67,7 @@ const NON_BOSS_PATTERNS: Array<Exclude<WavePattern, 'tutorial' | 'boss_pressure'
   'surge'
 ];
 const CENTER: AxialCoord = { q: 0, r: 0 };
+const BLINK_STEP_COOLDOWN_MS = 12000;
 const EMPTY_STATS: UnitStats = {
   maxHp: 0,
   damage: 0,
@@ -550,7 +551,9 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
     xp: 0,
     location: 'ready',
     tile: null,
+    homeTile: null,
     attackReadyAtMs: 0,
+    blinkReadyAtMs: 0,
     items: [],
     skills: [],
     kills: 0,
@@ -1155,8 +1158,22 @@ function alliesToHeal(state: RunState, defender: DefenderInstance, stats: UnitSt
 }
 
 function tryBlink(state: RunState, defender: DefenderInstance, content: GameContent): boolean {
-  if (!defender.tile || !defender.skills.includes('blink_step')) return false;
+  if (!defender.tile || !defender.skills.includes('blink_step') || state.timeMs < defender.blinkReadyAtMs) return false;
   const from = { ...defender.tile };
+  const hpRatio = defender.hp / Math.max(1, derivedStats(state, defender, content).maxHp);
+  if (hpRatio <= 0.5 && defender.homeTile) {
+    const canRetreat =
+      isBuildable(defender.homeTile, content) &&
+      !occupied(state, defender.homeTile) &&
+      (defender.homeTile.q !== defender.tile.q || defender.homeTile.r !== defender.tile.r);
+    if (canRetreat) {
+      defender.tile = { ...defender.homeTile };
+      defender.blinkReadyAtMs = state.timeMs + BLINK_STEP_COOLDOWN_MS;
+      pushFx(state, 'blink', defender.tile, 420, from);
+      return true;
+    }
+    return false;
+  }
   const enemy = nearestEnemy(state, defender.tile);
   if (!enemy) return false;
   const tile = DIRS.map((dir) => add(defender.tile as AxialCoord, dir))
@@ -1164,7 +1181,8 @@ function tryBlink(state: RunState, defender: DefenderInstance, content: GameCont
     .sort((left, right) => hexDistance(left, enemy.tile) - hexDistance(right, enemy.tile))[0];
   if (!tile) return false;
   defender.tile = tile;
-  pushFx(state, 'blink', tile, 240, from);
+  defender.blinkReadyAtMs = state.timeMs + BLINK_STEP_COOLDOWN_MS;
+  pushFx(state, 'blink', tile, 320, from);
   return true;
 }
 
@@ -1343,6 +1361,9 @@ function resolveEnemyDeaths(state: RunState, content: GameContent): void {
       const killer = getDefender(state, enemy.lastHitByDefenderId);
       if (killer && killer.location !== 'dead') {
         killer.kills += 1;
+        if (killer.skills.includes('blink_step')) {
+          killer.blinkReadyAtMs = state.timeMs;
+        }
         const levelMessage = grantXp(state, killer, xpForEnemy(enemy.archetypeId), content);
         if (levelMessage) {
           state.message = levelMessage;
@@ -1389,6 +1410,12 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
   const stats = derivedStats(state, defender, content);
   const dmgMult = state.timeMs < state.sisu.activeUntilMs ? content.config.sisuDamageMultiplier : 1;
   const cdMult = state.timeMs < state.sisu.activeUntilMs ? content.config.sisuAttackMultiplier : 1;
+  const originTile = { ...defender.tile };
+  const lowHp = defender.skills.includes('blink_step') && defender.hp / Math.max(1, stats.maxHp) <= 0.5;
+  if (lowHp && tryBlink(state, defender, content)) {
+    defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
+    return;
+  }
   const ally = stats.heal > 0 ? alliesToHeal(state, defender, stats, content)[0] : null;
   if (ally) {
     ally.hp = Math.min(derivedStats(state, ally, content).maxHp, ally.hp + Math.round(stats.heal * dmgMult));
@@ -1400,14 +1427,36 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
     return;
   }
   let target = enemiesInRange(state, defender.tile, stats.range)[0] ?? null;
-  if (!target && tryBlink(state, defender, content)) target = enemiesInRange(state, defender.tile, stats.range)[0] ?? null;
+  if (!target && tryBlink(state, defender, content)) {
+    const retreatedHome =
+      defender.homeTile &&
+      defender.tile.q === defender.homeTile.q &&
+      defender.tile.r === defender.homeTile.r &&
+      (originTile.q !== defender.tile.q || originTile.r !== defender.tile.r);
+    if (retreatedHome) {
+      defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
+      return;
+    }
+    target = enemiesInRange(state, defender.tile, stats.range)[0] ?? null;
+  }
   if (!target) {
     moveDefenderTowardSaunaThreat(state, defender, stats, content, cdMult);
     return;
   }
-  target.hp -= Math.round(stats.damage * dmgMult);
-  target.lastHitByDefenderId = defender.id;
-  pushFx(state, 'hit', target.tile, 180, defender.tile);
+  const hitDamage = Math.round(stats.damage * dmgMult);
+  if (defender.skills.includes('spin2win')) {
+    const spinTargets = state.enemies.filter((enemy) => hexDistance(enemy.tile, defender.tile as AxialCoord) <= 1);
+    for (const enemy of spinTargets) {
+      enemy.hp -= hitDamage;
+      enemy.lastHitByDefenderId = defender.id;
+    }
+    pushFx(state, 'spin', defender.tile, 320);
+    addHitStop(state, 34);
+  } else {
+    target.hp -= hitDamage;
+    target.lastHitByDefenderId = defender.id;
+    pushFx(state, 'hit', target.tile, 180, defender.tile);
+  }
   grantCombatXp(state, defender, 1, content);
   if (defender.skills.includes('fireball')) {
     pushFx(state, 'fireball', target.tile, 260, defender.tile);
@@ -1418,16 +1467,6 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
       }
     }
     addHitStop(state, 36);
-  }
-  if (defender.skills.includes('spin2win')) {
-    pushFx(state, 'spin', defender.tile, 220);
-    for (const enemy of state.enemies) {
-      if (enemy.instanceId !== target.instanceId && hexDistance(enemy.tile, defender.tile) <= 1) {
-        enemy.hp -= Math.max(1, Math.round(stats.damage * 0.5));
-        enemy.lastHitByDefenderId = defender.id;
-      }
-    }
-    addHitStop(state, 28);
   }
   if (defender.skills.includes('chain_spark')) {
     const chainedTarget = state.enemies
@@ -2248,6 +2287,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       }
       defender.location = 'board';
       defender.tile = { ...action.tile };
+      defender.homeTile = { ...action.tile };
       defender.attackReadyAtMs = next.timeMs + derivedStats(next, defender, content).attackCooldownMs;
       if (next.saunaDefenderId === defender.id) next.saunaDefenderId = null;
       next.selectedMapTarget = null;
@@ -2759,21 +2799,26 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         heal: stats.heal,
         range: stats.range,
         attackCooldownMs: stats.attackCooldownMs,
-          defense: stats.defense,
-          regenHpPerSecond: stats.regenHpPerSecond,
-          itemSlotCount: itemSlotCap(state, content),
-          skillSlotCount: skillSlotCap(),
-          items: selected.items.map((itemId) => ({
-            id: itemId,
-            name: content.itemDefinitions[itemId].name
-          })),
-          skills: selected.skills.map((skillId) => ({
-            id: skillId,
-            name: content.skillDefinitions[skillId].name
-          })),
-          location: selected.location
-        };
-      })() : null,
+        blinkLabel: selected.skills.includes('blink_step')
+          ? state.timeMs >= selected.blinkReadyAtMs
+            ? 'Blink ready'
+            : `Blink ${Math.ceil((selected.blinkReadyAtMs - state.timeMs) / 1000)}s`
+          : null,
+        defense: stats.defense,
+        regenHpPerSecond: stats.regenHpPerSecond,
+        itemSlotCount: itemSlotCap(state, content),
+        skillSlotCount: skillSlotCap(),
+        items: selected.items.map((itemId) => ({
+          id: itemId,
+          name: content.itemDefinitions[itemId].name
+        })),
+        skills: selected.skills.map((skillId) => ({
+          id: skillId,
+          name: content.skillDefinitions[skillId].name
+        })),
+        location: selected.location
+      };
+    })() : null,
     selectedSauna: state.selectedMapTarget === 'sauna' ? {
       occupancyLabel: `${saunaOccupancy(state)}/${content.config.saunaCap}`,
       occupantName: saunaDefender?.name ?? null,

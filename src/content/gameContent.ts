@@ -550,7 +550,7 @@ export const gameContent: GameContent = {
       kind: 'skill',
       name: 'Spin 2 Win',
       rarity: 'epic',
-      effectText: 'Melee hits also clip all adjacent enemies.',
+      effectText: 'Basic attacks sweep all enemies within 1 tile for full damage.',
       flavorText: 'Invented after one slippery sauna floor incident too many.',
       artPath: 'loot/spin-2-win.svg'
     },
@@ -559,7 +559,7 @@ export const gameContent: GameContent = {
       kind: 'skill',
       name: 'Blink Step',
       rarity: 'rare',
-      effectText: 'If no target is in range, blink one hex closer to danger.',
+      effectText: 'Below 50% HP, blink back to your home tile. Kills reset this 12s cooldown.',
       flavorText: 'A deeply unwise technique for entering rooms dramatically.',
       artPath: 'loot/blink-step.svg'
     },

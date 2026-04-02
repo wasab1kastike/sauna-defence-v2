@@ -642,6 +642,7 @@ export function App() {
                       </span>
                       <span className="tag">Items {selectedDefender.items.length}/{selectedDefender.itemSlotCount}</span>
                       <span className="tag">Skills {selectedDefender.skills.length}/{selectedDefender.skillSlotCount}</span>
+                      {selectedDefender.blinkLabel ? <span className="tag">{selectedDefender.blinkLabel}</span> : null}
                       <span className="tag">
                         {selectedDefender.nextSubclassUnlockLevel !== null
                           ? `${selectedDefender.xpToNextBranch ?? 0} XP to branch at Lv ${selectedDefender.nextSubclassUnlockLevel}`

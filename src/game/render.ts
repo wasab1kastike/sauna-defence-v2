@@ -1044,17 +1044,27 @@ function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, lay
         }
         break;
       case 'spin':
-        drawGlowDisc(ctx, center, layout.hexSize * (0.42 + Math.sin(progress * Math.PI) * 0.2), 'rgba(255,220,144,0.38)', 'rgba(255,171,77,0)', 0.7);
-        drawShockRing(ctx, center, layout.hexSize * (0.46 + progress * 0.18), 'rgba(255,211,125,0.72)', Math.max(2, layout.hexSize * 0.06), 0.65);
-        drawSparkBurst(ctx, center, layout.hexSize * (0.5 + progress * 0.12), '#ffecc5', 0.24, 10, progress * Math.PI * 4.5);
-        for (let blade = 0; blade < 2; blade += 1) {
+        drawGlowDisc(ctx, center, layout.hexSize * (0.78 + Math.sin(progress * Math.PI) * 0.28), 'rgba(255,220,144,0.46)', 'rgba(255,171,77,0)', 0.84);
+        drawShockRing(ctx, center, layout.hexSize * (0.9 + progress * 0.38), 'rgba(255,211,125,0.78)', Math.max(3, layout.hexSize * 0.09), 0.82);
+        drawShockRing(ctx, center, layout.hexSize * (1.08 + progress * 0.54), 'rgba(255,171,77,0.34)', Math.max(2, layout.hexSize * 0.05), 0.62);
+        drawSparkBurst(ctx, center, layout.hexSize * (1.02 + progress * 0.26), '#ffecc5', 0.4, 14, progress * Math.PI * 6.2);
+        drawEmberParticles(ctx, center, layout.hexSize * 1.45, progress, event.id * 8.3, '#ffb05f', 18);
+        for (let flare = 0; flare < 6; flare += 1) {
+          const angle = progress * Math.PI * 5.6 + (Math.PI * 2 * flare) / 6;
+          const flareCenter = {
+            x: center.x + Math.cos(angle) * layout.hexSize * 0.95,
+            y: center.y + Math.sin(angle) * layout.hexSize * 0.95
+          };
+          drawGlowDisc(ctx, flareCenter, layout.hexSize * 0.18, 'rgba(255,242,194,0.68)', 'rgba(255,168,73,0)', 0.78);
+        }
+        for (let blade = 0; blade < 3; blade += 1) {
           drawSpinBlade(
             ctx,
             center,
-            layout.hexSize * 0.52,
-            progress * Math.PI * 5.6 + blade * Math.PI,
-            layout.hexSize * 0.54,
-            layout.hexSize * 0.18,
+            layout.hexSize * 0.98,
+            progress * Math.PI * 7.2 + blade * ((Math.PI * 2) / 3),
+            layout.hexSize * 0.98,
+            layout.hexSize * 0.26,
             '#fff1d2',
             'rgba(255,199,102,0.9)',
             0.92
@@ -1063,11 +1073,13 @@ function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, lay
         break;
       case 'blink':
         if (secondary) {
-          drawAfterimageTrail(ctx, secondary, center, 'rgba(120, 214, 255, 0.95)', 0.95);
-          drawLightningArc(ctx, secondary, center, 'rgba(142, 232, 255, 0.3)', Math.max(1.5, layout.hexSize * 0.035), 0.45, event.id * 2.7);
+          drawAfterimageTrail(ctx, secondary, center, 'rgba(120, 214, 255, 0.98)', 1);
+          drawLightningArc(ctx, secondary, center, 'rgba(142, 232, 255, 0.46)', Math.max(2, layout.hexSize * 0.05), 0.62, event.id * 2.7);
+          drawLightningArc(ctx, secondary, center, 'rgba(219, 250, 255, 0.3)', Math.max(1, layout.hexSize * 0.025), 0.74, event.id * 3.9);
         }
-        drawGlowDisc(ctx, center, layout.hexSize * (0.22 + progress * 0.3), 'rgba(213,249,255,0.72)', 'rgba(100,188,255,0)', 0.8);
-        drawShockRing(ctx, center, layout.hexSize * (0.14 + progress * 0.24), '#91dfff', 2.3, 0.8);
+        drawGlowDisc(ctx, center, layout.hexSize * (0.34 + progress * 0.46), 'rgba(213,249,255,0.82)', 'rgba(100,188,255,0)', 0.9);
+        drawShockRing(ctx, center, layout.hexSize * (0.22 + progress * 0.42), '#91dfff', Math.max(2.3, layout.hexSize * 0.07), 0.88);
+        drawSparkBurst(ctx, center, layout.hexSize * (0.3 + progress * 0.24), '#dff8ff', 0.72, 8, progress * Math.PI * 3.2);
         break;
       case 'chain':
         if (secondary) {
