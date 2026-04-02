@@ -18,6 +18,7 @@ import type {
   EnemyUnitId,
   GameContent,
   GameSnapshot,
+  GlobalModifierId,
   GlobalModifierDefinition,
   GlobalModifierEffectStat,
   HudPanelId,
@@ -98,6 +99,15 @@ const EMPTY_STATS: UnitStats = {
   defense: 0,
   regenHpPerSecond: 0
 };
+const GLOBAL_MODIFIER_STAT_ORDER: GlobalModifierEffectStat[] = [
+  'maxHp',
+  'damage',
+  'heal',
+  'range',
+  'attackCooldownMs',
+  'defense',
+  'regenHpPerSecond'
+];
 const ELECTRIC_BATHER_ABILITY_COOLDOWN_MS = 5200;
 const ESCALATION_MANAGER_ABILITY_COOLDOWN_MS = 6000;
 const PEBBLE_PATH_BASE: AxialCoord[] = [
@@ -663,6 +673,21 @@ function globalModifierStacks(state: RunState, definition: GlobalModifierDefinit
 function applyModifierAmount(stats: UnitStats, stat: GlobalModifierEffectStat, amount: number): UnitStats {
   stats[stat] += amount;
   return stats;
+}
+
+function countGlobalModifierPicks(state: RunState, modifierId: GlobalModifierId): number {
+  return state.activeGlobalModifierIds.reduce((count, activeId) => count + (activeId === modifierId ? 1 : 0), 0);
+}
+
+function uniqueGlobalModifierIds(modifierIds: GlobalModifierId[]): GlobalModifierId[] {
+  const seen = new Set<GlobalModifierId>();
+  const unique: GlobalModifierId[] = [];
+  for (const modifierId of modifierIds) {
+    if (seen.has(modifierId)) continue;
+    seen.add(modifierId);
+    unique.push(modifierId);
+  }
+  return unique;
 }
 
 function globalModifierTotals(state: RunState, content: GameContent): UnitStats {
@@ -1348,20 +1373,6 @@ function recruitOfferPrice(defender: DefenderInstance, content: GameContent): nu
   return Math.max(recruitPriceFloor(), recruitPriceFloor() + qualityTax + statTax + levelTax);
 }
 
-function pickUniqueDefinitions(
-  state: RunState,
-  definitions: GlobalModifierDefinition[],
-  count: number
-): GlobalModifierDefinition[] {
-  const pool = [...definitions];
-  const picked: GlobalModifierDefinition[] = [];
-  while (pool.length > 0 && picked.length < count) {
-    const index = randomInt(state, 0, pool.length - 1);
-    picked.push(pool.splice(index, 1)[0]);
-  }
-  return picked;
-}
-
 function availableGlobalModifierDefinitions(
   state: RunState,
   content: GameContent,
@@ -1369,16 +1380,37 @@ function availableGlobalModifierDefinitions(
 ): GlobalModifierDefinition[] {
   return Object.values(content.globalModifierDefinitions)
     .filter((definition) => (includeFallback ? definition.isFallback === true : !definition.isFallback))
-    .filter((definition) => !state.activeGlobalModifierIds.includes(definition.id))
     .filter((definition) => globalModifierStacks(state, definition) > 0);
 }
 
-function rollGlobalModifierDraftOffersIntoState(state: RunState, content: GameContent): void {
-  const picked = pickUniqueDefinitions(state, availableGlobalModifierDefinitions(state, content, false), 3);
+function rollGlobalModifierDraftOffersIntoState(state: RunState, content: GameContent): boolean {
+  const primaryPool = availableGlobalModifierDefinitions(state, content, false);
+  const fallbackPool = availableGlobalModifierDefinitions(state, content, true);
+  const picked: GlobalModifierDefinition[] = [];
+  const pickedIds = new Set<GlobalModifierId>();
+  const takeUniqueFromPool = (pool: GlobalModifierDefinition[]) => {
+    const remaining = [...pool];
+    while (remaining.length > 0 && picked.length < 3) {
+      const index = randomInt(state, 0, remaining.length - 1);
+      const candidate = remaining.splice(index, 1)[0];
+      if (pickedIds.has(candidate.id)) continue;
+      picked.push(candidate);
+      pickedIds.add(candidate.id);
+    }
+  };
+
+  takeUniqueFromPool(primaryPool);
   if (picked.length < 3) {
-    picked.push(...pickUniqueDefinitions(state, availableGlobalModifierDefinitions(state, content, true), 3 - picked.length));
+    takeUniqueFromPool(fallbackPool);
   }
+
+  const repeatPool = [...primaryPool, ...fallbackPool];
+  while (repeatPool.length > 0 && picked.length < 3) {
+    picked.push(repeatPool[randomInt(state, 0, repeatPool.length - 1)]);
+  }
+
   state.globalModifierDraftOffers = picked.map((definition) => definition.id);
+  return state.globalModifierDraftOffers.length > 0;
 }
 
 function fillDefenderToMax(state: RunState, defender: DefenderInstance, content: GameContent): void {
@@ -1429,7 +1461,7 @@ function rollBeerShopOffersIntoState(state: RunState, content: GameContent): voi
 }
 
 function canBuyBeerOffer(state: RunState, offer: BeerShopOffer, content: GameContent): boolean {
-  if (!state.meta.shopUnlocked || !beerShopUnlocked(state)) return false;
+  if (!beerShopUnlocked(state)) return false;
   const definition = content.alcoholDefinitions[offer.alcoholId];
   if (state.meta.steam < definition.price) return false;
   const active = activeAlcoholEntry(state, offer.alcoholId);
@@ -2420,7 +2452,12 @@ function awardWave(state: RunState, content: GameContent): void {
     state.currentWave = upcomingWave;
     state.pendingSpawns = [];
     clearActiveHudPanel(state);
-    rollGlobalModifierDraftOffersIntoState(state, content);
+    if (!rollGlobalModifierDraftOffersIntoState(state, content)) {
+      state.overlayMode = 'none';
+      scheduleAutoplay(state);
+      state.message = 'Boss down. No modifier synergies were live, so the run keeps rolling.';
+      return;
+    }
     state.message = 'Boss down. Pick one global modifier before the next wave.';
     return;
   }
@@ -2899,17 +2936,47 @@ function formatAlcoholModifier(modifier: AlcoholModifier, polarity: 'positive' |
 }
 
 function globalModifierHudEntry(state: RunState, definition: GlobalModifierDefinition, content: GameContent) {
+  const pickCount = countGlobalModifierPicks(state, definition.id);
   const stackCount = globalModifierStacks(state, definition);
-  const total = definition.amountPerStack * stackCount;
+  const total = definition.amountPerStack * stackCount * pickCount;
   return {
     id: definition.id,
     name: definition.name,
     description: definition.description,
     formulaText: `${formatModifierAmount(definition.amountPerStack, definition.effectStat)} ${globalModifierStatLabel(definition.effectStat)} per ${globalModifierScopeLabel(definition, content)}`,
+    pickCount,
     stackCount,
     effectText: `${formatModifierAmount(definition.amountPerStack, definition.effectStat)} ${globalModifierStatLabel(definition.effectStat)}`,
-    resolvedEffectText: `${stackCount} stack${stackCount === 1 ? '' : 's'} -> ${formatModifierAmount(total, definition.effectStat)} ${globalModifierStatLabel(definition.effectStat)}`
+    resolvedEffectText: `${pickCount} pick${pickCount === 1 ? '' : 's'} x ${stackCount} live stack${stackCount === 1 ? '' : 's'} -> ${formatModifierAmount(total, definition.effectStat)} ${globalModifierStatLabel(definition.effectStat)}`
   };
+}
+
+function globalModifierDraftHudEntry(state: RunState, definition: GlobalModifierDefinition, content: GameContent) {
+  const ownedCount = countGlobalModifierPicks(state, definition.id);
+  const stackCount = globalModifierStacks(state, definition);
+  const incrementalTotal = definition.amountPerStack * stackCount;
+  const projectedTotal = incrementalTotal * (ownedCount + 1);
+  return {
+    id: definition.id,
+    name: definition.name,
+    description: definition.description,
+    formulaText: `${formatModifierAmount(definition.amountPerStack, definition.effectStat)} ${globalModifierStatLabel(definition.effectStat)} per ${globalModifierScopeLabel(definition, content)}`,
+    ownedCount,
+    stackCount,
+    incrementText: `${formatModifierAmount(incrementalTotal, definition.effectStat)} ${globalModifierStatLabel(definition.effectStat)} right now`,
+    projectedEffectText: `Would become ${formatModifierAmount(projectedTotal, definition.effectStat)} ${globalModifierStatLabel(definition.effectStat)} total`
+  };
+}
+
+function globalModifierSummaryEntries(state: RunState, content: GameContent) {
+  const totals = globalModifierTotals(state, content);
+  return GLOBAL_MODIFIER_STAT_ORDER
+    .filter((stat) => totals[stat] !== 0)
+    .map((stat) => ({
+      stat,
+      label: `${formatModifierAmount(totals[stat], stat)} ${globalModifierStatLabel(stat)}`,
+      total: totals[stat]
+    }));
 }
 
 function unlockedSubclassDefinitions(defender: DefenderInstance, content: GameContent): DefenderSubclassDefinition[] {
@@ -3258,9 +3325,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     case 'draftGlobalModifier': {
       if (next.overlayMode !== 'modifier_draft') return next;
       if (!next.globalModifierDraftOffers.includes(action.modifierId)) return next;
-      if (!next.activeGlobalModifierIds.includes(action.modifierId)) {
-        next.activeGlobalModifierIds.push(action.modifierId);
-      }
+      next.activeGlobalModifierIds.push(action.modifierId);
       next.globalModifierDraftOffers = [];
       next.overlayMode = 'none';
       next.phase = 'prep';
@@ -3626,7 +3691,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     }
     case 'buyBeerShopOffer': {
-      if (!next.meta.shopUnlocked || !beerShopUnlocked(next)) return next;
+      if (!beerShopUnlocked(next)) return next;
       const offer = next.beerShopOffers.find((entry) => entry.offerId === action.offerId);
       if (!offer) return next;
       const definition = content.alcoholDefinitions[offer.alcoholId];
@@ -3650,7 +3715,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     }
     case 'removeActiveAlcohol': {
-      if (!next.meta.shopUnlocked || !beerShopUnlocked(next)) return next;
+      if (!beerShopUnlocked(next)) return next;
       const index = next.activeAlcohols.findIndex((entry) => entry.alcoholId === action.alcoholId);
       if (index < 0) return next;
       const [removed] = next.activeAlcohols.splice(index, 1);
@@ -3743,10 +3808,11 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const readyBenchCount = state.defenders.filter((defender) => defender.location === 'ready').length;
   const freeRecruitSlots = Math.max(0, rosterCap(state, content) - livingDefenders(state).length);
   const beerTier = beerShopTier(state);
-  const activeGlobalModifiers = state.activeGlobalModifierIds
+  const activeGlobalModifiers = uniqueGlobalModifierIds(state.activeGlobalModifierIds)
     .map((modifierId) => globalModifierHudEntry(state, content.globalModifierDefinitions[modifierId], content));
+  const globalModifierSummary = globalModifierSummaryEntries(state, content);
   const draftGlobalModifiers = state.globalModifierDraftOffers
-    .map((modifierId) => globalModifierHudEntry(state, content.globalModifierDefinitions[modifierId], content));
+    .map((modifierId) => globalModifierDraftHudEntry(state, content.globalModifierDefinitions[modifierId], content));
   const worldLandmarks = (Object.keys(WORLD_LANDMARK_TILES) as WorldLandmarkId[])
     .map((landmarkId) => hudWorldLandmarkEntry(state, landmarkId, content))
     .filter((entry) => entry.visible);
@@ -3909,6 +3975,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         range: stats.range,
         defense: stats.defense,
         regenHpPerSecond: stats.regenHpPerSecond,
+        kills: defender.kills,
         location: defender.location,
         selected: state.selectedDefenderId === defender.id
       };
@@ -3988,6 +4055,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         level: selected.level,
         xp: selected.xp,
         nextLevelXp: selected.level >= MAX_DEFENDER_LEVEL ? null : xpForLevel(selected.level + 1),
+        kills: selected.kills,
         hp: selected.hp,
         maxHp: stats.maxHp,
         damage: stats.damage,
@@ -4027,6 +4095,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       slapSwapUnlocked: hasSaunaSlapSwap(state)
     } : null,
     globalModifiers: activeGlobalModifiers,
+    globalModifierSummary,
     globalModifierDraftOffers: draftGlobalModifiers,
     showGlobalModifierDraft: state.overlayMode === 'modifier_draft',
     subclassDraftHeroName: getDefender(state, state.subclassDraftDefenderId)?.name ?? null,

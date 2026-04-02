@@ -38,6 +38,15 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+const BOARD_POPUP_MIN_WIDTH = 280;
+const BOARD_POPUP_MAX_WIDTH = 420;
+const BOARD_POPUP_WIDTH_RATIO = 0.34;
+const BOARD_POPUP_MIN_HEIGHT = 320;
+const BOARD_POPUP_MAX_HEIGHT = 720;
+const BOARD_POPUP_HEIGHT_RATIO = 0.68;
+const BOARD_POPUP_MARGIN = 18;
+const BOARD_POPUP_MIN_TOP = 86;
+
 const GUIDE_STORAGE_KEY = 'sauna-defense-v3-guide-seen';
 const GUIDE_STEPS = [
   {
@@ -79,6 +88,26 @@ function getLandmarkStyle(
   };
 }
 
+export function getLandmarkPopupPlacement(
+  point: { x: number; y: number },
+  frameSize: { width: number; height: number },
+): { left: number; top: number } {
+  const popupWidth = Math.min(BOARD_POPUP_MAX_WIDTH, Math.max(BOARD_POPUP_MIN_WIDTH, frameSize.width * BOARD_POPUP_WIDTH_RATIO));
+  const popupHeight = Math.min(BOARD_POPUP_MAX_HEIGHT, Math.max(BOARD_POPUP_MIN_HEIGHT, frameSize.height * BOARD_POPUP_HEIGHT_RATIO));
+  return {
+    left: clamp(
+      point.x - (point.x > frameSize.width * 0.55 ? popupWidth - 48 : 48),
+      BOARD_POPUP_MARGIN,
+      frameSize.width - popupWidth - BOARD_POPUP_MARGIN
+    ),
+    top: clamp(
+      point.y - 72,
+      BOARD_POPUP_MIN_TOP,
+      frameSize.height - popupHeight - BOARD_POPUP_MARGIN
+    )
+  };
+}
+
 function getLandmarkPopupStyle(
   snapshot: GameSnapshot,
   frameSize: { width: number; height: number },
@@ -88,10 +117,10 @@ function getLandmarkPopupStyle(
     return undefined;
   }
   const point = getTileViewportPosition(snapshot, frameSize.width, frameSize.height, landmark.tile);
-  const popupWidth = Math.min(360, Math.max(280, frameSize.width * 0.34));
+  const placement = getLandmarkPopupPlacement(point, frameSize);
   return {
-    left: `${clamp(point.x - (point.x > frameSize.width * 0.55 ? popupWidth - 48 : 48), 18, frameSize.width - popupWidth - 18)}px`,
-    top: `${clamp(point.y - 72, 86, frameSize.height - 330)}px`
+    left: `${placement.left}px`,
+    top: `${placement.top}px`
   };
 }
 
@@ -281,6 +310,8 @@ export function App() {
   const headerSkillEntries = snapshot?.hud.headerSkillEntries ?? [];
   const inventoryEntries = snapshot?.hud.inventoryEntries ?? [];
   const globalModifiers = snapshot?.hud.globalModifiers ?? [];
+  const globalModifierSummary = snapshot?.hud.globalModifierSummary ?? [];
+  const totalModifierPicks = globalModifiers.reduce((sum, modifier) => sum + modifier.pickCount, 0);
   const hintBody = snapshot ? compactHintBody(snapshot.hud.actionBody) : '';
 
   const renderLootRow = (title: string, entries: typeof headerItemEntries, emptyText: string) => (
@@ -392,6 +423,7 @@ export function App() {
               <div className="mini-tag-row">
                 <span className="mini-tag">HP {entry.hp}/{entry.maxHp}</span>
                 <span className="mini-tag">ATK {entry.damage}</span>
+                <span className="mini-tag">Kills {entry.kills}</span>
                 {entry.heal > 0 ? <span className="mini-tag">Heal {entry.heal}</span> : null}
               </div>
             </button>
@@ -444,6 +476,7 @@ export function App() {
               <span className="mini-tag">Range {selectedDefender.range}</span>
               <span className="mini-tag">DEF {selectedDefender.defense}</span>
               <span className="mini-tag">Regen {selectedDefender.regenHpPerSecond}/s</span>
+              <span className="mini-tag">Kills {selectedDefender.kills}</span>
             </div>
             <p className="panel-copy small-copy">{selectedDefender.subclassDescription}</p>
             {selectedDefender.subclasses.length > 0 ? (
@@ -539,9 +572,18 @@ export function App() {
 
     if (activePanel === 'modifiers') {
       title = 'Global Modifiers';
-      subtitle = globalModifiers.length > 0 ? `${globalModifiers.length} active` : 'No active modifiers';
+      subtitle = globalModifiers.length > 0 ? `${globalModifiers.length} modifiers, ${totalModifierPicks} picks` : 'No active modifiers';
       content = (
         <div className="popup-scroll-stack">
+          {globalModifierSummary.length > 0 ? (
+            <section className="popup-section">
+              <div className="mini-tag-row">
+                {globalModifierSummary.map((entry) => (
+                  <span key={entry.stat} className="mini-tag">{entry.label}</span>
+                ))}
+              </div>
+            </section>
+          ) : null}
           <section className="popup-section">
             {globalModifiers.length > 0 ? (
               <div className="popup-list">
@@ -551,7 +593,8 @@ export function App() {
                     <small>{modifier.description}</small>
                     <small>{modifier.formulaText}</small>
                     <div className="mini-tag-row">
-                      <span className="mini-tag">{modifier.stackCount} stacks</span>
+                      <span className="mini-tag">{modifier.pickCount} picks</span>
+                      <span className="mini-tag">{modifier.stackCount} live stacks</span>
                       <span className="mini-tag">{modifier.resolvedEffectText}</span>
                     </div>
                   </div>
@@ -1101,14 +1144,16 @@ export function App() {
               Pick one run-long modifier. Its stacks update automatically from your board, roster, items, skills and casualties.
             </p>
             <div className="modifier-draft-grid">
-              {snapshot.hud.globalModifierDraftOffers.map((modifier) => (
-                <div key={modifier.id} className="modifier-card draft-card">
+              {snapshot.hud.globalModifierDraftOffers.map((modifier, index) => (
+                <div key={`${modifier.id}-${index}`} className="modifier-card draft-card">
                   <strong>{modifier.name}</strong>
                   <small>{modifier.description}</small>
                   <small>{modifier.formulaText}</small>
                   <div className="mini-tag-row">
+                    <span className="mini-tag">{modifier.ownedCount} owned</span>
                     <span className="mini-tag">{modifier.stackCount} stacks live</span>
-                    <span className="mini-tag">{modifier.resolvedEffectText}</span>
+                    <span className="mini-tag">{modifier.incrementText}</span>
+                    <span className="mini-tag">{modifier.projectedEffectText}</span>
                   </div>
                   <button className="primary-button" onClick={() => dispatch({ type: 'draftGlobalModifier', modifierId: modifier.id })}>
                     Pick Modifier

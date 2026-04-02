@@ -539,6 +539,7 @@ export interface HudRosterEntry {
   range: number;
   defense: number;
   regenHpPerSecond: number;
+  kills: number;
   location: DefenderLocation;
   selected: boolean;
 }
@@ -580,6 +581,7 @@ export interface HudSelectedDefender {
   level: number;
   xp: number;
   nextLevelXp: number | null;
+  kills: number;
   hp: number;
   maxHp: number;
   damage: number;
@@ -694,9 +696,27 @@ export interface HudGlobalModifierEntry {
   name: string;
   description: string;
   formulaText: string;
+  pickCount: number;
   stackCount: number;
   effectText: string;
   resolvedEffectText: string;
+}
+
+export interface HudGlobalModifierDraftEntry {
+  id: GlobalModifierId;
+  name: string;
+  description: string;
+  formulaText: string;
+  ownedCount: number;
+  stackCount: number;
+  incrementText: string;
+  projectedEffectText: string;
+}
+
+export interface HudGlobalModifierSummaryEntry {
+  stat: GlobalModifierEffectStat;
+  label: string;
+  total: number;
 }
 
 export interface HudWorldLandmarkEntry {
@@ -793,7 +813,8 @@ export interface HudViewModel {
   selectedDefender: HudSelectedDefender | null;
   selectedSauna: HudSelectedSauna | null;
   globalModifiers: HudGlobalModifierEntry[];
-  globalModifierDraftOffers: HudGlobalModifierEntry[];
+  globalModifierSummary: HudGlobalModifierSummaryEntry[];
+  globalModifierDraftOffers: HudGlobalModifierDraftEntry[];
   showGlobalModifierDraft: boolean;
   subclassDraftHeroName: string | null;
   subclassDraftHeroTitle: string | null;

@@ -282,6 +282,32 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.defenders.find((entry) => entry.id === defender.id)?.xp).toBe(1);
   });
 
+  it('tracks defender kills on the unit that landed the finishing blow', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.location = 'board';
+    defender.tile = { q: 0, r: -1 };
+    defender.homeTile = { q: 0, r: -1 };
+    defender.stats.damage = 99;
+    defender.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 0 },
+      hp: 8,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.defenders.find((entry) => entry.id === defender.id)?.kills).toBe(1);
+  });
+
   it('still grants combat XP for healing actions', () => {
     let state = prepState();
     const readyDefenders = state.defenders.filter((entry) => entry.location === 'ready');
@@ -328,6 +354,18 @@ describe('Sauna Defense V2 logic', () => {
     const point = getTileViewportPosition(snapshot, rect.width, rect.height, defender.tile!);
 
     expect(pickDefenderAtCanvasPoint(snapshot, rect, point.x, point.y)).toBe(defender.id);
+  });
+
+  it('surfaces defender kill counts in roster and selected-hero HUD data', () => {
+    const state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.kills = 7;
+    state.selectedDefenderId = defender.id;
+
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(snapshot.hud.rosterEntries.find((entry) => entry.id === defender.id)?.kills).toBe(7);
+    expect(snapshot.hud.selectedDefender?.kills).toBe(7);
   });
 
   it('autoplay starts the next wave after the boss reward draft resolves', () => {
@@ -2021,6 +2059,78 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.globalModifierDraftOffers).toHaveLength(0);
   });
 
+  it('lets the same global modifier be drafted twice and aggregates the total effect in the HUD', () => {
+    let state = prepState();
+    state.overlayMode = 'modifier_draft';
+    state.globalModifierDraftOffers = ['shared_grit'];
+
+    state = applyAction(state, { type: 'draftGlobalModifier', modifierId: 'shared_grit' }, gameContent);
+    state.overlayMode = 'modifier_draft';
+    state.globalModifierDraftOffers = ['shared_grit'];
+    state = applyAction(state, { type: 'draftGlobalModifier', modifierId: 'shared_grit' }, gameContent);
+
+    const snapshot = createSnapshot(state, gameContent);
+    const sharedGrit = snapshot.hud.globalModifiers.find((entry) => entry.id === 'shared_grit');
+    const summary = snapshot.hud.globalModifierSummary.find((entry) => entry.stat === 'maxHp');
+
+    expect(state.activeGlobalModifierIds).toEqual(['shared_grit', 'shared_grit']);
+    expect(sharedGrit?.pickCount).toBe(2);
+    expect(sharedGrit?.stackCount).toBe(state.defenders.filter((defender) => defender.location !== 'dead').length);
+    expect(sharedGrit?.resolvedEffectText).toContain('+10 max HP');
+    expect(summary?.total).toBe(10);
+  });
+
+  it('still offers boss reward cards after every modifier has already been seen once', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.waveIndex = 5;
+    state.currentWave = {
+      index: 5,
+      isBoss: true,
+      rewardSisu: 7,
+      pressure: 18,
+      pattern: 'boss_breach',
+      bossId: 'pebble',
+      bossCategory: 'breach',
+      spawns: []
+    };
+    state.pendingSpawns = [];
+    state.enemies = [];
+    state.activeGlobalModifierIds = Object.keys(gameContent.globalModifierDefinitions) as Array<keyof typeof gameContent.globalModifierDefinitions>;
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.overlayMode).toBe('modifier_draft');
+    expect(state.globalModifierDraftOffers).toHaveLength(3);
+  });
+
+  it('skips the boss reward draft instead of softlocking when no modifier synergies are live', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.waveIndex = 5;
+    state.currentWave = {
+      index: 5,
+      isBoss: true,
+      rewardSisu: 7,
+      pressure: 18,
+      pattern: 'boss_breach',
+      bossId: 'pebble',
+      bossCategory: 'breach',
+      spawns: []
+    };
+    state.pendingSpawns = [];
+    state.enemies = [];
+    state.defenders = [];
+    state.saunaDefenderId = null;
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.phase).toBe('prep');
+    expect(state.overlayMode).toBe('none');
+    expect(state.globalModifierDraftOffers).toEqual([]);
+    expect(state.message).toContain('No modifier synergies were live');
+  });
+
   it('updates global modifier stacks when items are equipped and defenders die', () => {
     let state = prepState();
     const defender = state.defenders.find((entry) => entry.location === 'ready');
@@ -2200,6 +2310,25 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(state.activeAlcohols).toHaveLength(1);
     expect(active?.stacks).toBe(2);
+  });
+
+  it('lets the player buy beer with the beer shop unlock even if the metashop is still locked', () => {
+    const meta = createDefaultMetaProgress();
+    meta.shopUnlocked = false;
+    meta.steam = 30;
+    meta.upgrades.beer_shop_unlock = 1;
+
+    let state = createInitialState(gameContent, meta, 42, false, false);
+    const snapshot = createSnapshot(state, gameContent);
+    const offer = state.beerShopOffers[0];
+
+    expect(offer).toBeTruthy();
+    expect(snapshot.hud.beerShopOffers[0]?.canBuy).toBe(true);
+
+    state = applyAction(state, { type: 'buyBeerShopOffer', offerId: offer.offerId }, gameContent);
+
+    expect(state.activeAlcohols).toHaveLength(1);
+    expect(state.activeAlcohols[0]?.alcoholId).toBe(offer.alcoholId);
   });
 
   it('blocks a different beer when active drink slots are full but still allows stacking the current one', () => {
