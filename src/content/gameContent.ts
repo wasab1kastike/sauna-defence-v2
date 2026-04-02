@@ -98,6 +98,7 @@ export const gameContent: GameContent = {
     stonewall: {
       id: 'stonewall',
       templateId: 'guardian',
+      unlockLevel: 5,
       name: 'Stonewall',
       description: 'Soaks damage with extra bulk and a slower, heavier stance.',
       modifiers: {
@@ -108,6 +109,7 @@ export const gameContent: GameContent = {
     emberguard: {
       id: 'emberguard',
       templateId: 'guardian',
+      unlockLevel: 5,
       name: 'Emberguard',
       description: 'Trades some comfort for harder hits and quicker counter-swings.',
       modifiers: {
@@ -116,9 +118,79 @@ export const gameContent: GameContent = {
         maxHp: -3
       }
     },
+    iron_bastion: {
+      id: 'iron_bastion',
+      templateId: 'guardian',
+      unlockLevel: 10,
+      name: 'Iron Bastion',
+      description: 'Locks in harder with plated calm and stubborn lungs.',
+      modifiers: {
+        maxHp: 10,
+        defense: 1
+      }
+    },
+    revenge_coals: {
+      id: 'revenge_coals',
+      templateId: 'guardian',
+      unlockLevel: 10,
+      name: 'Revenge Coals',
+      description: 'Every angry swing lands meaner and a little faster.',
+      modifiers: {
+        damage: 2,
+        attackCooldownMs: -80
+      }
+    },
+    bench_oak: {
+      id: 'bench_oak',
+      templateId: 'guardian',
+      unlockLevel: 15,
+      name: 'Bench Oak',
+      description: 'Turns into pure sauna furniture: heavy, reliable, impossible to ignore.',
+      modifiers: {
+        maxHp: 12,
+        attackCooldownMs: 50,
+        defense: 1
+      }
+    },
+    steam_bulwark: {
+      id: 'steam_bulwark',
+      templateId: 'guardian',
+      unlockLevel: 15,
+      name: 'Steam Bulwark',
+      description: 'Stands in the mist and swings through it like a furnace door.',
+      modifiers: {
+        damage: 3,
+        defense: 1
+      }
+    },
+    avalanche_oath: {
+      id: 'avalanche_oath',
+      templateId: 'guardian',
+      unlockLevel: 20,
+      name: 'Avalanche Oath',
+      description: 'The last thing enemies hear is wood creaking under impossible confidence.',
+      modifiers: {
+        maxHp: 14,
+        damage: 2,
+        defense: 2
+      }
+    },
+    last_ladle: {
+      id: 'last_ladle',
+      templateId: 'guardian',
+      unlockLevel: 20,
+      name: 'Last Ladle',
+      description: 'Turns every final swing into a loud and personal sermon.',
+      modifiers: {
+        damage: 4,
+        attackCooldownMs: -120,
+        maxHp: 4
+      }
+    },
     coalflinger: {
       id: 'coalflinger',
       templateId: 'hurler',
+      unlockLevel: 5,
       name: 'Coalflinger',
       description: 'Throws meaner, hotter shots and lives for splashy knockouts.',
       modifiers: {
@@ -129,6 +201,7 @@ export const gameContent: GameContent = {
     bucket_sniper: {
       id: 'bucket_sniper',
       templateId: 'hurler',
+      unlockLevel: 5,
       name: 'Bucket Sniper',
       description: 'Lobs from one tile farther away but takes a beat to line it up.',
       modifiers: {
@@ -136,9 +209,80 @@ export const gameContent: GameContent = {
         attackCooldownMs: 90
       }
     },
+    spark_juggler: {
+      id: 'spark_juggler',
+      templateId: 'hurler',
+      unlockLevel: 10,
+      name: 'Spark Juggler',
+      description: 'Keeps three bad ideas in the air and throws all of them.',
+      modifiers: {
+        damage: 2,
+        attackCooldownMs: -70
+      }
+    },
+    ash_scope: {
+      id: 'ash_scope',
+      templateId: 'hurler',
+      unlockLevel: 10,
+      name: 'Ash Scope',
+      description: 'Measures arcs through steam and somehow keeps being right.',
+      modifiers: {
+        range: 1,
+        damage: 1
+      }
+    },
+    volley_tender: {
+      id: 'volley_tender',
+      templateId: 'hurler',
+      unlockLevel: 15,
+      name: 'Volley Tender',
+      description: 'Throws in patient barrages that keep the lane politely burning.',
+      modifiers: {
+        damage: 2,
+        range: 1,
+        attackCooldownMs: 50
+      }
+    },
+    shock_pitcher: {
+      id: 'shock_pitcher',
+      templateId: 'hurler',
+      unlockLevel: 15,
+      name: 'Shock Pitcher',
+      description: 'Prefers faster, riskier tosses and louder enemy regrets.',
+      modifiers: {
+        damage: 3,
+        attackCooldownMs: -100,
+        maxHp: -1
+      }
+    },
+    meteor_bucket: {
+      id: 'meteor_bucket',
+      templateId: 'hurler',
+      unlockLevel: 20,
+      name: 'Meteor Bucket',
+      description: 'Every throw looks illegal, expensive, and extremely satisfying.',
+      modifiers: {
+        damage: 4,
+        range: 1,
+        attackCooldownMs: -80
+      }
+    },
+    white_heat_gunner: {
+      id: 'white_heat_gunner',
+      templateId: 'hurler',
+      unlockLevel: 20,
+      name: 'White Heat Gunner',
+      description: 'Finds the hottest line on the board and never misses it twice.',
+      modifiers: {
+        damage: 5,
+        attackCooldownMs: -130,
+        maxHp: -2
+      }
+    },
     steampriest: {
       id: 'steampriest',
       templateId: 'mender',
+      unlockLevel: 5,
       name: 'Steam Priest',
       description: 'Turns every healing cycle into a stronger restorative pulse.',
       modifiers: {
@@ -149,12 +293,82 @@ export const gameContent: GameContent = {
     towel_oracle: {
       id: 'towel_oracle',
       templateId: 'mender',
+      unlockLevel: 5,
       name: 'Towel Oracle',
       description: 'Reads the steam beautifully and reaches farther with calmer support.',
       modifiers: {
         range: 1,
         attackCooldownMs: -60,
         heal: -1
+      }
+    },
+    cedar_surgeon: {
+      id: 'cedar_surgeon',
+      templateId: 'mender',
+      unlockLevel: 10,
+      name: 'Cedar Surgeon',
+      description: 'Stitches burns, panic, and team morale with the same patient hands.',
+      modifiers: {
+        heal: 2,
+        regenHpPerSecond: 1
+      }
+    },
+    calm_whisper: {
+      id: 'calm_whisper',
+      templateId: 'mender',
+      unlockLevel: 10,
+      name: 'Calm Whisper',
+      description: 'Reaches farther with cooler nerves and a suspiciously soothing stare.',
+      modifiers: {
+        range: 1,
+        attackCooldownMs: -80
+      }
+    },
+    pulse_keeper: {
+      id: 'pulse_keeper',
+      templateId: 'mender',
+      unlockLevel: 15,
+      name: 'Pulse Keeper',
+      description: 'Keeps the whole line alive with quick, sharp rescue bursts.',
+      modifiers: {
+        heal: 3,
+        attackCooldownMs: -60
+      }
+    },
+    rescue_ritualist: {
+      id: 'rescue_ritualist',
+      templateId: 'mender',
+      unlockLevel: 15,
+      name: 'Rescue Ritualist',
+      description: 'Turns every support cycle into a wide, calming wave of competence.',
+      modifiers: {
+        heal: 2,
+        range: 1,
+        maxHp: 4
+      }
+    },
+    saint_of_steam: {
+      id: 'saint_of_steam',
+      templateId: 'mender',
+      unlockLevel: 20,
+      name: 'Saint Of Steam',
+      description: 'Heals like the sauna itself personally owes the squad a favor.',
+      modifiers: {
+        heal: 4,
+        regenHpPerSecond: 1,
+        range: 1
+      }
+    },
+    afterglow_warden: {
+      id: 'afterglow_warden',
+      templateId: 'mender',
+      unlockLevel: 20,
+      name: 'Afterglow Warden',
+      description: 'Leaves the whole board steadier, brighter, and annoyingly hard to finish off.',
+      modifiers: {
+        heal: 3,
+        maxHp: 6,
+        defense: 1
       }
     }
   },

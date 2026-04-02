@@ -5,6 +5,7 @@ import type {
   CombatFxKind,
   DefenderInstance,
   DefenderSubclassId,
+  DefenderSubclassDefinition,
   DefenderLocation,
   DefenderTemplateId,
   EnemyInstance,
@@ -22,6 +23,7 @@ import type {
   RecruitOffer,
   RunState,
   SkillId,
+  SubclassDraftRequest,
   UnitStats,
   WaveDefinition,
   WavePattern,
@@ -38,11 +40,8 @@ const DIRS: AxialCoord[] = [
   { q: 0, r: 1 }
 ];
 const DEF_IDS: DefenderTemplateId[] = ['guardian', 'hurler', 'mender'];
-const DEFENDER_SUBCLASS_IDS: Record<DefenderTemplateId, DefenderSubclassId[]> = {
-  guardian: ['stonewall', 'emberguard'],
-  hurler: ['coalflinger', 'bucket_sniper'],
-  mender: ['steampriest', 'towel_oracle']
-};
+const MAX_DEFENDER_LEVEL = 20;
+const SUBCLASS_MILESTONE_LEVELS = [5, 10, 15, 20] as const;
 const ENEMY_IDS: EnemyUnitId[] = ['raider', 'brute', 'chieftain'];
 const META_IDS: MetaUpgradeId[] = [
   'roster_capacity',
@@ -69,6 +68,16 @@ const EMPTY_STATS: UnitStats = {
   defense: 0,
   regenHpPerSecond: 0
 };
+
+function subclassMilestoneIds(
+  content: GameContent,
+  templateId: DefenderTemplateId,
+  unlockLevel: number
+): DefenderSubclassId[] {
+  return Object.values(content.defenderSubclasses)
+    .filter((definition) => definition.templateId === templateId && definition.unlockLevel === unlockLevel)
+    .map((definition) => definition.id);
+}
 const DEATH_LINES: Record<EnemyUnitId, string[]> = {
   raider: [
     'got splashed with cold water at exactly the wrong moment',
@@ -199,14 +208,14 @@ function getDefender(state: RunState, defenderId: string | null): DefenderInstan
 function xpForLevel(level: number): number {
   let total = 0;
   for (let nextLevel = 2; nextLevel <= level; nextLevel += 1) {
-    total += nextLevel + 1;
+    total += 2 + nextLevel * 2;
   }
   return total;
 }
 
 function levelFromXp(xp: number): number {
   let level = 1;
-  while (level < 5 && xp >= xpForLevel(level + 1)) {
+  while (level < MAX_DEFENDER_LEVEL && xp >= xpForLevel(level + 1)) {
     level += 1;
   }
   return level;
@@ -223,8 +232,21 @@ function xpForEnemy(enemyId: EnemyUnitId): number {
   }
 }
 
+function addModifiers(left: UnitStats, modifier: Partial<UnitStats>) {
+  left.maxHp += modifier.maxHp ?? 0;
+  left.damage += modifier.damage ?? 0;
+  left.heal += modifier.heal ?? 0;
+  left.range += modifier.range ?? 0;
+  left.attackCooldownMs += modifier.attackCooldownMs ?? 0;
+  left.defense += modifier.defense ?? 0;
+  left.regenHpPerSecond += modifier.regenHpPerSecond ?? 0;
+  return left;
+}
+
 function subclassModifiers(defender: DefenderInstance, content: GameContent) {
-  return content.defenderSubclasses[defender.subclassId].modifiers;
+  return defender.subclassIds.reduce((totals, subclassId) => {
+    return addModifiers(totals, content.defenderSubclasses[subclassId].modifiers);
+  }, emptyStats());
 }
 
 function levelModifiers(defender: DefenderInstance) {
@@ -294,7 +316,7 @@ function globalModifierStacks(state: RunState, definition: GlobalModifierDefinit
     case 'template':
       return defenders.filter((defender) => defender.templateId === source.templateId).length;
     case 'subclass':
-      return defenders.filter((defender) => defender.subclassId === source.subclassId).length;
+      return defenders.filter((defender) => defender.subclassIds.includes(source.subclassId)).length;
     case 'skill':
       return defenders.filter((defender) => defender.skills.includes(source.skillId)).length;
     case 'item':
@@ -374,7 +396,6 @@ function rollStat(state: RunState, base: number, spread: number, min: number): n
 function newDefender(state: RunState, templateId: DefenderTemplateId, content: GameContent): DefenderInstance {
   const template = content.defenderTemplates[templateId];
   const name = generateName(state, content);
-  const subclassId = pick(state, DEFENDER_SUBCLASS_IDS[templateId]);
   const stats: UnitStats = {
     maxHp: rollStat(state, template.stats.maxHp, 9, 8),
     damage: rollStat(state, template.stats.damage, 3, 1),
@@ -387,7 +408,7 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
   return {
     id: `${templateId}-${Math.round(rng(state) * 1e9).toString(16)}`,
     templateId,
-    subclassId,
+    subclassIds: [],
     name: name.name,
     title: name.title,
     lore: generateLore(state, templateId, content),
@@ -731,7 +752,7 @@ function recruitRollCost(state: RunState, content: GameContent): number {
 }
 
 function canAccessRecruitment(state: RunState): boolean {
-  return !state.introOpen && state.phase !== 'lost' && state.overlayMode !== 'intermission' && state.overlayMode !== 'modifier_draft';
+  return !state.introOpen && state.phase !== 'lost' && state.overlayMode !== 'intermission' && state.overlayMode !== 'modifier_draft' && state.overlayMode !== 'subclass_draft';
 }
 
 function canRollRecruitOffers(state: RunState, content: GameContent): boolean {
@@ -1066,6 +1087,11 @@ function grantXp(state: RunState, defender: DefenderInstance, amount: number, co
   if (defender.level > beforeLevel) {
     const nextMaxHp = derivedStats(state, defender, content).maxHp;
     defender.hp = Math.min(nextMaxHp, defender.hp + Math.max(0, nextMaxHp - previousMaxHp));
+    queueSubclassDraftsForLevelUps(state, defender, beforeLevel, content);
+    const pendingUnlock = state.subclassDraftQueue.find((entry) => entry.defenderId === defender.id && entry.unlockLevel <= defender.level);
+    if (pendingUnlock) {
+      return `${defender.name} hit level ${defender.level} and can choose a new subclass branch.`;
+    }
     return `${defender.name} hit level ${defender.level}.`;
   }
   return null;
@@ -1529,6 +1555,81 @@ function globalModifierHudEntry(state: RunState, definition: GlobalModifierDefin
   };
 }
 
+function unlockedSubclassDefinitions(defender: DefenderInstance, content: GameContent): DefenderSubclassDefinition[] {
+  return defender.subclassIds.map((subclassId) => content.defenderSubclasses[subclassId]);
+}
+
+function nextSubclassMilestoneLevel(defender: DefenderInstance, content: GameContent): number | null {
+  const unlockedLevels = new Set(unlockedSubclassDefinitions(defender, content).map((definition) => definition.unlockLevel));
+  return SUBCLASS_MILESTONE_LEVELS.find((level) => defender.level >= level ? !unlockedLevels.has(level) : true) ?? null;
+}
+
+function subclassSummary(defender: DefenderInstance, content: GameContent): string {
+  const unlocked = unlockedSubclassDefinitions(defender, content);
+  if (unlocked.length === 0) {
+    const next = nextSubclassMilestoneLevel(defender, content);
+    return next ? `First branch at level ${next}` : 'No branch unlocked';
+  }
+  return unlocked.map((definition) => definition.name).join(' · ');
+}
+
+function subclassDescription(defender: DefenderInstance, content: GameContent): string {
+  const unlocked = unlockedSubclassDefinitions(defender, content);
+  const next = nextSubclassMilestoneLevel(defender, content);
+  if (unlocked.length === 0) {
+    return next ? `This hero has no subclass path yet. Reach level ${next} to pick the first branch.` : 'This hero already unlocked every subclass milestone.';
+  }
+  const active = unlocked.map((definition) => definition.name).join(', ');
+  return next
+    ? `Active branches: ${active}. Next branch unlocks at level ${next}.`
+    : `Active branches: ${active}. Every subclass milestone is already unlocked.`;
+}
+
+function queuedSubclassDraftExists(state: RunState, defenderId: string, unlockLevel: number): boolean {
+  return (
+    state.subclassDraftQueue.some((entry) => entry.defenderId === defenderId && entry.unlockLevel === unlockLevel) ||
+    (state.subclassDraftDefenderId === defenderId && state.subclassDraftUnlockLevel === unlockLevel)
+  );
+}
+
+function queueSubclassDraftsForLevelUps(
+  state: RunState,
+  defender: DefenderInstance,
+  beforeLevel: number,
+  content: GameContent
+): void {
+  const unlockedLevels = new Set(unlockedSubclassDefinitions(defender, content).map((definition) => definition.unlockLevel));
+  for (const unlockLevel of SUBCLASS_MILESTONE_LEVELS) {
+    if (beforeLevel < unlockLevel && defender.level >= unlockLevel && !unlockedLevels.has(unlockLevel) && !queuedSubclassDraftExists(state, defender.id, unlockLevel)) {
+      state.subclassDraftQueue.push({ defenderId: defender.id, unlockLevel });
+    }
+  }
+}
+
+function activateNextSubclassDraft(state: RunState, content: GameContent): boolean {
+  if (state.overlayMode !== 'none' || state.phase === 'lost' || state.introOpen) return false;
+  while (state.subclassDraftQueue.length > 0) {
+    const nextDraft = state.subclassDraftQueue.shift() as SubclassDraftRequest;
+    const defender = getDefender(state, nextDraft.defenderId);
+    if (!defender || defender.location === 'dead') continue;
+    const options = subclassMilestoneIds(content, defender.templateId, nextDraft.unlockLevel)
+      .filter((subclassId) => !defender.subclassIds.includes(subclassId));
+    if (options.length === 0) continue;
+    state.overlayMode = 'subclass_draft';
+    state.subclassDraftDefenderId = defender.id;
+    state.subclassDraftUnlockLevel = nextDraft.unlockLevel;
+    state.subclassDraftOfferIds = options;
+    state.inventoryOpen = false;
+    state.recruitmentOpen = false;
+    state.message = `${defender.name} reached level ${nextDraft.unlockLevel}. Pick a subclass branch.`;
+    return true;
+  }
+  state.subclassDraftDefenderId = null;
+  state.subclassDraftUnlockLevel = null;
+  state.subclassDraftOfferIds = [];
+  return false;
+}
+
 function actionCopy(state: RunState, content: GameContent): { title: string; body: string } {
   const selectedLoot = getInventoryDrop(state, state.selectedInventoryDropId);
   const selectedDefender = getDefender(state, state.selectedDefenderId);
@@ -1563,6 +1664,12 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
     return {
       title: 'Boss Reward',
       body: 'Pick one global modifier. Its stacks update live from your current roster, loadout and casualties.'
+    };
+  }
+  if (state.overlayMode === 'subclass_draft') {
+    return {
+      title: 'Subclass Branch Ready',
+      body: 'A hero hit a milestone. Pick one branch before the run continues.'
     };
   }
   if (state.recruitmentOpen) {
@@ -1670,6 +1777,10 @@ export function createInitialState(
     selectedInventoryDropId: null,
     recentDropId: null,
     recruitOffers: [],
+    subclassDraftQueue: [],
+    subclassDraftDefenderId: null,
+    subclassDraftUnlockLevel: null,
+    subclassDraftOfferIds: [],
     activeGlobalModifierIds: [],
     globalModifierDraftOffers: [],
     deathLog: [],
@@ -1716,6 +1827,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
   if (next.overlayMode === 'modifier_draft' && action.type !== 'draftGlobalModifier') {
     return next;
   }
+  if (next.overlayMode === 'subclass_draft' && action.type !== 'draftSubclassChoice') {
+    return next;
+  }
 
   switch (action.type) {
     case 'openIntro':
@@ -1739,6 +1853,34 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.recruitmentOpen = false;
       normalizeLivingDefenders(next, content);
       next.message = `${content.globalModifierDefinitions[action.modifierId].name} locked in for this run.`;
+      activateNextSubclassDraft(next, content);
+      return next;
+    }
+    case 'draftSubclassChoice': {
+      if (next.overlayMode !== 'subclass_draft') return next;
+      if (!next.subclassDraftOfferIds.includes(action.subclassId)) return next;
+      const defender = getDefender(next, next.subclassDraftDefenderId);
+      if (!defender || defender.location === 'dead') {
+        next.overlayMode = 'none';
+        next.subclassDraftDefenderId = null;
+        next.subclassDraftUnlockLevel = null;
+        next.subclassDraftOfferIds = [];
+        activateNextSubclassDraft(next, content);
+        return next;
+      }
+      const previousMaxHp = derivedStats(next, defender, content).maxHp;
+      if (!defender.subclassIds.includes(action.subclassId)) {
+        defender.subclassIds.push(action.subclassId);
+      }
+      const nextMaxHp = derivedStats(next, defender, content).maxHp;
+      defender.hp = Math.min(nextMaxHp, defender.hp + Math.max(0, nextMaxHp - previousMaxHp));
+      next.overlayMode = 'none';
+      next.subclassDraftDefenderId = null;
+      next.subclassDraftUnlockLevel = null;
+      next.subclassDraftOfferIds = [];
+      const subclass = content.defenderSubclasses[action.subclassId];
+      next.message = `${defender.name} locked in ${subclass.name}.`;
+      activateNextSubclassDraft(next, content);
       return next;
     }
     case 'selectSauna':
@@ -2002,6 +2144,9 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
   if (next.pendingSpawns.length === 0 && next.enemies.length === 0) {
     awardWave(next, content);
   }
+  if (next.overlayMode === 'none') {
+    activateNextSubclassDraft(next, content);
+  }
   return next;
 }
 
@@ -2028,6 +2173,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         ? 'Intermission'
         : state.overlayMode === 'paused'
           ? 'Paused'
+          : state.overlayMode === 'subclass_draft'
+            ? 'Subclass Draft'
           : state.overlayMode === 'modifier_draft'
             ? 'Boss Reward'
           : state.phase === 'prep'
@@ -2081,7 +2228,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         name: offer.candidate.name,
         title: offer.candidate.title,
         roleName: content.defenderTemplates[offer.candidate.templateId].name,
-        subclassName: content.defenderSubclasses[offer.candidate.subclassId].name,
+        subclassName: subclassSummary(offer.candidate, content),
         roleSummary: content.defenderTemplates[offer.candidate.templateId].role,
         lore: offer.candidate.lore,
         level: offer.candidate.level,
@@ -2110,7 +2257,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         name: defender.name,
         title: defender.title,
         templateName: content.defenderTemplates[defender.templateId].name,
-        subclassName: content.defenderSubclasses[defender.subclassId].name,
+        subclassName: subclassSummary(defender, content),
         roleSummary: content.defenderTemplates[defender.templateId].role,
         locationLabel:
           defender.location === 'board'
@@ -2120,7 +2267,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
               : defender.location === 'ready'
                 ? 'On Bench'
                 : 'Fallen',
-        summary: `Lvl ${defender.level} ${content.defenderSubclasses[defender.subclassId].name} · ${stats.damage} ATK · ${stats.defense} DEF`,
+        summary: `Lvl ${defender.level} ${subclassSummary(defender, content)} · ${stats.damage} ATK · ${stats.defense} DEF`,
         level: defender.level,
         hp: defender.hp,
         maxHp: stats.maxHp,
@@ -2173,11 +2320,12 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         title: selected.title,
         lore: selected.lore,
         templateName: content.defenderTemplates[selected.templateId].name,
-        subclassName: content.defenderSubclasses[selected.subclassId].name,
-        subclassDescription: content.defenderSubclasses[selected.subclassId].description,
+        subclassName: subclassSummary(selected, content),
+        subclassDescription: subclassDescription(selected, content),
+        nextSubclassUnlockLevel: nextSubclassMilestoneLevel(selected, content),
         level: selected.level,
         xp: selected.xp,
-        nextLevelXp: selected.level >= 5 ? null : xpForLevel(selected.level + 1),
+        nextLevelXp: selected.level >= MAX_DEFENDER_LEVEL ? null : xpForLevel(selected.level + 1),
         hp: selected.hp,
         maxHp: stats.maxHp,
         damage: stats.damage,
@@ -2207,6 +2355,19 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     globalModifiers: activeGlobalModifiers,
     globalModifierDraftOffers: draftGlobalModifiers,
     showGlobalModifierDraft: state.overlayMode === 'modifier_draft',
+    subclassDraftHeroName: getDefender(state, state.subclassDraftDefenderId)?.name ?? null,
+    subclassDraftHeroTitle: getDefender(state, state.subclassDraftDefenderId)?.title ?? null,
+    subclassDraftHeroLevel: getDefender(state, state.subclassDraftDefenderId)?.level ?? null,
+    subclassDraftOffers: state.subclassDraftOfferIds.map((subclassId) => {
+      const definition = content.defenderSubclasses[subclassId];
+      return {
+        id: definition.id,
+        name: definition.name,
+        description: definition.description,
+        unlockLevel: definition.unlockLevel
+      };
+    }),
+    showSubclassDraft: state.overlayMode === 'subclass_draft',
     wavePreview: waveCounts(currentWave, content),
     metaUpgrades: META_IDS.map((upgradeId) => {
       const cost = metaCost(state, upgradeId, content);

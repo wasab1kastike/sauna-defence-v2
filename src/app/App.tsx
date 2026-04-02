@@ -534,6 +534,11 @@ export function App() {
                       </span>
                       <span className="tag">Items {selectedDefender.itemNames.length}/{selectedDefender.itemSlotCount}</span>
                       <span className="tag">Skills {selectedDefender.skillNames.length}/{selectedDefender.skillSlotCount}</span>
+                      <span className="tag">
+                        {selectedDefender.nextSubclassUnlockLevel !== null
+                          ? `Next branch at ${selectedDefender.nextSubclassUnlockLevel}`
+                          : 'All branches unlocked'}
+                      </span>
                       {selectedDefender.itemNames.length === 0 && selectedDefender.skillNames.length === 0 ? (
                         <span className="tag loadout-tag">Empty loadout</span>
                       ) : null}
@@ -1037,6 +1042,39 @@ export function App() {
                     onClick={() => runtimeRef.current?.dispatch({ type: 'draftGlobalModifier', modifierId: modifier.id })}
                   >
                     Pick Modifier
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {snapshot && snapshot.hud.showSubclassDraft ? (
+        <div className="overlay-shell">
+          <section className="overlay-card">
+            <div className="panel-head">
+              <h2>Subclass Branch</h2>
+              <span>
+                {snapshot.hud.subclassDraftHeroName} {snapshot.hud.subclassDraftHeroTitle}
+              </span>
+            </div>
+            <p className="panel-copy">
+              Level {snapshot.hud.subclassDraftHeroLevel} unlocked a new branch. Pick one upgrade path before the run continues.
+            </p>
+            <div className="intermission-grid">
+              {snapshot.hud.subclassDraftOffers.map((offer) => (
+                <div key={offer.id} className="inventory-card">
+                  <div>
+                    <strong>{offer.name}</strong>
+                    <small>Unlock level {offer.unlockLevel}</small>
+                    <small>{offer.description}</small>
+                  </div>
+                  <button
+                    className="mini-button"
+                    onClick={() => runtimeRef.current?.dispatch({ type: 'draftSubclassChoice', subclassId: offer.id })}
+                  >
+                    Choose Branch
                   </button>
                 </div>
               ))}

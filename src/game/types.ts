@@ -5,15 +5,33 @@ export interface AxialCoord {
 
 export type Team = 'player' | 'enemy';
 export type Phase = 'prep' | 'wave' | 'lost';
-export type OverlayMode = 'none' | 'paused' | 'intermission' | 'modifier_draft';
+export type OverlayMode = 'none' | 'paused' | 'intermission' | 'modifier_draft' | 'subclass_draft';
 export type DefenderTemplateId = 'guardian' | 'hurler' | 'mender';
 export type DefenderSubclassId =
   | 'stonewall'
   | 'emberguard'
+  | 'iron_bastion'
+  | 'revenge_coals'
+  | 'bench_oak'
+  | 'steam_bulwark'
+  | 'avalanche_oath'
+  | 'last_ladle'
   | 'coalflinger'
   | 'bucket_sniper'
+  | 'spark_juggler'
+  | 'ash_scope'
+  | 'volley_tender'
+  | 'shock_pitcher'
+  | 'meteor_bucket'
+  | 'white_heat_gunner'
   | 'steampriest'
-  | 'towel_oracle';
+  | 'towel_oracle'
+  | 'cedar_surgeon'
+  | 'calm_whisper'
+  | 'pulse_keeper'
+  | 'rescue_ritualist'
+  | 'saint_of_steam'
+  | 'afterglow_warden';
 export type EnemyUnitId = 'raider' | 'brute' | 'chieftain';
 export type ItemId =
   | 'ladle'
@@ -110,9 +128,15 @@ export interface DefenderTemplate {
 export interface DefenderSubclassDefinition {
   id: DefenderSubclassId;
   templateId: DefenderTemplateId;
+  unlockLevel: number;
   name: string;
   description: string;
   modifiers: StatModifier;
+}
+
+export interface SubclassDraftRequest {
+  defenderId: string;
+  unlockLevel: number;
 }
 
 export interface EnemyArchetype {
@@ -191,7 +215,7 @@ export interface CombatFxEvent {
 export interface DefenderInstance {
   id: string;
   templateId: DefenderTemplateId;
-  subclassId: DefenderSubclassId;
+  subclassIds: DefenderSubclassId[];
   name: string;
   title: string;
   lore: string;
@@ -352,6 +376,10 @@ export interface RunState {
   selectedInventoryDropId: number | null;
   recentDropId: number | null;
   recruitOffers: RecruitOffer[];
+  subclassDraftQueue: SubclassDraftRequest[];
+  subclassDraftDefenderId: string | null;
+  subclassDraftUnlockLevel: number | null;
+  subclassDraftOfferIds: DefenderSubclassId[];
   activeGlobalModifierIds: GlobalModifierId[];
   globalModifierDraftOffers: GlobalModifierId[];
   deathLog: DeathLogEntry[];
@@ -414,6 +442,7 @@ export interface HudSelectedDefender {
   templateName: string;
   subclassName: string;
   subclassDescription: string;
+  nextSubclassUnlockLevel: number | null;
   level: number;
   xp: number;
   nextLevelXp: number | null;
@@ -477,6 +506,13 @@ export interface HudRecruitOfferEntry {
   damage: number;
   heal: number;
   range: number;
+}
+
+export interface HudSubclassDraftEntry {
+  id: DefenderSubclassId;
+  name: string;
+  description: string;
+  unlockLevel: number;
 }
 
 export interface HudGlobalModifierEntry {
@@ -548,6 +584,11 @@ export interface HudViewModel {
   globalModifiers: HudGlobalModifierEntry[];
   globalModifierDraftOffers: HudGlobalModifierEntry[];
   showGlobalModifierDraft: boolean;
+  subclassDraftHeroName: string | null;
+  subclassDraftHeroTitle: string | null;
+  subclassDraftHeroLevel: number | null;
+  subclassDraftOffers: HudSubclassDraftEntry[];
+  showSubclassDraft: boolean;
   wavePreview: WavePreviewEntry[];
   metaUpgrades: HudMetaUpgradeEntry[];
 }
@@ -584,6 +625,7 @@ export type InputAction =
   | { type: 'togglePause' }
   | { type: 'activateSisu' }
   | { type: 'draftGlobalModifier'; modifierId: GlobalModifierId }
+  | { type: 'draftSubclassChoice'; subclassId: DefenderSubclassId }
   | { type: 'recallDefenderToSauna'; defenderId: string }
   | { type: 'rollRecruitOffers' }
   | { type: 'recruitOffer'; offerId: number }

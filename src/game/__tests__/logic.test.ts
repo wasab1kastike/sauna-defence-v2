@@ -33,7 +33,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.defenders.every((defender) => defender.name.length > 0)).toBe(true);
     expect(state.defenders.every((defender) => defender.lore.length > 0)).toBe(true);
     expect(state.defenders.every((defender) => defender.level === 1)).toBe(true);
-    expect(state.defenders.every((defender) => defender.subclassId.length > 0)).toBe(true);
+    expect(state.defenders.every((defender) => defender.subclassIds.length === 0)).toBe(true);
   });
 
   it('opens the meta shop before a fresh run when requested', () => {
@@ -684,6 +684,73 @@ describe('Sauna Defense V2 logic', () => {
     expect(attackerAfter?.kills).toBe(1);
     expect(attackerAfter?.xp).toBeGreaterThan(0);
     expect(attackerAfter?.level).toBeGreaterThan(1);
+  });
+
+  it('opens a subclass draft when a hero reaches level five', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(attacker).toBeTruthy();
+    attacker!.location = 'board';
+    attacker!.tile = { q: 0, r: -1 };
+    attacker!.attackReadyAtMs = 0;
+    attacker!.xp = 35;
+    attacker!.level = 4;
+    attacker!.stats.damage = 2;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'brute',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -2 },
+      hp: 30,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.overlayMode).toBe('subclass_draft');
+    expect(state.subclassDraftDefenderId).toBe(attacker!.id);
+    expect(state.subclassDraftOfferIds).toHaveLength(2);
+
+    const choice = state.subclassDraftOfferIds[0];
+    state = applyAction(state, { type: 'draftSubclassChoice', subclassId: choice }, gameContent);
+    const updated = state.defenders.find((defender) => defender.id === attacker!.id);
+
+    expect(state.overlayMode).toBe('none');
+    expect(updated?.subclassIds).toContain(choice);
+  });
+
+  it('opens the next subclass milestone at level ten after the previous branch is chosen', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(attacker).toBeTruthy();
+    attacker!.location = 'board';
+    attacker!.tile = { q: 0, r: -1 };
+    attacker!.attackReadyAtMs = 0;
+    attacker!.xp = 125;
+    attacker!.level = 9;
+    attacker!.subclassIds = ['stonewall'];
+    attacker!.stats.damage = 2;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'brute',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -2 },
+      hp: 30,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.overlayMode).toBe('subclass_draft');
+    expect(state.subclassDraftOfferIds.every((subclassId) => gameContent.defenderSubclasses[subclassId].unlockLevel === 10)).toBe(true);
   });
 
   it('grants xp from successful combat actions even without a kill', () => {
