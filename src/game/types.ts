@@ -433,12 +433,23 @@ export interface HudInventoryEntry {
   kind: LootKind;
   name: string;
   rarity: Rarity;
+  sellPrice: number;
   effectText: string;
   flavorText: string;
   artPath: string;
   waveFound: number;
   isRecent: boolean;
   selected: boolean;
+}
+
+export interface HudEquippedItemEntry {
+  id: ItemId;
+  name: string;
+}
+
+export interface HudEquippedSkillEntry {
+  id: SkillId;
+  name: string;
 }
 
 export interface HudSelectedDefender {
@@ -464,8 +475,8 @@ export interface HudSelectedDefender {
   regenHpPerSecond: number;
   itemSlotCount: number;
   skillSlotCount: number;
-  itemNames: string[];
-  skillNames: string[];
+  items: HudEquippedItemEntry[];
+  skills: HudEquippedSkillEntry[];
   location: DefenderLocation;
 }
 
@@ -643,6 +654,9 @@ export type InputAction =
   | { type: 'clearRecruitOffers' }
   | { type: 'equipInventoryDrop'; dropId: number; defenderId: string }
   | { type: 'autoAssignInventoryDrop'; dropId: number }
+  | { type: 'sellInventoryDrop'; dropId: number }
+  | { type: 'destroyEquippedItem'; defenderId: string; itemId: ItemId }
+  | { type: 'destroyEquippedSkill'; defenderId: string; skillId: SkillId }
   | { type: 'dismissRecentDrop' }
   | { type: 'buyMetaUpgrade'; upgradeId: MetaUpgradeId }
   | { type: 'unlockMetaShop' }

@@ -413,6 +413,17 @@ export function App() {
                         </button>
                         <button
                           className="ghost-button"
+                          onClick={() =>
+                            runtimeRef.current?.dispatch({
+                              type: 'sellInventoryDrop',
+                              dropId: selectedLoot.id
+                            })
+                          }
+                        >
+                          Sell For {selectedLoot.sellPrice} Steam
+                        </button>
+                        <button
+                          className="ghost-button"
                           onClick={() => runtimeRef.current?.dispatch({ type: 'clearSelectedInventoryDrop' })}
                         >
                           Clear
@@ -629,24 +640,52 @@ export function App() {
                         XP {selectedDefender.xp}
                         {selectedDefender.nextLevelXp !== null ? ` / ${selectedDefender.nextLevelXp}` : ' · Max'}
                       </span>
-                      <span className="tag">Items {selectedDefender.itemNames.length}/{selectedDefender.itemSlotCount}</span>
-                      <span className="tag">Skills {selectedDefender.skillNames.length}/{selectedDefender.skillSlotCount}</span>
+                      <span className="tag">Items {selectedDefender.items.length}/{selectedDefender.itemSlotCount}</span>
+                      <span className="tag">Skills {selectedDefender.skills.length}/{selectedDefender.skillSlotCount}</span>
                       <span className="tag">
                         {selectedDefender.nextSubclassUnlockLevel !== null
                           ? `${selectedDefender.xpToNextBranch ?? 0} XP to branch at Lv ${selectedDefender.nextSubclassUnlockLevel}`
                           : 'All branches unlocked'}
                       </span>
-                      {selectedDefender.itemNames.length === 0 && selectedDefender.skillNames.length === 0 ? (
+                      {selectedDefender.items.length === 0 && selectedDefender.skills.length === 0 ? (
                         <span className="tag loadout-tag">Empty loadout</span>
                       ) : null}
                     </div>
-                    {(selectedDefender.itemNames.length > 0 || selectedDefender.skillNames.length > 0) ? (
-                      <div className="tag-row compact-tags">
-                        {selectedDefender.itemNames.map((name) => (
-                          <span key={name} className="tag loadout-tag">{name}</span>
+                    {(selectedDefender.items.length > 0 || selectedDefender.skills.length > 0) ? (
+                      <div className="equipped-loadout-list">
+                        {selectedDefender.items.map((item) => (
+                          <div key={item.id} className="equipped-loadout-row">
+                            <span className="tag loadout-tag">{item.name}</span>
+                            <button
+                              className="ghost-button loadout-action"
+                              onClick={() =>
+                                runtimeRef.current?.dispatch({
+                                  type: 'destroyEquippedItem',
+                                  defenderId: selectedDefender.id,
+                                  itemId: item.id
+                                })
+                              }
+                            >
+                              Destroy
+                            </button>
+                          </div>
                         ))}
-                        {selectedDefender.skillNames.map((name) => (
-                          <span key={name} className="tag loadout-tag">{name}</span>
+                        {selectedDefender.skills.map((skill) => (
+                          <div key={skill.id} className="equipped-loadout-row">
+                            <span className="tag loadout-tag">{skill.name}</span>
+                            <button
+                              className="ghost-button loadout-action"
+                              onClick={() =>
+                                runtimeRef.current?.dispatch({
+                                  type: 'destroyEquippedSkill',
+                                  defenderId: selectedDefender.id,
+                                  skillId: skill.id
+                                })
+                              }
+                            >
+                              Forget
+                            </button>
+                          </div>
                         ))}
                       </div>
                     ) : null}
@@ -902,10 +941,10 @@ export function App() {
                         <p className="panel-copy flavor-copy">{selectedLoot.flavorText}</p>
                         <p className="panel-copy small-copy">{selectedLoot.effectText}</p>
                       </div>
-                      <div className="button-row tight">
-                        <button
-                          className="mini-button"
-                          disabled={!snapshot.hud.canAutoAssignSelectedLoot}
+                        <div className="button-row tight">
+                          <button
+                            className="mini-button"
+                            disabled={!snapshot.hud.canAutoAssignSelectedLoot}
                           onClick={() =>
                             runtimeRef.current?.dispatch({
                               type: 'autoAssignInventoryDrop',
@@ -926,13 +965,24 @@ export function App() {
                               defenderId: selectedDefender.id
                             })
                           }
-                        >
-                          Equip To Selected
-                        </button>
-                        <button
-                          className="ghost-button"
-                          onClick={() => runtimeRef.current?.dispatch({ type: 'clearSelectedInventoryDrop' })}
-                        >
+                          >
+                            Equip To Selected
+                          </button>
+                          <button
+                            className="ghost-button"
+                            onClick={() =>
+                              runtimeRef.current?.dispatch({
+                                type: 'sellInventoryDrop',
+                                dropId: selectedLoot.id
+                              })
+                            }
+                          >
+                            Sell For {selectedLoot.sellPrice} Steam
+                          </button>
+                          <button
+                            className="ghost-button"
+                            onClick={() => runtimeRef.current?.dispatch({ type: 'clearSelectedInventoryDrop' })}
+                          >
                           Close Loot
                         </button>
                       </div>

@@ -1034,6 +1034,24 @@ em {
   color: var(--accent-strong);
 }
 
+.equipped-loadout-list {
+  display: grid;
+  gap: 8px;
+}
+
+.equipped-loadout-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.loadout-action {
+  padding: 6px 10px;
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
 @media (max-width: 1080px) {
   .hero,
   .playfield {

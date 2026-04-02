@@ -20,6 +20,7 @@ import type {
   ItemId,
   MetaProgress,
   MetaUpgradeId,
+  Rarity,
   RecruitOffer,
   RunState,
   SkillId,
@@ -1443,6 +1444,18 @@ function getInventoryDrop(state: RunState, dropId: number | null): InventoryDrop
   return dropId === null ? null : allLootDrops(state).find((drop) => drop.instanceId === dropId) ?? null;
 }
 
+function sellPriceForRarity(rarity: Rarity): number {
+  switch (rarity) {
+    case 'epic':
+      return 4;
+    case 'rare':
+      return 2;
+    case 'common':
+    default:
+      return 1;
+  }
+}
+
 function canEquipDrop(defender: DefenderInstance, drop: InventoryDrop, state: RunState, content: GameContent): boolean {
   if (defender.location === 'dead') return false;
   if (drop.kind === 'item') {
@@ -1478,6 +1491,26 @@ function equipDropOnDefender(
   removeLootDrop(state, drop.instanceId);
   defender.hp += Math.max(0, derivedStats(state, defender, content).maxHp - prevMax);
   normalizeDefender(state, defender, content);
+  return true;
+}
+
+function destroyEquippedItem(
+  state: RunState,
+  defender: DefenderInstance,
+  itemId: ItemId,
+  content: GameContent
+): boolean {
+  const index = defender.items.indexOf(itemId);
+  if (index < 0) return false;
+  defender.items.splice(index, 1);
+  normalizeDefender(state, defender, content);
+  return true;
+}
+
+function destroyEquippedSkill(defender: DefenderInstance, skillId: SkillId): boolean {
+  const index = defender.skills.indexOf(skillId);
+  if (index < 0) return false;
+  defender.skills.splice(index, 1);
   return true;
 }
 
@@ -2151,6 +2184,30 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.message = `${drop.name} auto-assigned to ${target.name}.`;
       return next;
     }
+    case 'sellInventoryDrop': {
+      const drop = getInventoryDrop(next, action.dropId);
+      if (!drop) return next;
+      const sold = removeLootDrop(next, action.dropId);
+      if (!sold) return next;
+      const price = sellPriceForRarity(sold.rarity);
+      next.steamEarned += price;
+      next.message = `Sold ${sold.name} for ${price} Steam.`;
+      return next;
+    }
+    case 'destroyEquippedItem': {
+      const defender = getDefender(next, action.defenderId);
+      if (!defender || defender.location === 'dead') return next;
+      if (!destroyEquippedItem(next, defender, action.itemId, content)) return next;
+      next.message = `${content.itemDefinitions[action.itemId].name} was destroyed.`;
+      return next;
+    }
+    case 'destroyEquippedSkill': {
+      const defender = getDefender(next, action.defenderId);
+      if (!defender || defender.location === 'dead') return next;
+      if (!destroyEquippedSkill(defender, action.skillId)) return next;
+      next.message = `${content.skillDefinitions[action.skillId].name} was forgotten in the steam.`;
+      return next;
+    }
     case 'dismissRecentDrop':
       next.recentDropId = null;
       return next;
@@ -2365,6 +2422,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       kind: drop.kind,
       name: drop.name,
       rarity: drop.rarity,
+      sellPrice: sellPriceForRarity(drop.rarity),
       effectText: drop.effectText,
       flavorText: drop.flavorText,
       artPath: drop.artPath,
@@ -2377,6 +2435,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       kind: drop.kind,
       name: drop.name,
       rarity: drop.rarity,
+      sellPrice: sellPriceForRarity(drop.rarity),
       effectText: drop.effectText,
       flavorText: drop.flavorText,
       artPath: drop.artPath,
@@ -2389,6 +2448,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       kind: drop.kind,
       name: drop.name,
       rarity: drop.rarity,
+      sellPrice: sellPriceForRarity(drop.rarity),
       effectText: drop.effectText,
       flavorText: drop.flavorText,
       artPath: drop.artPath,
@@ -2396,14 +2456,15 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       isRecent: drop.instanceId === state.recentDropId,
       selected: drop.instanceId === state.selectedInventoryDropId
     })),
-    selectedInventoryEntry: selectedLoot ? {
-      id: selectedLoot.instanceId,
-      kind: selectedLoot.kind,
-      name: selectedLoot.name,
-      rarity: selectedLoot.rarity,
-      effectText: selectedLoot.effectText,
-      flavorText: selectedLoot.flavorText,
-      artPath: selectedLoot.artPath,
+      selectedInventoryEntry: selectedLoot ? {
+        id: selectedLoot.instanceId,
+        kind: selectedLoot.kind,
+        name: selectedLoot.name,
+        rarity: selectedLoot.rarity,
+        sellPrice: sellPriceForRarity(selectedLoot.rarity),
+        effectText: selectedLoot.effectText,
+        flavorText: selectedLoot.flavorText,
+        artPath: selectedLoot.artPath,
       waveFound: selectedLoot.waveFound,
       isRecent: selectedLoot.instanceId === state.recentDropId,
       selected: true
@@ -2430,15 +2491,21 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         heal: stats.heal,
         range: stats.range,
         attackCooldownMs: stats.attackCooldownMs,
-        defense: stats.defense,
-        regenHpPerSecond: stats.regenHpPerSecond,
-        itemSlotCount: itemSlotCap(state, content),
-        skillSlotCount: skillSlotCap(),
-        itemNames: selected.items.map((itemId) => content.itemDefinitions[itemId].name),
-        skillNames: selected.skills.map((skillId) => content.skillDefinitions[skillId].name),
-        location: selected.location
-      };
-    })() : null,
+          defense: stats.defense,
+          regenHpPerSecond: stats.regenHpPerSecond,
+          itemSlotCount: itemSlotCap(state, content),
+          skillSlotCount: skillSlotCap(),
+          items: selected.items.map((itemId) => ({
+            id: itemId,
+            name: content.itemDefinitions[itemId].name
+          })),
+          skills: selected.skills.map((skillId) => ({
+            id: skillId,
+            name: content.skillDefinitions[skillId].name
+          })),
+          location: selected.location
+        };
+      })() : null,
     selectedSauna: state.selectedMapTarget === 'sauna' ? {
       occupancyLabel: `${saunaOccupancy(state)}/${content.config.saunaCap}`,
       occupantName: saunaDefender?.name ?? null,

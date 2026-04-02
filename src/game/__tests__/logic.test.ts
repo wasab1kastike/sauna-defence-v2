@@ -617,6 +617,82 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.headerSkills).toHaveLength(0);
   });
 
+  it('sells header loot for Steam based on rarity', () => {
+    let state = prepState();
+    state.headerItems.push({
+      instanceId: 77,
+      kind: 'item',
+      definitionId: 'iron_whisk',
+      rarity: 'rare',
+      name: gameContent.itemDefinitions.iron_whisk.name,
+      effectText: gameContent.itemDefinitions.iron_whisk.effectText,
+      flavorText: gameContent.itemDefinitions.iron_whisk.flavorText,
+      artPath: gameContent.itemDefinitions.iron_whisk.artPath,
+      waveFound: 2,
+      sourceEnemyId: 'brute'
+    });
+
+    state = applyAction(state, { type: 'sellInventoryDrop', dropId: 77 }, gameContent);
+
+    expect(state.headerItems).toHaveLength(0);
+    expect(state.steamEarned).toBe(2);
+    expect(state.message).toContain('Sold');
+  });
+
+  it('sells stash loot for Steam based on rarity', () => {
+    let state = prepState();
+    state.meta.upgrades.inventory_slots = 1;
+    state.inventory.push({
+      instanceId: 78,
+      kind: 'skill',
+      definitionId: 'battle_hymn',
+      rarity: 'epic',
+      name: gameContent.skillDefinitions.battle_hymn.name,
+      effectText: gameContent.skillDefinitions.battle_hymn.effectText,
+      flavorText: gameContent.skillDefinitions.battle_hymn.flavorText,
+      artPath: gameContent.skillDefinitions.battle_hymn.artPath,
+      waveFound: 3,
+      sourceEnemyId: 'chieftain'
+    });
+
+    state = applyAction(state, { type: 'sellInventoryDrop', dropId: 78 }, gameContent);
+
+    expect(state.inventory).toHaveLength(0);
+    expect(state.steamEarned).toBe(4);
+  });
+
+  it('destroys equipped items without granting Steam', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location !== 'dead');
+    expect(defender).toBeTruthy();
+    defender!.items.push('ladle');
+
+    state = applyAction(
+      state,
+      { type: 'destroyEquippedItem', defenderId: defender!.id, itemId: 'ladle' },
+      gameContent
+    );
+
+    expect(state.defenders.find((entry) => entry.id === defender!.id)?.items).not.toContain('ladle');
+    expect(state.steamEarned).toBe(0);
+  });
+
+  it('destroys equipped skills without granting Steam', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location !== 'dead');
+    expect(defender).toBeTruthy();
+    defender!.skills.push('fireball');
+
+    state = applyAction(
+      state,
+      { type: 'destroyEquippedSkill', defenderId: defender!.id, skillId: 'fireball' },
+      gameContent
+    );
+
+    expect(state.defenders.find((entry) => entry.id === defender!.id)?.skills).not.toContain('fireball');
+    expect(state.steamEarned).toBe(0);
+  });
+
   it('routes fresh boss loot into the header rows before using the stash', () => {
     let state = prepState();
     const attacker = state.defenders.find((defender) => defender.location === 'ready');
