@@ -443,9 +443,11 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
 
 function buildRoster(state: RunState, content: GameContent): DefenderInstance[] {
   const defenders: DefenderInstance[] = [];
-  for (let index = 0; index < 5; index += 1) {
+  const totalDefenders = rosterCap(state, content);
+  const saunaIndex = Math.min(4, Math.max(0, totalDefenders - 1));
+  for (let index = 0; index < totalDefenders; index += 1) {
     const defender = newDefender(state, DEF_IDS[index % DEF_IDS.length], content);
-    defender.location = index === 4 ? 'sauna' : 'ready';
+    defender.location = index === saunaIndex ? 'sauna' : 'ready';
     defenders.push(defender);
   }
   return defenders;

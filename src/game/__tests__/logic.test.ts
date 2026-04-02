@@ -28,12 +28,25 @@ describe('Sauna Defense V2 logic', () => {
   it('creates a named starter roster with one sauna defender', () => {
     const state = prepState();
 
-    expect(state.defenders).toHaveLength(5);
+    expect(state.defenders).toHaveLength(gameContent.config.baseRosterCap);
     expect(state.defenders.filter((defender) => defender.location === 'sauna')).toHaveLength(1);
     expect(state.defenders.every((defender) => defender.name.length > 0)).toBe(true);
     expect(state.defenders.every((defender) => defender.lore.length > 0)).toBe(true);
     expect(state.defenders.every((defender) => defender.level === 1)).toBe(true);
     expect(state.defenders.every((defender) => defender.subclassIds.length === 0)).toBe(true);
+  });
+
+  it('expands the starter roster when More Weirdos is owned', () => {
+    const meta = createDefaultMetaProgress();
+    meta.upgrades.roster_capacity = 1;
+
+    const state = createInitialState(gameContent, meta, 42);
+
+    expect(state.defenders).toHaveLength(gameContent.config.baseRosterCap + 1);
+    expect(state.defenders.filter((defender) => defender.location === 'sauna')).toHaveLength(1);
+    expect(state.defenders.filter((defender) => defender.location === 'ready')).toHaveLength(
+      gameContent.config.baseRosterCap
+    );
   });
 
   it('opens the meta shop before a fresh run when requested', () => {
@@ -291,6 +304,22 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(state.meta.steam).toBeLessThan(beforePurchase);
     expect(state.meta.upgrades.inventory_slots).toBe(1);
+  });
+
+  it('applies More Weirdos to the next run after buying it in the metashop', () => {
+    let state = prepState();
+    state.phase = 'lost';
+    state.overlayMode = 'intermission';
+    state.steamEarned = 8;
+    state.meta.steam = 8;
+    state.meta.shopUnlocked = true;
+
+    state = applyAction(state, { type: 'buyMetaUpgrade', upgradeId: 'roster_capacity' }, gameContent);
+    state = applyAction(state, { type: 'startNextRun' }, gameContent);
+
+    expect(state.meta.upgrades.roster_capacity).toBe(1);
+    expect(state.defenders).toHaveLength(gameContent.config.baseRosterCap + 1);
+    expect(state.defenders.filter((defender) => defender.location === 'sauna')).toHaveLength(1);
   });
 
   it('auto deploys the sauna defender when a board defender dies', () => {
