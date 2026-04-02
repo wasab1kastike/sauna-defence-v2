@@ -423,6 +423,8 @@ export interface RunState {
   selectedInventoryDropId: number | null;
   recentDropId: number | null;
   recruitOffers: RecruitOffer[];
+  recruitLevelBonus: number;
+  recruitLevelUpCount: number;
   beerShopOffers: BeerShopOffer[];
   activeAlcohols: ActiveAlcoholBuff[];
   subclassDraftQueue: SubclassDraftRequest[];
@@ -648,8 +650,13 @@ export interface HudViewModel {
   recruitCost: number;
   canRecruit: boolean;
   recruitRollCost: number;
+  recruitLevelBonus: number;
+  recruitLevelUpCost: number;
   canRollRecruitOffers: boolean;
+  canLevelUpRecruitment: boolean;
   hasRecruitOffers: boolean;
+  boardFullButBenchAvailable: boolean;
+  rosterFullNeedsReplacement: boolean;
   recruitOffers: HudRecruitOfferEntry[];
   steamEarned: number;
   bankedSteam: number;
@@ -723,6 +730,8 @@ export type InputAction =
   | { type: 'draftGlobalModifier'; modifierId: GlobalModifierId }
   | { type: 'draftSubclassChoice'; subclassId: DefenderSubclassId }
   | { type: 'recallDefenderToSauna'; defenderId: string }
+  | { type: 'rerollRecruitOffers' }
+  | { type: 'levelUpRecruitment' }
   | { type: 'rollRecruitOffers' }
   | { type: 'recruitOffer'; offerId: number }
   | { type: 'clearRecruitOffers' }

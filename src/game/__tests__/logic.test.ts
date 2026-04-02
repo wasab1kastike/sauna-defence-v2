@@ -392,17 +392,17 @@ describe('Sauna Defense V2 logic', () => {
     expect(next.currentWave.isBoss).toBe(true);
   });
 
-  it('rolls three visible recruit offers with prices and lore', () => {
+  it('rerolls three visible recruit offers for a fixed 2 SISU with prices and lore', () => {
     let state = prepState();
     state.defenders = state.defenders.filter((defender) => defender.location !== 'dead').slice(0, 4);
     state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
     state.sisu.current = 20;
 
     const before = state.sisu.current;
-    state = applyAction(state, { type: 'rollRecruitOffers' }, gameContent);
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
 
     expect(state.recruitOffers).toHaveLength(3);
-    expect(state.sisu.current).toBeLessThan(before);
+    expect(state.sisu.current).toBe(before - 2);
     expect(state.recruitOffers.every((offer) => offer.price >= 3)).toBe(true);
     expect(state.recruitOffers.every((offer) => offer.candidate.lore.length > 0)).toBe(true);
   });
@@ -413,7 +413,7 @@ describe('Sauna Defense V2 logic', () => {
     state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
     state.sisu.current = 30;
 
-    state = applyAction(state, { type: 'rollRecruitOffers' }, gameContent);
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
     const offer = state.recruitOffers[1];
     const rosterBefore = state.defenders.length;
 
@@ -424,13 +424,102 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.recruitOffers).toHaveLength(0);
   });
 
-  it('does not roll recruit offers when the roster is full', () => {
+  it('still rerolls recruit offers when the roster is full', () => {
     let state = prepState();
     state.sisu.current = 30;
 
-    state = applyAction(state, { type: 'rollRecruitOffers' }, gameContent);
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
 
     expect(state.recruitOffers).toHaveLength(3);
+  });
+
+  it('lets a new recruit join the bench even when the board is full if the roster still has space', () => {
+    let state = prepState();
+    state.meta.upgrades.roster_capacity = 1;
+    state.sisu.current = 30;
+    state.saunaDefenderId = null;
+
+    const living = state.defenders.filter((defender) => defender.location !== 'dead');
+    const boardTiles = [
+      { q: 0, r: -1 },
+      { q: 1, r: -1 },
+      { q: -1, r: 0 },
+      { q: 1, r: 0 },
+      { q: 0, r: 1 }
+    ];
+    living.forEach((defender, index) => {
+      defender.location = 'board';
+      defender.tile = boardTiles[index] ?? boardTiles[0];
+    });
+
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
+    const offer = state.recruitOffers[0];
+
+    state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
+
+    const recruit = state.defenders.find((defender) => defender.id === offer.candidate.id);
+    expect(recruit?.location).toBe('ready');
+    expect(state.saunaDefenderId).toBeNull();
+  });
+
+  it('uses the scaling recruitment level up costs and keeps current offers unchanged', () => {
+    let state = prepState();
+    state.sisu.current = 40;
+    const costs: number[] = [];
+
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
+    const beforeOfferIds = state.recruitOffers.map((offer) => offer.offerId);
+    const beforeOfferLevels = state.recruitOffers.map((offer) => offer.candidate.level);
+
+    for (let index = 0; index < 4; index += 1) {
+      const snapshot = createSnapshot(state, gameContent);
+      costs.push(snapshot.hud.recruitLevelUpCost);
+      state = applyAction(state, { type: 'levelUpRecruitment' }, gameContent);
+    }
+
+    expect(costs).toEqual([2, 4, 7, 11]);
+    expect(state.recruitLevelBonus).toBe(4);
+    expect(state.recruitOffers.map((offer) => offer.offerId)).toEqual(beforeOfferIds);
+    expect(state.recruitOffers.map((offer) => offer.candidate.level)).toEqual(beforeOfferLevels);
+  });
+
+  it('rolls higher starting levels after recruitment level ups', () => {
+    let baseState = prepState();
+    baseState.sisu.current = 20;
+    baseState.seed = 12345;
+
+    let leveledState = prepState();
+    leveledState.sisu.current = 20;
+    leveledState.seed = 12345;
+    leveledState.recruitLevelBonus = 6;
+    leveledState.recruitLevelUpCount = 3;
+
+    baseState = applyAction(baseState, { type: 'rerollRecruitOffers' }, gameContent);
+    leveledState = applyAction(leveledState, { type: 'rerollRecruitOffers' }, gameContent);
+
+    const baseBestLevel = Math.max(...baseState.recruitOffers.map((offer) => offer.candidate.level));
+    const leveledBestLevel = Math.max(...leveledState.recruitOffers.map((offer) => offer.candidate.level));
+
+    expect(leveledBestLevel).toBeGreaterThan(baseBestLevel);
+  });
+
+  it('prices equal recruit rolls the same regardless of the current wave', () => {
+    let first = prepState();
+    first.sisu.current = 20;
+    first.seed = 2026;
+
+    let second = prepState();
+    second.sisu.current = 20;
+    second.seed = 2026;
+    second.waveIndex = 9;
+    second.currentWave = createWaveDefinition(9, gameContent);
+
+    first = applyAction(first, { type: 'rerollRecruitOffers' }, gameContent);
+    second = applyAction(second, { type: 'rerollRecruitOffers' }, gameContent);
+
+    expect(first.recruitOffers.map((offer) => offer.price)).toEqual(second.recruitOffers.map((offer) => offer.price));
+    expect(first.recruitOffers.map((offer) => offer.candidate.level)).toEqual(second.recruitOffers.map((offer) => offer.candidate.level));
+    expect(first.recruitOffers.map((offer) => offer.candidate.stats)).toEqual(second.recruitOffers.map((offer) => offer.candidate.stats));
   });
 
   it('marks every fifth wave as a boss wave', () => {
@@ -710,7 +799,7 @@ describe('Sauna Defense V2 logic', () => {
     state.phase = 'wave';
     state.sisu.current = 20;
 
-    state = applyAction(state, { type: 'rollRecruitOffers' }, gameContent);
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
     expect(state.recruitOffers).toHaveLength(3);
 
     const offer = state.recruitOffers[0];
@@ -724,13 +813,13 @@ describe('Sauna Defense V2 logic', () => {
     let state = prepState();
     state.sisu.current = 30;
 
-    state = applyAction(state, { type: 'rollRecruitOffers' }, gameContent);
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
     const offer = state.recruitOffers[0];
 
     state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
 
     expect(state.recruitOffers).toHaveLength(3);
-    expect(state.message).toContain('Select a hero');
+    expect(state.message).toContain('replace');
   });
 
   it('replaces the selected ready hero when recruiting with a full roster', () => {
@@ -739,7 +828,7 @@ describe('Sauna Defense V2 logic', () => {
     const outgoing = state.defenders.find((defender) => defender.location === 'ready');
     expect(outgoing).toBeTruthy();
 
-    state = applyAction(state, { type: 'rollRecruitOffers' }, gameContent);
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
     const offer = state.recruitOffers[0];
     const rosterBefore = state.defenders.length;
 
@@ -759,7 +848,7 @@ describe('Sauna Defense V2 logic', () => {
     const saunaDefender = state.defenders.find((defender) => defender.location === 'sauna');
     expect(saunaDefender).toBeTruthy();
 
-    state = applyAction(state, { type: 'rollRecruitOffers' }, gameContent);
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
     const offer = state.recruitOffers[0];
 
     state = applyAction(state, { type: 'selectSauna' }, gameContent);
@@ -779,6 +868,7 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(snapshot.hud.canOpenRecruitment).toBe(true);
     expect(snapshot.hud.recruitmentStatusText.length).toBeGreaterThan(0);
+    expect(snapshot.hud.recruitLevelUpCost).toBe(2);
   });
 
   it('uses the expanded grid configuration for the new larger battlefield', () => {

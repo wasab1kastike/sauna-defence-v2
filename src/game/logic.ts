@@ -875,24 +875,30 @@ function canUseSisu(state: RunState, content: GameContent): boolean {
   return state.phase === 'wave' && state.sisu.current >= content.config.sisuAbilityCost && state.timeMs >= state.sisu.cooldownUntilMs;
 }
 
-function recruitCost(state: RunState, content: GameContent): number {
-  const cycleTax = cycleNumber(state.waveIndex, content) * content.config.recruitWaveStep;
-  const waveTax = Math.floor(Math.max(0, state.waveIndex - 1) / 4) * content.config.recruitWaveStep;
-  return content.config.recruitBaseCost + state.gambleCount * content.config.recruitCostStep + cycleTax + waveTax;
+function recruitPriceFloor(): number {
+  return 3;
 }
 
-function recruitRollCost(state: RunState, content: GameContent): number {
-  return Math.max(1, Math.floor(recruitCost(state, content) * 0.34));
+function recruitRollCost(): number {
+  return 2;
+}
+
+function recruitLevelUpCost(levelUpCount: number): number {
+  return 2 + Math.floor((levelUpCount * (levelUpCount + 3)) / 2);
 }
 
 function canAccessRecruitment(state: RunState): boolean {
   return !state.introOpen && state.phase !== 'lost' && state.overlayMode !== 'intermission' && state.overlayMode !== 'modifier_draft' && state.overlayMode !== 'subclass_draft';
 }
 
-function canRollRecruitOffers(state: RunState, content: GameContent): boolean {
+function boardFullButBenchAvailable(state: RunState, content: GameContent): boolean {
+  return boardDefenders(state).length >= boardCap(state, content) && livingDefenders(state).length < rosterCap(state, content);
+}
+
+function canRollRecruitOffers(state: RunState): boolean {
   return (
     canAccessRecruitment(state) &&
-    state.sisu.current >= recruitRollCost(state, content)
+    state.sisu.current >= recruitRollCost()
   );
 }
 
@@ -919,31 +925,42 @@ function recruitmentStatusText(state: RunState, content: GameContent): string {
     return 'Recruitment closes between runs.';
   }
   if (state.introOpen) {
-    return 'Finish the briefing before scouting recruits.';
+    return 'Finish the briefing before opening the recruitment market.';
   }
   const replacement = recruitReplacementTarget(state);
   const rosterFull = livingDefenders(state).length >= rosterCap(state, content);
+  const boardFull = boardDefenders(state).length >= boardCap(state, content);
+  const rerollCost = recruitRollCost();
+  const nextLevelUpCost = recruitLevelUpCost(state.recruitLevelUpCount);
   if (rosterFull && state.recruitOffers.length === 0) {
     return replacement
-      ? `Roster is full. Scout normally, then your next recruit will replace ${replacement.name}.`
-      : 'Roster is full. You can still scout offers, but pick a hero from the roster or click the sauna to mark who gets replaced.';
+      ? `Roster full: reroll normally, then your next recruit will replace ${replacement.name}.`
+      : 'Roster full: reroll normally, then select a roster hero or the sauna reserve to replace.';
   }
   if (state.recruitOffers.length > 0) {
     if (rosterFull) {
       return replacement
         ? state.sisu.current >= Math.min(...state.recruitOffers.map((offer) => offer.price))
-          ? `Roster is full. Buying a recruit will replace ${replacement.name}.`
-          : `Roster is full and ${replacement.name} is marked for replacement, but you still need more SISU.`
-        : 'Roster is full. Select the hero you want to sacrifice before buying a recruit.';
+          ? `Roster full: buying a recruit will replace ${replacement.name}.`
+          : `Roster full: ${replacement.name} is marked for replacement, but you still need more SISU.`
+        : 'Roster full: select who gets replaced before buying a recruit.';
+    }
+    if (boardFull) {
+      return state.sisu.current >= Math.min(...state.recruitOffers.map((offer) => offer.price))
+        ? 'Board full: new recruits still join the bench. Pick one, or reroll for a better fit.'
+        : 'Board full: recruits still join the bench, but you need more SISU to buy this batch.';
     }
     return state.sisu.current >= Math.min(...state.recruitOffers.map((offer) => offer.price))
       ? 'Pick one candidate. The others leave when you sign a recruit.'
       : 'You can inspect the market, but you need more SISU to afford any offer.';
   }
-  const scoutCost = recruitRollCost(state, content);
-  return state.sisu.current >= scoutCost
-    ? 'Scout three candidates and compare their prices, stats and personalities.'
-    : `Need ${scoutCost} SISU to scout a new batch of recruits.`;
+  if (boardFull && !rosterFull) {
+    return `Board full: new recruits will join the bench. Reroll costs ${rerollCost} SISU and Level Up costs ${nextLevelUpCost} SISU.`;
+  }
+  if (state.sisu.current >= rerollCost) {
+    return `Reroll 3 candidates for ${rerollCost} SISU, or buy Level Up for ${nextLevelUpCost} SISU to improve future recruits.`;
+  }
+  return `Need ${rerollCost} SISU to reroll the market. Level Up currently costs ${nextLevelUpCost} SISU.`;
 }
 
 function recruitScore(defender: DefenderInstance, content: GameContent): number {
@@ -962,15 +979,35 @@ function recruitQuality(score: number): RecruitOffer['quality'] {
   return 'rough';
 }
 
-function roleRecruitTax(templateId: DefenderTemplateId): number {
-  switch (templateId) {
-    case 'guardian':
-      return 1;
-    case 'mender':
-      return 1;
-    default:
-      return 0;
+function recruitStartingLevel(state: RunState): number {
+  const bonus = state.recruitLevelBonus;
+  let level = 1;
+  if (rng(state) < Math.min(0.9, bonus * 0.24)) {
+    level = 2;
   }
+  if (level >= 2 && rng(state) < Math.min(0.72, Math.max(0, bonus - 1) * 0.18)) {
+    level = 3;
+  }
+  if (level >= 3 && rng(state) < Math.min(0.5, Math.max(0, bonus - 3) * 0.12)) {
+    level = 4;
+  }
+  if (level >= 4 && rng(state) < Math.min(0.35, Math.max(0, bonus - 6) * 0.08)) {
+    level = 5;
+  }
+  return level;
+}
+
+function setDefenderStartingLevel(defender: DefenderInstance, level: number): void {
+  defender.level = level;
+  defender.xp = xpForLevel(level);
+}
+
+function recruitOfferPrice(defender: DefenderInstance, content: GameContent): number {
+  const score = recruitScore(defender, content);
+  const qualityTax = score >= 1.12 ? 2 : score >= 0.96 ? 1 : 0;
+  const statTax = Math.max(0, Math.round((score - 0.82) * 6));
+  const levelTax = Math.max(0, defender.level - 1) * 2;
+  return Math.max(recruitPriceFloor(), recruitPriceFloor() + qualityTax + statTax + levelTax);
 }
 
 function pickUniqueDefinitions(
@@ -1013,18 +1050,10 @@ function fillDefenderToMax(state: RunState, defender: DefenderInstance, content:
 function createRecruitOffer(state: RunState, content: GameContent): RecruitOffer {
   const templateId = pick(state, DEF_IDS);
   const candidate = newDefender(state, templateId, content);
+  setDefenderStartingLevel(candidate, recruitStartingLevel(state));
   const score = recruitScore(candidate, content);
   const quality = recruitQuality(score);
-  const baseCost = recruitCost(state, content);
-  const price = Math.max(
-    3,
-    Math.round(
-      baseCost +
-      roleRecruitTax(templateId) +
-      (quality === 'rough' ? -1 : quality === 'elite' ? 2 : 0) +
-      Math.max(0, Math.round((score - 1) * 6))
-    )
-  );
+  const price = recruitOfferPrice(candidate, content);
   return {
     offerId: state.nextRecruitOfferId++,
     price,
@@ -2046,7 +2075,7 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
       body: state.currentWave.isBoss
         ? 'This is the clean break before a boss. Set the board, spend SISU carefully, then start when ready.'
         : freeSlots > 0
-          ? 'Set the board, scout recruit offers if needed, and start when your lanes make sense.'
+          ? 'Set the board, reroll recruits if needed, and start when your lanes make sense.'
           : 'Set the board, sort loot, and start when your lanes make sense.'
     };
   }
@@ -2100,6 +2129,8 @@ export function createInitialState(
     selectedInventoryDropId: null,
     recentDropId: null,
     recruitOffers: [],
+    recruitLevelBonus: 0,
+    recruitLevelUpCount: 0,
     beerShopOffers: [],
     activeAlcohols: clone(activeAlcohols),
     subclassDraftQueue: [],
@@ -2330,11 +2361,12 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
           : `Wave ${next.currentWave.index} started.`
       );
       return next;
+    case 'rerollRecruitOffers':
     case 'rollRecruitOffers': {
       if (!canAccessRecruitment(next)) return next;
-      const cost = recruitRollCost(next, content);
+      const cost = recruitRollCost();
       if (next.sisu.current < cost) {
-        next.message = 'Not enough SISU to scout new recruits.';
+        next.message = 'Not enough SISU to reroll the market.';
         return next;
       }
       next.sisu.current -= cost;
@@ -2342,8 +2374,22 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.recruitmentOpen = true;
       next.message =
         next.recruitOffers.length > 0
-          ? `Three new recruits walked in for inspection. Prices start at ${Math.min(...next.recruitOffers.map((offer) => offer.price))} SISU.`
+          ? `The market rerolled. Three new recruits are up for sale, starting at ${Math.min(...next.recruitOffers.map((offer) => offer.price))} SISU.`
           : 'No recruits showed up.';
+      return next;
+    }
+    case 'levelUpRecruitment': {
+      if (!canAccessRecruitment(next)) return next;
+      const cost = recruitLevelUpCost(next.recruitLevelUpCount);
+      if (next.sisu.current < cost) {
+        next.message = `Not enough SISU to buy Recruitment Level Up (${cost}).`;
+        return next;
+      }
+      next.sisu.current -= cost;
+      next.recruitLevelBonus += 1;
+      next.recruitLevelUpCount += 1;
+      next.recruitmentOpen = true;
+      next.message = `Recruitment leveled up. Future rerolls now favor stronger starting levels.`;
       return next;
     }
     case 'recruitOffer': {
@@ -2361,13 +2407,11 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         return next;
       }
       next.sisu.current -= offer.price;
-      next.gambleCount += 1;
       if (replacement) {
         replaceDefenderWithRecruit(next, replacement, offer.candidate, content);
       } else {
         fillDefenderToMax(next, offer.candidate, content);
         next.defenders.push(offer.candidate);
-        autoFillSaunaFromBench(next, content);
       }
       next.recruitOffers = [];
       next.recruitmentOpen = false;
@@ -2618,11 +2662,16 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     canPause: state.phase === 'wave',
     canOpenRecruitment: canAccessRecruitment(state),
     recruitmentStatusText: recruitmentStatusText(state, content),
-    recruitCost: recruitCost(state, content),
+    recruitCost: recruitPriceFloor(),
     canRecruit: canBuyAnyRecruitOffer(state, content),
-    recruitRollCost: recruitRollCost(state, content),
-    canRollRecruitOffers: canRollRecruitOffers(state, content),
+    recruitRollCost: recruitRollCost(),
+    recruitLevelBonus: state.recruitLevelBonus,
+    recruitLevelUpCost: recruitLevelUpCost(state.recruitLevelUpCount),
+    canRollRecruitOffers: canRollRecruitOffers(state),
+    canLevelUpRecruitment: canAccessRecruitment(state) && state.sisu.current >= recruitLevelUpCost(state.recruitLevelUpCount),
     hasRecruitOffers: state.recruitOffers.length > 0,
+    boardFullButBenchAvailable: boardFullButBenchAvailable(state, content),
+    rosterFullNeedsReplacement: livingDefenders(state).length >= rosterCap(state, content),
     recruitOffers: state.recruitOffers.map((offer) => {
       const roleStats = derivedStats(state, offer.candidate, content, false);
       return {

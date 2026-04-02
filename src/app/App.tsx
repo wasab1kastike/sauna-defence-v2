@@ -45,7 +45,7 @@ const GUIDE_STEPS = [
   },
   {
     title: 'SISU Fuels Both Power And Recruitment',
-    body: 'Spend SISU on the combat burst when you need a spike, or use it to scout and buy recruitment offers. The market works in prep, live waves, and pause.'
+    body: 'Spend SISU on the combat burst when you need a spike, or use it to reroll the market and level up future recruits. The market works in prep, live waves, and pause.'
   },
   {
     title: 'Loot Starts In The Header',
@@ -193,8 +193,10 @@ export function App() {
   const modifierDraftOffers = snapshot?.hud.globalModifierDraftOffers ?? [];
   const showModifierDraft = snapshot?.hud.showGlobalModifierDraft ?? false;
   const openRecruitSlots = snapshot ? Math.max(0, snapshot.hud.rosterCap - snapshot.hud.rosterCount) : 0;
+  const boardFullButBenchAvailable = snapshot?.hud.boardFullButBenchAvailable ?? false;
+  const rosterFullNeedsReplacement = snapshot?.hud.rosterFullNeedsReplacement ?? false;
   const recruitReplacementName =
-    openRecruitSlots <= 0
+    rosterFullNeedsReplacement
       ? selectedSauna?.occupantName ?? selectedDefender?.name ?? null
       : null;
   const nextWavePreview = snapshot?.hud.wavePreview ?? [];
@@ -462,7 +464,7 @@ export function App() {
                       <strong>{snapshot.hud.saunaOccupancyLabel}</strong>
                     </div>
                     <div className="run-stat">
-                      <span>Free Slots</span>
+                      <span>Open Roster Slots</span>
                       <strong>{snapshot.hud.freeRecruitSlots}</strong>
                     </div>
                     <div className="run-stat">
@@ -470,18 +472,22 @@ export function App() {
                       <strong>{snapshot.hud.sisu}</strong>
                     </div>
                     <div className="run-stat">
-                      <span>Scout Cost</span>
-                      <strong>{snapshot.hud.recruitRollCost} SISU</strong>
+                      <span>Recruit Level</span>
+                      <strong>+{snapshot.hud.recruitLevelBonus}</strong>
                     </div>
                   </div>
                   <p className="panel-copy small-copy">{snapshot.hud.recruitmentStatusText}</p>
-                  {openRecruitSlots <= 0 ? (
+                  {rosterFullNeedsReplacement ? (
                     <div className="tag-row compact-tags">
                       <span className="tag">
                         {recruitReplacementName
                           ? `Replacing ${recruitReplacementName}`
                           : 'Select a roster hero or sauna reserve to replace'}
                       </span>
+                    </div>
+                  ) : boardFullButBenchAvailable ? (
+                    <div className="tag-row compact-tags">
+                      <span className="tag">Board full: new recruits still join Bench Reserves</span>
                     </div>
                   ) : null}
                   {snapshot.hud.hasRecruitOffers ? (
@@ -505,13 +511,13 @@ export function App() {
                           </div>
                           <button
                             className="mini-button"
-                            disabled={snapshot.hud.sisu < offer.price || (openRecruitSlots <= 0 && !recruitReplacementName)}
+                            disabled={snapshot.hud.sisu < offer.price || (rosterFullNeedsReplacement && !recruitReplacementName)}
                             onClick={() => runtimeRef.current?.dispatch({ type: 'recruitOffer', offerId: offer.id })}
                           >
-                            {openRecruitSlots > 0
-                              ? `Recruit For ${offer.price}`
+                            {!rosterFullNeedsReplacement
+                              ? `Recruit to Bench (${offer.price})`
                               : recruitReplacementName
-                                ? `Replace For ${offer.price}`
+                                ? `Replace ${recruitReplacementName} (${offer.price})`
                                 : `Pick Replacement (${offer.price})`}
                           </button>
                         </div>
@@ -520,13 +526,13 @@ export function App() {
                   ) : (
                     <div className="recruitment-empty">
                       <p className="panel-copy small-copy">
-                        Scout three named weirdos at a time, compare prices and vibes, then recruit exactly one.
+                        Reroll three named weirdos at a time, compare levels and vibes, then recruit exactly one.
                       </p>
                       <div className="open-slot-list compact-offer-list">
                         {Array.from({ length: 3 }).map((_, index) => (
                           <div key={index} className="open-slot-card">
                             <strong>Offer Slot</strong>
-                            <small>Scout candidates to fill this lane-holding vacancy.</small>
+                            <small>Reroll candidates to fill this lane-holding vacancy.</small>
                           </div>
                         ))}
                       </div>
@@ -536,18 +542,17 @@ export function App() {
                     <button
                       className="secondary-button"
                       disabled={!snapshot.hud.canRollRecruitOffers}
-                      onClick={() => runtimeRef.current?.dispatch({ type: 'rollRecruitOffers' })}
+                      onClick={() => runtimeRef.current?.dispatch({ type: 'rerollRecruitOffers' })}
                     >
-                      {snapshot.hud.hasRecruitOffers ? 'Refresh Offers' : 'Roll Offers'} ({snapshot.hud.recruitRollCost} SISU)
+                      Reroll ({snapshot.hud.recruitRollCost} SISU)
                     </button>
-                    {snapshot.hud.hasRecruitOffers ? (
-                      <button
-                        className="ghost-button"
-                        onClick={() => runtimeRef.current?.dispatch({ type: 'clearRecruitOffers' })}
-                      >
-                        Clear Offers
-                      </button>
-                    ) : null}
+                    <button
+                      className="ghost-button"
+                      disabled={!snapshot.hud.canLevelUpRecruitment}
+                      onClick={() => runtimeRef.current?.dispatch({ type: 'levelUpRecruitment' })}
+                    >
+                      Level Up ({snapshot.hud.recruitLevelUpCost} SISU)
+                    </button>
                   </div>
                 </section>
               ) : null}
@@ -1024,7 +1029,7 @@ export function App() {
               </div>
               <div className="inventory-card">
                 <strong>SISU Does Two Jobs</strong>
-                <small>Spend SISU on combat bursts or scout recruitment offers between waves.</small>
+                <small>Spend SISU on combat bursts, reroll the market, or level up future recruits.</small>
               </div>
               <div className="inventory-card">
                 <strong>Loot Starts In The Header</strong>
