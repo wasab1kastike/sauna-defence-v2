@@ -831,16 +831,17 @@ export function App() {
   return (
     <main className="shell board-shell">
       <section className="board-stage">
-        {snapshot ? (
-          <div className="canvas-frame board-canvas-frame" ref={frameRef}>
-            <canvas
-              ref={canvasRef}
-              className="battle-canvas"
-              onPointerMove={handlePointerMove}
-              onPointerLeave={handlePointerLeave}
-              onPointerDown={handlePointerDown}
-            />
+        <div className="canvas-frame board-canvas-frame" ref={frameRef}>
+          <canvas
+            ref={canvasRef}
+            className="battle-canvas"
+            onPointerMove={handlePointerMove}
+            onPointerLeave={handlePointerLeave}
+            onPointerDown={handlePointerDown}
+          />
 
+          {snapshot ? (
+            <>
             <header className="hud-topbar">
               <div className="hud-brand">
                 <p className="eyebrow">Sauna Defense V2</p>
@@ -954,13 +955,14 @@ export function App() {
 
             {renderSelectionCard()}
             {renderPanelPopup()}
-          </div>
-        ) : (
-          <section className="panel boot-panel">
-            <h2>Booting up the sauna...</h2>
-            <p className="panel-copy">Creating the first endless roster run.</p>
-          </section>
-        )}
+            </>
+          ) : (
+            <section className="boot-panel boot-overlay">
+              <h2>Booting up the sauna...</h2>
+              <p className="panel-copy">Creating the first endless roster run.</p>
+            </section>
+          )}
+        </div>
       </section>
 
       {snapshot && introOpen && guideStep === null ? (
