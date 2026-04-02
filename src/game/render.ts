@@ -469,6 +469,52 @@ function drawTokenLabel(
   ctx.fillText(text, center.x, center.y + radius * 0.6);
 }
 
+function drawDefenderName(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  radius: number,
+  name: string
+) {
+  const firstName = name.trim().split(/\s+/)[0] ?? name;
+  if (!firstName) return;
+
+  ctx.save();
+  ctx.font = `700 ${Math.max(10, radius * 0.34)}px Trebuchet MS`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const metrics = ctx.measureText(firstName);
+  const textWidth = metrics.width;
+  const paddingX = Math.max(8, radius * 0.2);
+  const pillWidth = textWidth + paddingX * 2;
+  const pillHeight = Math.max(16, radius * 0.52);
+  const x = center.x - pillWidth / 2;
+  const y = center.y - radius * 1.08;
+  const r = pillHeight / 2;
+
+  ctx.fillStyle = 'rgba(8, 14, 16, 0.76)';
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + pillWidth - r, y);
+  ctx.quadraticCurveTo(x + pillWidth, y, x + pillWidth, y + r);
+  ctx.lineTo(x + pillWidth, y + pillHeight - r);
+  ctx.quadraticCurveTo(x + pillWidth, y + pillHeight, x + pillWidth - r, y + pillHeight);
+  ctx.lineTo(x + r, y + pillHeight);
+  ctx.quadraticCurveTo(x, y + pillHeight, x, y + pillHeight - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(255, 232, 188, 0.26)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.fillStyle = '#fff7df';
+  ctx.fillText(firstName, center.x, y + pillHeight / 2 + 0.5);
+  ctx.restore();
+}
+
 function getDefenderPortrait(index: number): HTMLImageElement | null {
   if (typeof Image === 'undefined') {
     return null;
@@ -926,6 +972,7 @@ export function paintSnapshot(
       drawTokenLabel(ctx, center, radius, template.label, '#fff8ed');
     }
     drawHealthBar(ctx, center, layout.hexSize * 1.04, defender.hp / Math.max(1, stats.maxHp), '#7ed8c8');
+    drawDefenderName(ctx, center, radius, defender.name);
   }
 
   for (const enemy of snapshot.state.enemies) {
