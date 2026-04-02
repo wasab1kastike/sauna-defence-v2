@@ -52,6 +52,15 @@ export type SkillId =
   | 'battle_hymn';
 export type LootKind = 'item' | 'skill';
 export type Rarity = 'common' | 'rare' | 'epic';
+export type AlcoholId =
+  | 'light_lager'
+  | 'sauna_stout'
+  | 'medic_mule'
+  | 'sniper_cider'
+  | 'boiler_ipa'
+  | 'birch_porter'
+  | 'lucky_pils'
+  | 'overproof_koskenkorva';
 export type DefenderLocation = 'ready' | 'board' | 'sauna' | 'dead';
 export type WavePattern = 'tutorial' | 'split' | 'staggered' | 'spearhead' | 'surge' | 'boss_pressure' | 'boss_breach';
 export type BossCategory = 'pressure' | 'breach';
@@ -87,6 +96,8 @@ export type MetaUpgradeId =
   | 'loot_luck'
   | 'loot_rarity'
   | 'item_slots'
+  | 'beer_shop_unlock'
+  | 'beer_shop_level'
   | 'sauna_auto_deploy'
   | 'sauna_slap_swap';
 
@@ -108,6 +119,11 @@ export interface StatModifier {
   attackCooldownMs?: number;
   defense?: number;
   regenHpPerSecond?: number;
+}
+
+export interface AlcoholModifier extends StatModifier {
+  lootChance?: number;
+  rewardSisu?: number;
 }
 
 export type GlobalModifierSource =
@@ -177,6 +193,16 @@ export interface SkillDefinition {
   artPath: string;
 }
 
+export interface AlcoholDefinition {
+  id: AlcoholId;
+  name: string;
+  flavorText: string;
+  price: number;
+  artPath: string;
+  positive: AlcoholModifier;
+  negative: AlcoholModifier;
+}
+
 export interface InventoryDrop {
   instanceId: number;
   kind: LootKind;
@@ -195,6 +221,16 @@ export interface RecruitOffer {
   price: number;
   quality: 'rough' | 'solid' | 'elite';
   candidate: DefenderInstance;
+}
+
+export interface BeerShopOffer {
+  offerId: number;
+  alcoholId: AlcoholId;
+}
+
+export interface ActiveAlcoholBuff {
+  alcoholId: AlcoholId;
+  stacks: number;
 }
 
 export interface DeathLogEntry {
@@ -341,6 +377,7 @@ export interface GameContent {
   enemyArchetypes: Record<EnemyUnitId, EnemyArchetype>;
   itemDefinitions: Record<ItemId, ItemDefinition>;
   skillDefinitions: Record<SkillId, SkillDefinition>;
+  alcoholDefinitions: Record<AlcoholId, AlcoholDefinition>;
   globalModifierDefinitions: Record<GlobalModifierId, GlobalModifierDefinition>;
   metaUpgrades: Record<MetaUpgradeId, MetaUpgradeDefinition>;
   namePools: NamePools;
@@ -375,6 +412,7 @@ export interface RunState {
   nextEnemyInstanceId: number;
   nextLootInstanceId: number;
   nextRecruitOfferId: number;
+  nextBeerOfferId: number;
   nextFxEventId: number;
   nextDeathLogEntryId: number;
   headerItems: InventoryDrop[];
@@ -383,6 +421,8 @@ export interface RunState {
   selectedInventoryDropId: number | null;
   recentDropId: number | null;
   recruitOffers: RecruitOffer[];
+  beerShopOffers: BeerShopOffer[];
+  activeAlcohols: ActiveAlcoholBuff[];
   subclassDraftQueue: SubclassDraftRequest[];
   subclassDraftDefenderId: string | null;
   subclassDraftUnlockLevel: number | null;
@@ -502,6 +542,29 @@ export interface HudMetaUpgradeEntry {
   maxed: boolean;
 }
 
+export interface HudBeerShopOfferEntry {
+  id: number;
+  alcoholId: AlcoholId;
+  name: string;
+  flavorText: string;
+  price: number;
+  artPath: string;
+  positiveEffectText: string;
+  negativeEffectText: string;
+  canBuy: boolean;
+  purchaseLabel: string;
+}
+
+export interface HudActiveAlcoholEntry {
+  alcoholId: AlcoholId;
+  name: string;
+  flavorText: string;
+  artPath: string;
+  stacks: number;
+  positiveEffectText: string;
+  negativeEffectText: string;
+}
+
 export interface HudDeathLogEntry {
   id: number;
   wave: number;
@@ -590,6 +653,13 @@ export interface HudViewModel {
   metaShopUnlockCost: number;
   canUnlockMetaShop: boolean;
   metaShopUnlocked: boolean;
+  beerShopUnlocked: boolean;
+  beerShopLevel: number;
+  beerOfferCount: number;
+  beerActiveSlotCount: number;
+  beerActiveSlotCap: number;
+  beerShopOffers: HudBeerShopOfferEntry[];
+  activeAlcohols: HudActiveAlcoholEntry[];
   actionTitle: string;
   actionBody: string;
   readyBenchCount: number;
@@ -622,6 +692,7 @@ export interface GameSnapshot {
   enemyArchetypes: GameContent['enemyArchetypes'];
   itemDefinitions: GameContent['itemDefinitions'];
   skillDefinitions: GameContent['skillDefinitions'];
+  alcoholDefinitions: GameContent['alcoholDefinitions'];
   globalModifierDefinitions: GameContent['globalModifierDefinitions'];
   metaUpgrades: GameContent['metaUpgrades'];
   hud: HudViewModel;
@@ -659,6 +730,8 @@ export type InputAction =
   | { type: 'destroyEquippedSkill'; defenderId: string; skillId: SkillId }
   | { type: 'dismissRecentDrop' }
   | { type: 'buyMetaUpgrade'; upgradeId: MetaUpgradeId }
+  | { type: 'buyBeerShopOffer'; offerId: number }
+  | { type: 'removeActiveAlcohol'; alcoholId: AlcoholId }
   | { type: 'unlockMetaShop' }
   | { type: 'startNextRun' }
   | { type: 'restartRun' };

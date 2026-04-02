@@ -591,6 +591,80 @@ export const gameContent: GameContent = {
       artPath: 'loot/battle-hymn.svg'
     }
   },
+  alcoholDefinitions: {
+    light_lager: {
+      id: 'light_lager',
+      name: 'Light Lager',
+      flavorText: 'Crisp, brave, and just dumb enough to feel tactical.',
+      price: 2,
+      artPath: 'loot/sauna-salt.svg',
+      positive: { damage: 1 },
+      negative: { defense: 1 }
+    },
+    sauna_stout: {
+      id: 'sauna_stout',
+      name: 'Sauna Stout',
+      flavorText: 'Heavy enough to count as emotional armor.',
+      price: 3,
+      artPath: 'loot/coal-heart.svg',
+      positive: { maxHp: 8 },
+      negative: { attackCooldownMs: 60 }
+    },
+    medic_mule: {
+      id: 'medic_mule',
+      name: 'Medic Mule',
+      flavorText: 'A healing classic with terrible depth perception.',
+      price: 3,
+      artPath: 'loot/cedar-ring.svg',
+      positive: { heal: 2 },
+      negative: { range: 1 }
+    },
+    sniper_cider: {
+      id: 'sniper_cider',
+      name: 'Sniper Cider',
+      flavorText: 'Sees farther, stands shakier.',
+      price: 3,
+      artPath: 'loot/bucket-boots.svg',
+      positive: { range: 1 },
+      negative: { maxHp: 4 }
+    },
+    boiler_ipa: {
+      id: 'boiler_ipa',
+      name: 'Boiler IPA',
+      flavorText: 'Fast hands, dry throat, zero restraint.',
+      price: 3,
+      artPath: 'loot/ember-amulet.svg',
+      positive: { attackCooldownMs: 60 },
+      negative: { regenHpPerSecond: 1 }
+    },
+    birch_porter: {
+      id: 'birch_porter',
+      name: 'Birch Porter',
+      flavorText: 'Makes everyone sturdier and significantly less subtle.',
+      price: 2,
+      artPath: 'loot/towel-wrap.svg',
+      positive: { defense: 1 },
+      negative: { damage: 1 }
+    },
+    lucky_pils: {
+      id: 'lucky_pils',
+      name: 'Lucky Pils',
+      flavorText: 'Loot gets luckier, decision-making gets worse.',
+      price: 4,
+      artPath: 'loot/birch-charm.svg',
+      positive: { lootChance: 0.08 },
+      negative: { rewardSisu: 1 }
+    },
+    overproof_koskenkorva: {
+      id: 'overproof_koskenkorva',
+      name: 'Overproof Koskenkorva',
+      flavorText: 'Hits like a train, patches like an apology.',
+      price: 4,
+      artPath: 'loot/iron-whisk.svg',
+      positive: { damage: 2 },
+      negative: { heal: 2 }
+    }
+  },
   globalModifierDefinitions: {
     iron_brotherhood: {
       id: 'iron_brotherhood',
@@ -789,7 +863,7 @@ export const gameContent: GameContent = {
     roster_capacity: {
       id: 'roster_capacity',
       name: 'More Weirdos',
-      description: 'Increase total named defenders you can carry into a run.',
+      description: 'Increase both roster capacity and how many defenders can fit on the board.',
       baseCost: 4,
       costStep: 4,
       maxLevel: 3
@@ -825,6 +899,22 @@ export const gameContent: GameContent = {
       baseCost: 6,
       costStep: 5,
       maxLevel: 2
+    },
+    beer_shop_unlock: {
+      id: 'beer_shop_unlock',
+      name: 'Beer Shop',
+      description: 'Unlock the bartender and his risky run-long drinks between runs.',
+      baseCost: 6,
+      costStep: 0,
+      maxLevel: 1
+    },
+    beer_shop_level: {
+      id: 'beer_shop_level',
+      name: 'Beer Shop Level',
+      description: 'Increase bartender stock and unlock more active drink slots.',
+      baseCost: 4,
+      costStep: 3,
+      maxLevel: 3
     },
     sauna_auto_deploy: {
       id: 'sauna_auto_deploy',

@@ -1,5 +1,10 @@
 import type {
+  ActiveAlcoholBuff,
+  AlcoholDefinition,
+  AlcoholId,
+  AlcoholModifier,
   AxialCoord,
+  BeerShopOffer,
   BossCategory,
   CombatFxEvent,
   CombatFxKind,
@@ -50,6 +55,8 @@ const META_IDS: MetaUpgradeId[] = [
   'loot_luck',
   'loot_rarity',
   'item_slots',
+  'beer_shop_unlock',
+  'beer_shop_level',
   'sauna_auto_deploy',
   'sauna_slap_swap'
 ];
@@ -139,6 +146,8 @@ export function createDefaultMetaProgress(): MetaProgress {
       loot_luck: 0,
       loot_rarity: 0,
       item_slots: 0,
+      beer_shop_unlock: 0,
+      beer_shop_level: 0,
       sauna_auto_deploy: 0,
       sauna_slap_swap: 0
     }
@@ -166,6 +175,10 @@ function rosterCap(state: RunState, content: GameContent): number {
   return content.config.baseRosterCap + state.meta.upgrades.roster_capacity;
 }
 
+function boardCap(state: RunState, content: GameContent): number {
+  return content.config.boardCap + state.meta.upgrades.roster_capacity;
+}
+
 function inventoryUnlocked(state: RunState): boolean {
   return state.meta.upgrades.inventory_slots > 0;
 }
@@ -185,6 +198,43 @@ function headerSkillCap(content: GameContent): number {
 
 function itemSlotCap(state: RunState, content: GameContent): number {
   return content.config.baseItemSlots + state.meta.upgrades.item_slots;
+}
+
+function beerShopUnlocked(state: RunState): boolean {
+  return state.meta.upgrades.beer_shop_unlock > 0;
+}
+
+function beerShopTier(state: RunState): number {
+  return beerShopUnlocked(state) ? 1 + state.meta.upgrades.beer_shop_level : 0;
+}
+
+function beerOfferCountForTier(tier: number): number {
+  switch (tier) {
+    case 4:
+      return 6;
+    case 3:
+      return 5;
+    case 2:
+      return 4;
+    case 1:
+      return 3;
+    default:
+      return 0;
+  }
+}
+
+function beerActiveSlotCapForTier(tier: number): number {
+  switch (tier) {
+    case 4:
+      return 3;
+    case 3:
+    case 2:
+      return 2;
+    case 1:
+      return 1;
+    default:
+      return 0;
+  }
 }
 
 function skillSlotCap(): number {
@@ -255,6 +305,72 @@ function addModifiers(left: UnitStats, modifier: Partial<UnitStats>) {
   left.defense += modifier.defense ?? 0;
   left.regenHpPerSecond += modifier.regenHpPerSecond ?? 0;
   return left;
+}
+
+function addAlcoholModifier(left: AlcoholModifier, modifier: Partial<AlcoholModifier>) {
+  left.maxHp = (left.maxHp ?? 0) + (modifier.maxHp ?? 0);
+  left.damage = (left.damage ?? 0) + (modifier.damage ?? 0);
+  left.heal = (left.heal ?? 0) + (modifier.heal ?? 0);
+  left.range = (left.range ?? 0) + (modifier.range ?? 0);
+  left.attackCooldownMs = (left.attackCooldownMs ?? 0) + (modifier.attackCooldownMs ?? 0);
+  left.defense = (left.defense ?? 0) + (modifier.defense ?? 0);
+  left.regenHpPerSecond = (left.regenHpPerSecond ?? 0) + (modifier.regenHpPerSecond ?? 0);
+  left.lootChance = (left.lootChance ?? 0) + (modifier.lootChance ?? 0);
+  left.rewardSisu = (left.rewardSisu ?? 0) + (modifier.rewardSisu ?? 0);
+  return left;
+}
+
+function scaledPositiveAlcoholModifier(definition: AlcoholDefinition, stacks: number): AlcoholModifier {
+  return {
+    maxHp: (definition.positive.maxHp ?? 0) * stacks,
+    damage: (definition.positive.damage ?? 0) * stacks,
+    heal: (definition.positive.heal ?? 0) * stacks,
+    range: (definition.positive.range ?? 0) * stacks,
+    attackCooldownMs: (definition.positive.attackCooldownMs ?? 0) * stacks,
+    defense: (definition.positive.defense ?? 0) * stacks,
+    regenHpPerSecond: (definition.positive.regenHpPerSecond ?? 0) * stacks,
+    lootChance: (definition.positive.lootChance ?? 0) * stacks,
+    rewardSisu: (definition.positive.rewardSisu ?? 0) * stacks
+  };
+}
+
+function scaledNegativeAlcoholModifier(definition: AlcoholDefinition, stacks: number): AlcoholModifier {
+  const scale = Math.pow(2, Math.max(0, stacks - 1));
+  return {
+    maxHp: (definition.negative.maxHp ?? 0) * scale,
+    damage: (definition.negative.damage ?? 0) * scale,
+    heal: (definition.negative.heal ?? 0) * scale,
+    range: (definition.negative.range ?? 0) * scale,
+    attackCooldownMs: (definition.negative.attackCooldownMs ?? 0) * scale,
+    defense: (definition.negative.defense ?? 0) * scale,
+    regenHpPerSecond: (definition.negative.regenHpPerSecond ?? 0) * scale,
+    lootChance: (definition.negative.lootChance ?? 0) * scale,
+    rewardSisu: (definition.negative.rewardSisu ?? 0) * scale
+  };
+}
+
+function activeAlcoholEntry(state: RunState, alcoholId: AlcoholId): ActiveAlcoholBuff | null {
+  return state.activeAlcohols.find((entry) => entry.alcoholId === alcoholId) ?? null;
+}
+
+function alcoholTotals(state: RunState, content: GameContent): AlcoholModifier {
+  return state.activeAlcohols.reduce<AlcoholModifier>((totals, active) => {
+    const definition = content.alcoholDefinitions[active.alcoholId];
+    addAlcoholModifier(totals, scaledPositiveAlcoholModifier(definition, active.stacks));
+    const negative = scaledNegativeAlcoholModifier(definition, active.stacks);
+    addAlcoholModifier(totals, {
+      maxHp: -(negative.maxHp ?? 0),
+      damage: -(negative.damage ?? 0),
+      heal: -(negative.heal ?? 0),
+      range: -(negative.range ?? 0),
+      attackCooldownMs: negative.attackCooldownMs ?? 0,
+      defense: -(negative.defense ?? 0),
+      regenHpPerSecond: -(negative.regenHpPerSecond ?? 0),
+      lootChance: -(negative.lootChance ?? 0),
+      rewardSisu: -(negative.rewardSisu ?? 0)
+    });
+    return totals;
+  }, {});
 }
 
 function subclassModifiers(defender: DefenderInstance, content: GameContent) {
@@ -370,14 +486,15 @@ function derivedStats(
   if (!includeGlobal) return base;
 
   const globalBonus = globalModifierTotals(state, content);
+  const alcoholBonus = alcoholTotals(state, content);
   return {
-    maxHp: Math.max(6, base.maxHp + globalBonus.maxHp),
-    damage: Math.max(1, base.damage + globalBonus.damage),
-    heal: Math.max(0, base.heal + globalBonus.heal),
-    range: Math.max(1, base.range + globalBonus.range),
-    attackCooldownMs: Math.max(360, base.attackCooldownMs + globalBonus.attackCooldownMs),
-    defense: Math.max(0, base.defense + globalBonus.defense),
-    regenHpPerSecond: Math.max(0, base.regenHpPerSecond + globalBonus.regenHpPerSecond)
+    maxHp: Math.max(6, base.maxHp + globalBonus.maxHp + (alcoholBonus.maxHp ?? 0)),
+    damage: Math.max(1, base.damage + globalBonus.damage + (alcoholBonus.damage ?? 0)),
+    heal: Math.max(0, base.heal + globalBonus.heal + (alcoholBonus.heal ?? 0)),
+    range: Math.max(1, base.range + globalBonus.range + (alcoholBonus.range ?? 0)),
+    attackCooldownMs: Math.max(360, base.attackCooldownMs + globalBonus.attackCooldownMs + (alcoholBonus.attackCooldownMs ?? 0)),
+    defense: Math.max(0, base.defense + globalBonus.defense + (alcoholBonus.defense ?? 0)),
+    regenHpPerSecond: Math.max(0, base.regenHpPerSecond + globalBonus.regenHpPerSecond + (alcoholBonus.regenHpPerSecond ?? 0))
   };
 }
 
@@ -443,11 +560,9 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
 
 function buildRoster(state: RunState, content: GameContent): DefenderInstance[] {
   const defenders: DefenderInstance[] = [];
-  const totalDefenders = rosterCap(state, content);
-  const saunaIndex = Math.min(4, Math.max(0, totalDefenders - 1));
-  for (let index = 0; index < totalDefenders; index += 1) {
+  for (let index = 0; index < content.config.baseRosterCap; index += 1) {
     const defender = newDefender(state, DEF_IDS[index % DEF_IDS.length], content);
-    defender.location = index === saunaIndex ? 'sauna' : 'ready';
+    defender.location = index === content.config.boardCap ? 'sauna' : 'ready';
     defenders.push(defender);
   }
   return defenders;
@@ -716,7 +831,7 @@ function deploySaunaOccupant(state: RunState, content: GameContent, preferredTil
 }
 
 function autoFillSaunaFromBench(state: RunState, content: GameContent): DefenderInstance | null {
-  if (state.saunaDefenderId || boardDefenders(state).length < content.config.boardCap) {
+  if (state.saunaDefenderId || boardDefenders(state).length < boardCap(state, content)) {
     return null;
   }
   const reserve = state.defenders.find((defender) => defender.location === 'ready') ?? null;
@@ -919,6 +1034,39 @@ function rollRecruitOffersIntoState(state: RunState, content: GameContent): void
   state.recruitOffers = Array.from({ length: 3 }, () => createRecruitOffer(state, content));
 }
 
+function createBeerShopOffer(state: RunState, alcoholId: AlcoholId): BeerShopOffer {
+  return {
+    offerId: state.nextBeerOfferId++,
+    alcoholId
+  };
+}
+
+function rollBeerShopOffersIntoState(state: RunState, content: GameContent): void {
+  if (!beerShopUnlocked(state)) {
+    state.beerShopOffers = [];
+    return;
+  }
+  const count = beerOfferCountForTier(beerShopTier(state));
+  const pool = Object.keys(content.alcoholDefinitions) as AlcoholId[];
+  const offers: BeerShopOffer[] = [];
+  const remaining = [...pool];
+  while (offers.length < count && remaining.length > 0) {
+    const index = randomInt(state, 0, remaining.length - 1);
+    const alcoholId = remaining.splice(index, 1)[0];
+    offers.push(createBeerShopOffer(state, alcoholId));
+  }
+  state.beerShopOffers = offers;
+}
+
+function canBuyBeerOffer(state: RunState, offer: BeerShopOffer, content: GameContent): boolean {
+  if (state.overlayMode !== 'intermission' || !state.meta.shopUnlocked || !beerShopUnlocked(state)) return false;
+  const definition = content.alcoholDefinitions[offer.alcoholId];
+  if (state.meta.steam < definition.price) return false;
+  const active = activeAlcoholEntry(state, offer.alcoholId);
+  if (active) return true;
+  return state.activeAlcohols.length < beerActiveSlotCapForTier(beerShopTier(state));
+}
+
 function replaceDefenderWithRecruit(
   state: RunState,
   outgoing: DefenderInstance,
@@ -1099,7 +1247,11 @@ function storeLootDrop(state: RunState, drop: InventoryDrop, content: GameConten
 }
 
 function maybeDrop(state: RunState, enemyId: EnemyUnitId, content: GameContent): void {
-  const chance = enemyId === 'chieftain' ? content.config.bossLootChance : content.config.baseLootChance + state.meta.upgrades.loot_luck * 0.06;
+  const alcoholBonus = alcoholTotals(state, content);
+  const chance =
+    enemyId === 'chieftain'
+      ? content.config.bossLootChance
+      : content.config.baseLootChance + state.meta.upgrades.loot_luck * 0.06 + (alcoholBonus.lootChance ?? 0);
   if (rng(state) > chance) return;
   const rarityRoll = rng(state);
   const rarityBoost = state.meta.upgrades.loot_rarity * 0.08;
@@ -1399,7 +1551,8 @@ function awardWave(state: RunState, content: GameContent): void {
   const clearedWave = state.currentWave;
   state.waveIndex += 1;
   const upcomingWave = createWaveDefinition(state.waveIndex, content);
-  state.sisu.current += clearedWave.rewardSisu;
+  const alcoholBonus = alcoholTotals(state, content);
+  state.sisu.current += Math.max(0, clearedWave.rewardSisu + (alcoholBonus.rewardSisu ?? 0));
   if (state.saunaDefenderId) state.steamEarned += content.config.steamPerSaunaWave;
   healSauna(state, content);
   normalizeLivingDefenders(state, content);
@@ -1632,6 +1785,29 @@ function formatModifierAmount(amount: number, stat: GlobalModifierEffectStat): s
   return stat === 'attackCooldownMs' ? `${value} ms` : value;
 }
 
+function formatAlcoholModifier(modifier: AlcoholModifier, polarity: 'positive' | 'negative'): string {
+  const parts: string[] = [];
+  const signed = (value: number, invertForPositive = false) => {
+    if (polarity === 'positive') {
+      const positiveValue = invertForPositive ? -value : value;
+      return `${positiveValue >= 0 ? '+' : ''}${positiveValue}`;
+    }
+    const negativeValue = invertForPositive ? value : -value;
+    return `${negativeValue >= 0 ? '+' : ''}${negativeValue}`;
+  };
+
+  if (modifier.maxHp) parts.push(`${signed(modifier.maxHp)} HP`);
+  if (modifier.damage) parts.push(`${signed(modifier.damage)} damage`);
+  if (modifier.heal) parts.push(`${signed(modifier.heal)} healing`);
+  if (modifier.range) parts.push(`${signed(modifier.range)} range`);
+  if (modifier.attackCooldownMs) parts.push(`${signed(modifier.attackCooldownMs, true)} ms cooldown`);
+  if (modifier.defense) parts.push(`${signed(modifier.defense)} defense`);
+  if (modifier.regenHpPerSecond) parts.push(`${signed(modifier.regenHpPerSecond)} regen/s`);
+  if (modifier.lootChance) parts.push(`${signed(Math.round(modifier.lootChance * 100))}% loot chance`);
+  if (modifier.rewardSisu) parts.push(`${signed(modifier.rewardSisu)} wave SISU`);
+  return parts.join(', ');
+}
+
 function globalModifierHudEntry(state: RunState, definition: GlobalModifierDefinition, content: GameContent) {
   const stackCount = globalModifierStacks(state, definition);
   const total = definition.amountPerStack * stackCount;
@@ -1750,8 +1926,12 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
     return {
       title: state.phase === 'lost' ? 'Run Over' : 'Before The Run',
       body: state.phase === 'lost'
-        ? 'Cash out Steam, tweak the meta shop, then launch the next batch of sauna weirdos.'
-        : 'Use the shop before the first wave if you want a stronger long-term run.'
+        ? beerShopUnlocked(state)
+          ? 'Cash out Steam, tune the meta shop, grab something reckless from the bartender, then launch the next batch of sauna weirdos.'
+          : 'Cash out Steam, tweak the meta shop, then launch the next batch of sauna weirdos.'
+        : beerShopUnlocked(state)
+          ? 'Use the shop and bartender before the first wave if you want a stronger long-term run.'
+          : 'Use the shop before the first wave if you want a stronger long-term run.'
     };
   }
   if (state.overlayMode === 'paused') {
@@ -1846,7 +2026,8 @@ export function createInitialState(
   meta: MetaProgress = createDefaultMetaProgress(),
   seed = 123456789,
   showIntermission = false,
-  introOpen = false
+  introOpen = false,
+  activeAlcohols: ActiveAlcoholBuff[] = []
 ): RunState {
   const state: RunState = {
     phase: 'prep',
@@ -1871,6 +2052,7 @@ export function createInitialState(
     nextEnemyInstanceId: 1,
     nextLootInstanceId: 1,
     nextRecruitOfferId: 1,
+    nextBeerOfferId: 1,
     nextFxEventId: 1,
     nextDeathLogEntryId: 1,
     headerItems: [],
@@ -1879,6 +2061,8 @@ export function createInitialState(
     selectedInventoryDropId: null,
     recentDropId: null,
     recruitOffers: [],
+    beerShopOffers: [],
+    activeAlcohols: clone(activeAlcohols),
     subclassDraftQueue: [],
     subclassDraftDefenderId: null,
     subclassDraftUnlockLevel: null,
@@ -1900,6 +2084,9 @@ export function createInitialState(
   };
   state.defenders = buildRoster(state, content);
   state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
+  if (showIntermission && beerShopUnlocked(state)) {
+    rollBeerShopOffersIntoState(state, content);
+  }
   return state;
 }
 
@@ -1914,7 +2101,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
   }
   if (action.type === 'startNextRun') {
     return state.overlayMode === 'intermission'
-      ? createInitialState(content, state.meta, (Date.now() >>> 0) || 1, false)
+      ? createInitialState(content, state.meta, (Date.now() >>> 0) || 1, false, false, state.activeAlcohols)
       : state;
   }
   const next = clone(state);
@@ -2055,7 +2242,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         next.message = 'That hex is not available.';
         return next;
       }
-      if (boardDefenders(next).length >= content.config.boardCap) {
+      if (boardDefenders(next).length >= boardCap(next, content)) {
         next.message = 'Board cap reached.';
         return next;
       }
@@ -2219,11 +2406,53 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       if (next.phase === 'lost') {
         awardMeta(next);
       }
+      if (action.upgradeId === 'beer_shop_level' && !beerShopUnlocked(next)) {
+        next.message = 'Open the Beer Shop first.';
+        return next;
+      }
       const cost = metaCost(next, action.upgradeId, content);
       if (cost === null || next.meta.steam < cost) return next;
       next.meta.steam -= cost;
       next.meta.upgrades[action.upgradeId] += 1;
+      if (action.upgradeId === 'beer_shop_unlock') {
+        rollBeerShopOffersIntoState(next, content);
+      }
+      if (action.upgradeId === 'beer_shop_level') {
+        rollBeerShopOffersIntoState(next, content);
+      }
       next.message = `${content.metaUpgrades[action.upgradeId].name} purchased.`;
+      return next;
+    }
+    case 'buyBeerShopOffer': {
+      if (next.overlayMode !== 'intermission' || !next.meta.shopUnlocked || !beerShopUnlocked(next)) return next;
+      const offer = next.beerShopOffers.find((entry) => entry.offerId === action.offerId);
+      if (!offer) return next;
+      const definition = content.alcoholDefinitions[offer.alcoholId];
+      if (next.meta.steam < definition.price) {
+        next.message = `Not enough Steam for ${definition.name}.`;
+        return next;
+      }
+      const existing = activeAlcoholEntry(next, offer.alcoholId);
+      if (!existing && next.activeAlcohols.length >= beerActiveSlotCapForTier(beerShopTier(next))) {
+        next.message = 'No free drink slot. Dump an active drink first or stack one you already have.';
+        return next;
+      }
+      next.meta.steam -= definition.price;
+      if (existing) {
+        existing.stacks += 1;
+        next.message = `${definition.name} was poured again. The upside grows, and the downside doubles.`;
+      } else {
+        next.activeAlcohols.push({ alcoholId: offer.alcoholId, stacks: 1 });
+        next.message = `${definition.name} is now active for the next run.`;
+      }
+      return next;
+    }
+    case 'removeActiveAlcohol': {
+      if (next.overlayMode !== 'intermission') return next;
+      const index = next.activeAlcohols.findIndex((entry) => entry.alcoholId === action.alcoholId);
+      if (index < 0) return next;
+      const [removed] = next.activeAlcohols.splice(index, 1);
+      next.message = `${content.alcoholDefinitions[removed.alcoholId].name} was dumped out with no refund.`;
       return next;
     }
     case 'unlockMetaShop': {
@@ -2268,7 +2497,9 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     next.saunaHp = 0;
     next.phase = 'lost';
     next.overlayMode = 'intermission';
+    next.activeAlcohols = [];
     awardMeta(next);
+    rollBeerShopOffersIntoState(next, content);
     next.message = 'The sauna went cold. Spend Steam, regroup, and prep the next shift.';
     return next;
   }
@@ -2294,6 +2525,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const boardCount = boardDefenders(state).length;
   const readyBenchCount = state.defenders.filter((defender) => defender.location === 'ready').length;
   const freeRecruitSlots = Math.max(0, rosterCap(state, content) - livingDefenders(state).length);
+  const beerTier = beerShopTier(state);
   const activeGlobalModifiers = state.activeGlobalModifierIds
     .map((modifierId) => globalModifierHudEntry(state, content.globalModifierDefinitions[modifierId], content));
   const draftGlobalModifiers = state.globalModifierDraftOffers
@@ -2325,8 +2557,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     nextWavePattern: patternLabel(currentWave),
     pressureSignals: pressureSignals(state, content),
     boardCount,
-    boardCap: content.config.boardCap,
-    placedBoardLabel: `${boardCount}/${content.config.boardCap} heroes placed`,
+    boardCap: boardCap(state, content),
+    placedBoardLabel: `${boardCount}/${boardCap(state, content)} heroes placed`,
     rosterCount: livingDefenders(state).length,
     rosterCap: rosterCap(state, content),
     inventoryUnlocked: inventoryUnlocked(state),
@@ -2375,6 +2607,40 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     metaShopUnlockCost: content.config.metaShopUnlockCost,
     canUnlockMetaShop: state.meta.steam >= content.config.metaShopUnlockCost && !state.meta.shopUnlocked,
     metaShopUnlocked: state.meta.shopUnlocked,
+    beerShopUnlocked: beerShopUnlocked(state),
+    beerShopLevel: beerTier,
+    beerOfferCount: beerOfferCountForTier(beerTier),
+    beerActiveSlotCount: state.activeAlcohols.length,
+    beerActiveSlotCap: beerActiveSlotCapForTier(beerTier),
+    beerShopOffers: state.beerShopOffers.map((offer) => {
+      const definition = content.alcoholDefinitions[offer.alcoholId];
+      return {
+        id: offer.offerId,
+        alcoholId: offer.alcoholId,
+        name: definition.name,
+        flavorText: definition.flavorText,
+        price: definition.price,
+        artPath: definition.artPath,
+        positiveEffectText: formatAlcoholModifier(definition.positive, 'positive'),
+        negativeEffectText: formatAlcoholModifier(definition.negative, 'negative'),
+        canBuy: canBuyBeerOffer(state, offer, content),
+        purchaseLabel: activeAlcoholEntry(state, offer.alcoholId)
+          ? `Stack Drink (${definition.price} Steam)`
+          : `Buy Drink (${definition.price} Steam)`
+      };
+    }),
+    activeAlcohols: state.activeAlcohols.map((active) => {
+      const definition = content.alcoholDefinitions[active.alcoholId];
+      return {
+        alcoholId: active.alcoholId,
+        name: definition.name,
+        flavorText: definition.flavorText,
+        artPath: definition.artPath,
+        stacks: active.stacks,
+        positiveEffectText: formatAlcoholModifier(scaledPositiveAlcoholModifier(definition, active.stacks), 'positive'),
+        negativeEffectText: formatAlcoholModifier(scaledNegativeAlcoholModifier(definition, active.stacks), 'negative')
+      };
+    }),
     actionTitle: action.title,
     actionBody: action.body,
     readyBenchCount,
@@ -2538,13 +2804,14 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     wavePreview: waveCounts(currentWave, content),
     metaUpgrades: META_IDS.map((upgradeId) => {
       const cost = metaCost(state, upgradeId, content);
+      const blocked = upgradeId === 'beer_shop_level' && !beerShopUnlocked(state);
       return {
         id: upgradeId,
         name: content.metaUpgrades[upgradeId].name,
         description: content.metaUpgrades[upgradeId].description,
         level: state.meta.upgrades[upgradeId],
         cost,
-        affordable: cost !== null && state.meta.steam >= cost,
+        affordable: !blocked && cost !== null && state.meta.steam >= cost,
         maxed: cost === null
       };
     })
@@ -2556,6 +2823,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     enemyArchetypes: content.enemyArchetypes,
     itemDefinitions: content.itemDefinitions,
     skillDefinitions: content.skillDefinitions,
+    alcoholDefinitions: content.alcoholDefinitions,
     globalModifierDefinitions: content.globalModifierDefinitions,
     metaUpgrades: content.metaUpgrades,
     hud,

@@ -1052,6 +1052,25 @@ em {
   white-space: nowrap;
 }
 
+.beer-shop-section {
+  margin-top: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.beer-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.beer-card {
+  align-content: start;
+  gap: 10px;
+}
+
+.active-beer-grid {
+  margin-top: 4px;
+}
+
 @media (max-width: 1080px) {
   .hero,
   .playfield {

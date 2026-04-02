@@ -42,11 +42,11 @@ describe('Sauna Defense V2 logic', () => {
 
     const state = createInitialState(gameContent, meta, 42);
 
-    expect(state.defenders).toHaveLength(gameContent.config.baseRosterCap + 1);
+    expect(state.defenders).toHaveLength(gameContent.config.baseRosterCap);
     expect(state.defenders.filter((defender) => defender.location === 'sauna')).toHaveLength(1);
-    expect(state.defenders.filter((defender) => defender.location === 'ready')).toHaveLength(
-      gameContent.config.baseRosterCap
-    );
+    const snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.rosterCap).toBe(gameContent.config.baseRosterCap + 1);
+    expect(snapshot.hud.boardCap).toBe(gameContent.config.boardCap + 1);
   });
 
   it('opens the meta shop before a fresh run when requested', () => {
@@ -100,6 +100,25 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(state.defenders.filter((defender) => defender.location === 'board')).toHaveLength(4);
     expect(state.message).toContain('Board cap');
+  });
+
+  it('lets More Weirdos increase the number of defenders that fit on the board', () => {
+    const meta = createDefaultMetaProgress();
+    meta.upgrades.roster_capacity = 1;
+    let state = createInitialState(gameContent, meta, 42);
+    const deployable = state.defenders.filter((defender) => defender.location === 'ready' || defender.location === 'sauna');
+
+    for (let index = 0; index < 5; index += 1) {
+      state = applyAction(state, { type: 'selectDefender', defenderId: deployable[index].id }, gameContent);
+      state = applyAction(
+        state,
+        { type: 'placeSelectedDefender', tile: { q: index - 2, r: -2 } },
+        gameContent
+      );
+    }
+
+    expect(state.defenders.filter((defender) => defender.location === 'board')).toHaveLength(5);
+    expect(state.message).not.toContain('Board cap');
   });
 
   it('moves a bench reserve into the sauna when the board becomes full and the sauna is empty', () => {
@@ -318,8 +337,11 @@ describe('Sauna Defense V2 logic', () => {
     state = applyAction(state, { type: 'startNextRun' }, gameContent);
 
     expect(state.meta.upgrades.roster_capacity).toBe(1);
-    expect(state.defenders).toHaveLength(gameContent.config.baseRosterCap + 1);
+    expect(state.defenders).toHaveLength(gameContent.config.baseRosterCap);
     expect(state.defenders.filter((defender) => defender.location === 'sauna')).toHaveLength(1);
+    const snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.rosterCap).toBe(gameContent.config.baseRosterCap + 1);
+    expect(snapshot.hud.boardCap).toBe(gameContent.config.boardCap + 1);
   });
 
   it('auto deploys the sauna defender when a board defender dies', () => {

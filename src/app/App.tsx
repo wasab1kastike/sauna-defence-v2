@@ -1029,11 +1029,11 @@ export function App() {
                 <strong>Loot Starts In The Header</strong>
                 <small>Fresh drops land in the header first. Overflow only goes into the stash after you unlock it in the metashop.</small>
               </div>
-              <div className="inventory-card">
-                <strong>Runs Build In Cycles</strong>
-                <small>Normal waves chain forward, bosses create a break, and the metashop only appears between runs.</small>
+                <div className="inventory-card">
+                  <strong>Runs Build In Cycles</strong>
+                  <small>Normal waves chain forward, bosses create a break, and both the metashop and beer shop only appear between runs.</small>
+                </div>
               </div>
-            </div>
             <div className="button-row intermission-actions">
               <button
                 className="secondary-button"
@@ -1115,27 +1115,92 @@ export function App() {
                   : 'No metashop before the first run. Once you survive a shift, you can pay to open it permanently.'}
             </p>
             {snapshot.hud.metaShopUnlocked ? (
-              <div className="intermission-grid">
-                {snapshot.hud.metaUpgrades.map((upgrade) => (
-                  <div key={upgrade.id} className="inventory-card">
-                    <div>
-                      <strong>{upgrade.name}</strong>
-                      <small>{upgrade.description}</small>
-                      <small>
-                        Level {upgrade.level}
-                        {upgrade.maxed ? ' · MAX' : ` · Cost ${upgrade.cost}`}
-                      </small>
+              <>
+                <div className="intermission-grid">
+                  {snapshot.hud.metaUpgrades.map((upgrade) => (
+                    <div key={upgrade.id} className="inventory-card">
+                      <div>
+                        <strong>{upgrade.name}</strong>
+                        <small>{upgrade.description}</small>
+                        <small>
+                          Level {upgrade.level}
+                          {upgrade.maxed ? ' · MAX' : ` · Cost ${upgrade.cost}`}
+                        </small>
+                      </div>
+                      <button
+                        className="mini-button"
+                        disabled={!upgrade.affordable || upgrade.maxed}
+                        onClick={() => runtimeRef.current?.dispatch({ type: 'buyMetaUpgrade', upgradeId: upgrade.id })}
+                      >
+                        Buy Upgrade
+                      </button>
                     </div>
-                    <button
-                      className="mini-button"
-                      disabled={!upgrade.affordable || upgrade.maxed}
-                      onClick={() => runtimeRef.current?.dispatch({ type: 'buyMetaUpgrade', upgradeId: upgrade.id })}
-                    >
-                      Buy Upgrade
-                    </button>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+
+                {snapshot.hud.beerShopUnlocked ? (
+                  <section className="beer-shop-section">
+                    <div className="panel-head">
+                      <h2>Beer Shop</h2>
+                      <span>
+                        Level {snapshot.hud.beerShopLevel} · {snapshot.hud.beerActiveSlotCount}/{snapshot.hud.beerActiveSlotCap} active drinks
+                      </span>
+                    </div>
+                    <p className="panel-copy">
+                      The bartender sells risky run-long booze. Buying the same drink again stacks the upside and doubles the downside.
+                    </p>
+                    <div className="intermission-grid beer-grid">
+                      {snapshot.hud.beerShopOffers.map((offer) => (
+                        <div key={offer.id} className="inventory-card beer-card">
+                          <img src={assetUrl(offer.artPath)} alt={offer.name} className="detail-art compact-detail-art" />
+                          <div>
+                            <strong>{offer.name}</strong>
+                            <small>{offer.flavorText}</small>
+                            <small>{offer.positiveEffectText}</small>
+                            <small>{offer.negativeEffectText}</small>
+                          </div>
+                          <button
+                            className="mini-button"
+                            disabled={!offer.canBuy}
+                            onClick={() => runtimeRef.current?.dispatch({ type: 'buyBeerShopOffer', offerId: offer.id })}
+                          >
+                            {offer.purchaseLabel}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="intermission-grid beer-grid active-beer-grid">
+                      {snapshot.hud.activeAlcohols.length > 0 ? (
+                        snapshot.hud.activeAlcohols.map((drink) => (
+                          <div key={drink.alcoholId} className="inventory-card beer-card">
+                            <img src={assetUrl(drink.artPath)} alt={drink.name} className="detail-art compact-detail-art" />
+                            <div>
+                              <strong>{drink.name}</strong>
+                              <small>{drink.flavorText}</small>
+                              <small>Stacks {drink.stacks}</small>
+                              <small>{drink.positiveEffectText}</small>
+                              <small>{drink.negativeEffectText}</small>
+                            </div>
+                            <button
+                              className="ghost-button"
+                              onClick={() => runtimeRef.current?.dispatch({ type: 'removeActiveAlcohol', alcoholId: drink.alcoholId })}
+                            >
+                              Dump Out
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="inventory-card unlock-card">
+                          <div>
+                            <strong>No active drinks</strong>
+                            <small>Buy a round now if you want run-long buffs with a little regret mixed in.</small>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                ) : null}
+              </>
             ) : (
               <div className="inventory-card unlock-card">
                 <div>
