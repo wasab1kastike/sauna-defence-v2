@@ -52,9 +52,9 @@ const ENEMY_PORTRAIT_URLS = [
 ];
 const DEFENDER_SPRITE_SHEET_URL = `${import.meta.env.BASE_URL}defenders/sauna-party-sheet.png`;
 const DEFENDER_ROLE_PORTRAITS: Record<DefenderTemplateId, number[]> = {
-  guardian: [2],
-  hurler: [0, 1],
-  mender: [3]
+  guardian: [0],
+  hurler: [1, 3],
+  mender: [2]
 };
 const ENEMY_ROLE_PORTRAITS: Record<EnemyUnitId, number[]> = {
   raider: [0],
@@ -65,6 +65,7 @@ const ENEMY_ROLE_PORTRAITS: Record<EnemyUnitId, number[]> = {
 let defenderPortraits: Array<HTMLImageElement | null | undefined> | undefined;
 let enemyPortraits: Array<HTMLImageElement | null | undefined> | undefined;
 let defenderSpriteSheet: HTMLImageElement | null | undefined;
+let processedPortraits = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 
 function getBoardLayout(width: number, height: number, radius: number): BoardLayout {
   const padding = Math.max(14, Math.min(width, height) * 0.04);
@@ -531,14 +532,14 @@ function drawUnitShadow(
 
 function drawSprite(
   ctx: CanvasRenderingContext2D,
-  image: HTMLImageElement,
+  image: HTMLImageElement | HTMLCanvasElement,
   source: { x: number; y: number; width: number; height: number } | null,
   center: { x: number; y: number },
   maxWidth: number,
   maxHeight: number
 ) {
-  const sourceWidth = source?.width ?? image.naturalWidth;
-  const sourceHeight = source?.height ?? image.naturalHeight;
+  const sourceWidth = source?.width ?? (image instanceof HTMLImageElement ? image.naturalWidth : image.width);
+  const sourceHeight = source?.height ?? (image instanceof HTMLImageElement ? image.naturalHeight : image.height);
   const dims = fitSpriteDimensions(sourceWidth, sourceHeight, maxWidth, maxHeight);
   const footY = center.y + maxHeight * 0.22;
   const destX = center.x - dims.width / 2;
@@ -558,6 +559,76 @@ function drawSprite(
   ctx.restore();
 }
 
+function isBackgroundPixel(data: Uint8ClampedArray, offset: number) {
+  const r = data[offset];
+  const g = data[offset + 1];
+  const b = data[offset + 2];
+  const a = data[offset + 3];
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  return a > 0 && max > 212 && max - min < 24;
+}
+
+function getProcessedPortrait(image: HTMLImageElement | null): HTMLCanvasElement | HTMLImageElement | null {
+  if (!image || !image.complete || image.naturalWidth === 0 || typeof document === 'undefined') {
+    return image;
+  }
+
+  const cached = processedPortraits.get(image);
+  if (cached) {
+    return cached;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) {
+    return image;
+  }
+
+  ctx.drawImage(image, 0, 0);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const { data, width, height } = imageData;
+  const visited = new Uint8Array(width * height);
+  const queue: number[] = [];
+
+  const enqueue = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const index = y * width + x;
+    if (visited[index]) return;
+    visited[index] = 1;
+    const offset = index * 4;
+    if (!isBackgroundPixel(data, offset)) return;
+    queue.push(index);
+  };
+
+  for (let x = 0; x < width; x += 1) {
+    enqueue(x, 0);
+    enqueue(x, height - 1);
+  }
+  for (let y = 0; y < height; y += 1) {
+    enqueue(0, y);
+    enqueue(width - 1, y);
+  }
+
+  while (queue.length > 0) {
+    const index = queue.pop()!;
+    const offset = index * 4;
+    data[offset + 3] = 0;
+    const x = index % width;
+    const y = Math.floor(index / width);
+    enqueue(x + 1, y);
+    enqueue(x - 1, y);
+    enqueue(x, y + 1);
+    enqueue(x, y - 1);
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  processedPortraits.set(image, canvas);
+  return canvas;
+}
+
 function drawDefenderPortrait(
   ctx: CanvasRenderingContext2D,
   center: { x: number; y: number },
@@ -569,8 +640,9 @@ function drawDefenderPortrait(
   const portraitIndex = rolePortraits[styleIndex % rolePortraits.length];
 
   const portrait = getDefenderPortrait(portraitIndex);
-  if (portrait && portrait.complete && portrait.naturalWidth > 0) {
-    drawSprite(ctx, portrait, null, center, radius * 2.45, radius * 2.85);
+  const processedPortrait = getProcessedPortrait(portrait);
+  if (processedPortrait && portrait && portrait.complete && portrait.naturalWidth > 0) {
+    drawSprite(ctx, processedPortrait, null, center, radius * 2.45, radius * 2.85);
     return true;
   }
 
@@ -596,11 +668,12 @@ function drawEnemyPortrait(
   const rolePortraits = ENEMY_ROLE_PORTRAITS[archetypeId] ?? [0];
   const portraitIndex = rolePortraits[styleIndex % rolePortraits.length];
   const portrait = getEnemyPortrait(portraitIndex);
-  if (!portrait || !portrait.complete || portrait.naturalWidth === 0) {
+  const processedPortrait = getProcessedPortrait(portrait);
+  if (!processedPortrait || !portrait || !portrait.complete || portrait.naturalWidth === 0) {
     return false;
   }
 
-  drawSprite(ctx, portrait, null, center, radius * 2.2, radius * 3.3);
+  drawSprite(ctx, processedPortrait, null, center, radius * 2.2, radius * 3.3);
   return true;
 }
 
