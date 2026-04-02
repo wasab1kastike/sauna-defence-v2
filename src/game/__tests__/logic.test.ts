@@ -869,6 +869,13 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.canOpenRecruitment).toBe(true);
     expect(snapshot.hud.recruitmentStatusText.length).toBeGreaterThan(0);
     expect(snapshot.hud.recruitLevelUpCost).toBe(2);
+    expect(snapshot.hud.recruitLevelOdds).toEqual([
+      { level: 1, chance: 1 },
+      { level: 2, chance: 0 },
+      { level: 3, chance: 0 },
+      { level: 4, chance: 0 },
+      { level: 5, chance: 0 }
+    ]);
   });
 
   it('uses the expanded grid configuration for the new larger battlefield', () => {

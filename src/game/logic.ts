@@ -997,6 +997,27 @@ function recruitStartingLevel(state: RunState): number {
   return level;
 }
 
+function recruitLevelOdds(bonus: number): Array<{ level: number; chance: number }> {
+  const toLv2 = Math.min(0.9, bonus * 0.24);
+  const toLv3 = Math.min(0.72, Math.max(0, bonus - 1) * 0.18);
+  const toLv4 = Math.min(0.5, Math.max(0, bonus - 3) * 0.12);
+  const toLv5 = Math.min(0.35, Math.max(0, bonus - 6) * 0.08);
+
+  const level5 = toLv2 * toLv3 * toLv4 * toLv5;
+  const level4 = toLv2 * toLv3 * toLv4 * (1 - toLv5);
+  const level3 = toLv2 * toLv3 * (1 - toLv4);
+  const level2 = toLv2 * (1 - toLv3);
+  const level1 = 1 - toLv2;
+
+  return [
+    { level: 1, chance: level1 },
+    { level: 2, chance: level2 },
+    { level: 3, chance: level3 },
+    { level: 4, chance: level4 },
+    { level: 5, chance: level5 }
+  ];
+}
+
 function setDefenderStartingLevel(defender: DefenderInstance, level: number): void {
   defender.level = level;
   defender.xp = xpForLevel(level);
@@ -2667,6 +2688,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     recruitRollCost: recruitRollCost(),
     recruitLevelBonus: state.recruitLevelBonus,
     recruitLevelUpCost: recruitLevelUpCost(state.recruitLevelUpCount),
+    recruitLevelOdds: recruitLevelOdds(state.recruitLevelBonus),
     canRollRecruitOffers: canRollRecruitOffers(state),
     canLevelUpRecruitment: canAccessRecruitment(state) && state.sisu.current >= recruitLevelUpCost(state.recruitLevelUpCount),
     hasRecruitOffers: state.recruitOffers.length > 0,

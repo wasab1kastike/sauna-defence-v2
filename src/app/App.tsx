@@ -477,6 +477,13 @@ export function App() {
                     </div>
                   </div>
                   <p className="panel-copy small-copy">{snapshot.hud.recruitmentStatusText}</p>
+                  <div className="tag-row compact-tags">
+                    {snapshot.hud.recruitLevelOdds.map((entry) => (
+                      <span key={entry.level} className="tag">
+                        Lv{entry.level} {Math.round(entry.chance * 100)}%
+                      </span>
+                    ))}
+                  </div>
                   {rosterFullNeedsReplacement ? (
                     <div className="tag-row compact-tags">
                       <span className="tag">

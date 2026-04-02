@@ -595,6 +595,11 @@ export interface HudRecruitOfferEntry {
   range: number;
 }
 
+export interface HudRecruitLevelOddsEntry {
+  level: number;
+  chance: number;
+}
+
 export interface HudSubclassDraftEntry {
   id: DefenderSubclassId;
   name: string;
@@ -652,6 +657,7 @@ export interface HudViewModel {
   recruitRollCost: number;
   recruitLevelBonus: number;
   recruitLevelUpCost: number;
+  recruitLevelOdds: HudRecruitLevelOddsEntry[];
   canRollRecruitOffers: boolean;
   canLevelUpRecruitment: boolean;
   hasRecruitOffers: boolean;
