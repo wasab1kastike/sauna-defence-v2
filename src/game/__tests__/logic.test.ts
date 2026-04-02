@@ -399,7 +399,7 @@ describe('Sauna Defense V2 logic', () => {
 
   it('tracks selected loot details with art and flavor text', () => {
     let state = prepState();
-    state.inventory.push({
+    state.headerItems.push({
       instanceId: 1,
       kind: 'item',
       definitionId: 'ladle',
@@ -419,16 +419,17 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.selectedInventoryEntry?.flavorText).toContain('soup');
   });
 
-  it('keeps inventory closed by default and toggles it open', () => {
+  it('keeps the overflow stash locked until the metashop upgrade opens it', () => {
     let state = prepState();
 
     expect(state.inventoryOpen).toBe(false);
 
     state = applyAction(state, { type: 'toggleInventory' }, gameContent);
-    expect(state.inventoryOpen).toBe(true);
-
-    state = applyAction(state, { type: 'toggleInventory' }, gameContent);
     expect(state.inventoryOpen).toBe(false);
+
+    state.meta.upgrades.inventory_slots = 1;
+    state = applyAction(state, { type: 'toggleInventory' }, gameContent);
+    expect(state.inventoryOpen).toBe(true);
   });
 
   it('keeps recruitment closed by default and toggles it open', () => {
@@ -460,6 +461,7 @@ describe('Sauna Defense V2 logic', () => {
 
   it('closes recruitment when opening inventory and closes inventory when opening recruitment', () => {
     let state = prepState();
+    state.meta.upgrades.inventory_slots = 1;
 
     state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
     expect(state.recruitmentOpen).toBe(true);
@@ -563,7 +565,7 @@ describe('Sauna Defense V2 logic', () => {
     let state = prepState();
     const target = state.defenders.find((defender) => defender.location === 'ready');
     expect(target).toBeTruthy();
-    state.inventory.push({
+    state.headerItems.push({
       instanceId: 2,
       kind: 'item',
       definitionId: 'ladle',
@@ -581,7 +583,7 @@ describe('Sauna Defense V2 logic', () => {
 
     const updated = state.defenders.find((defender) => defender.id === target!.id);
     expect(updated?.items).toContain('ladle');
-    expect(state.inventory).toHaveLength(0);
+    expect(state.headerItems).toHaveLength(0);
   });
 
   it('falls back to another defender when the selected one has no valid slot', () => {
@@ -592,7 +594,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(backup).toBeTruthy();
 
     selected!.skills.push('fireball');
-    state.inventory.push({
+    state.headerSkills.push({
       instanceId: 3,
       kind: 'skill',
       definitionId: 'blink_step',
@@ -612,7 +614,139 @@ describe('Sauna Defense V2 logic', () => {
     const backupAfter = state.defenders.find((defender) => defender.id === backup!.id);
     expect(selectedAfter?.skills).toEqual(['fireball']);
     expect(backupAfter?.skills).toContain('blink_step');
+    expect(state.headerSkills).toHaveLength(0);
+  });
+
+  it('routes fresh boss loot into the header rows before using the stash', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(attacker).toBeTruthy();
+    attacker!.location = 'board';
+    attacker!.tile = { q: 0, r: -1 };
+    attacker!.stats.damage = 99;
+    attacker!.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [{ atMs: 999999, enemyId: 'raider', laneIndex: 0 }];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'chieftain',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -2 },
+      hp: 1,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.headerItems.length + state.headerSkills.length).toBe(1);
     expect(state.inventory).toHaveLength(0);
+  });
+
+  it('sends overflow loot to the stash only after the stash upgrade is unlocked', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(attacker).toBeTruthy();
+    attacker!.location = 'board';
+    attacker!.tile = { q: 0, r: -1 };
+    attacker!.stats.damage = 99;
+    attacker!.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.meta.upgrades.inventory_slots = 1;
+    state.headerItems = Array.from({ length: gameContent.config.headerItemCap }, (_, index) => ({
+      instanceId: 100 + index,
+      kind: 'item',
+      definitionId: 'ladle',
+      rarity: 'common',
+      name: 'Lucky Ladle',
+      effectText: '+5 HP, -40 ms attack speed.',
+      flavorText: 'Still warm from a soup no one admits making.',
+      artPath: 'loot/lucky-ladle.svg',
+      waveFound: 1,
+      sourceEnemyId: 'raider'
+    }));
+    state.headerSkills = Array.from({ length: gameContent.config.headerSkillCap }, (_, index) => ({
+      instanceId: 200 + index,
+      kind: 'skill',
+      definitionId: 'fireball',
+      rarity: 'rare',
+      name: 'Fireball',
+      effectText: 'Basic attacks splash ember damage to nearby enemies.',
+      flavorText: 'Throws a rude little sun at anyone standing too close.',
+      artPath: 'loot/fireball.svg',
+      waveFound: 1,
+      sourceEnemyId: 'raider'
+    }));
+    state.pendingSpawns = [{ atMs: 999999, enemyId: 'raider', laneIndex: 0 }];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'chieftain',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -2 },
+      hp: 1,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.inventory).toHaveLength(1);
+    expect(state.message).toContain('Overflow Stash');
+  });
+
+  it('drops extra loot on the floor when header rows are full and the stash is still locked', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(attacker).toBeTruthy();
+    attacker!.location = 'board';
+    attacker!.tile = { q: 0, r: -1 };
+    attacker!.stats.damage = 99;
+    attacker!.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.headerItems = Array.from({ length: gameContent.config.headerItemCap }, (_, index) => ({
+      instanceId: 300 + index,
+      kind: 'item',
+      definitionId: 'ladle',
+      rarity: 'common',
+      name: 'Lucky Ladle',
+      effectText: '+5 HP, -40 ms attack speed.',
+      flavorText: 'Still warm from a soup no one admits making.',
+      artPath: 'loot/lucky-ladle.svg',
+      waveFound: 1,
+      sourceEnemyId: 'raider'
+    }));
+    state.headerSkills = Array.from({ length: gameContent.config.headerSkillCap }, (_, index) => ({
+      instanceId: 400 + index,
+      kind: 'skill',
+      definitionId: 'fireball',
+      rarity: 'rare',
+      name: 'Fireball',
+      effectText: 'Basic attacks splash ember damage to nearby enemies.',
+      flavorText: 'Throws a rude little sun at anyone standing too close.',
+      artPath: 'loot/fireball.svg',
+      waveFound: 1,
+      sourceEnemyId: 'raider'
+    }));
+    state.pendingSpawns = [{ atMs: 999999, enemyId: 'raider', laneIndex: 0 }];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'chieftain',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -2 },
+      hp: 1,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.inventory).toHaveLength(0);
+    expect(state.headerItems).toHaveLength(gameContent.config.headerItemCap);
+    expect(state.headerSkills).toHaveLength(gameContent.config.headerSkillCap);
+    expect(state.message).toContain('no room');
   });
 
   it('creates visible combat fx and brief hit-stop for skill procs', () => {
@@ -693,7 +827,7 @@ describe('Sauna Defense V2 logic', () => {
     attacker!.location = 'board';
     attacker!.tile = { q: 0, r: -1 };
     attacker!.attackReadyAtMs = 0;
-    attacker!.xp = 35;
+    attacker!.xp = 17;
     attacker!.level = 4;
     attacker!.stats.damage = 2;
     state.phase = 'wave';
@@ -730,7 +864,7 @@ describe('Sauna Defense V2 logic', () => {
     attacker!.location = 'board';
     attacker!.tile = { q: 0, r: -1 };
     attacker!.attackReadyAtMs = 0;
-    attacker!.xp = 125;
+    attacker!.xp = 117;
     attacker!.level = 9;
     attacker!.subclassIds = ['stonewall'];
     attacker!.stats.damage = 2;
@@ -932,7 +1066,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(mender).toBeTruthy();
 
     state.activeGlobalModifierIds = ['whisk_discipline', 'fallen_saints'];
-    state.inventory.push({
+    state.headerItems.push({
       instanceId: 99,
       kind: 'item',
       definitionId: 'iron_whisk',
@@ -959,6 +1093,19 @@ describe('Sauna Defense V2 logic', () => {
     menderAfterEquip!.hp = 0;
     snapshot = createSnapshot(state, gameContent);
     expect(snapshot.hud.globalModifiers.find((entry) => entry.id === 'fallen_saints')?.stackCount).toBe(1);
+  });
+
+  it('supports global modifiers tied to the newer milestone subclass branches', () => {
+    const state = prepState();
+    const guardian = state.defenders.find((entry) => entry.templateId === 'guardian');
+    expect(guardian).toBeTruthy();
+    guardian!.subclassIds = ['stonewall', 'iron_bastion'];
+    state.activeGlobalModifierIds = ['bastion_engine'];
+
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(snapshot.hud.globalModifiers.find((entry) => entry.id === 'bastion_engine')?.stackCount).toBe(1);
+    expect(snapshot.hud.globalModifiers.find((entry) => entry.id === 'bastion_engine')?.description).toContain('Iron Bastions');
   });
 
   it('reduces incoming defender damage by defense but never below one', () => {

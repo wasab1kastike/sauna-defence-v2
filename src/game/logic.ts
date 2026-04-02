@@ -165,8 +165,21 @@ function rosterCap(state: RunState, content: GameContent): number {
   return content.config.baseRosterCap + state.meta.upgrades.roster_capacity;
 }
 
+function inventoryUnlocked(state: RunState): boolean {
+  return state.meta.upgrades.inventory_slots > 0;
+}
+
 function inventoryCap(state: RunState, content: GameContent): number {
-  return content.config.baseInventoryCap + state.meta.upgrades.inventory_slots;
+  if (!inventoryUnlocked(state)) return 0;
+  return content.config.baseInventoryCap + Math.max(0, state.meta.upgrades.inventory_slots - 1) * 2;
+}
+
+function headerItemCap(content: GameContent): number {
+  return content.config.headerItemCap;
+}
+
+function headerSkillCap(content: GameContent): number {
+  return content.config.headerSkillCap;
 }
 
 function itemSlotCap(state: RunState, content: GameContent): number {
@@ -208,7 +221,7 @@ function getDefender(state: RunState, defenderId: string | null): DefenderInstan
 function xpForLevel(level: number): number {
   let total = 0;
   for (let nextLevel = 2; nextLevel <= level; nextLevel += 1) {
-    total += 2 + nextLevel * 2;
+    total += nextLevel <= 5 ? nextLevel + 1 : 4 + nextLevel * 2;
   }
   return total;
 }
@@ -1039,8 +1052,50 @@ function moveDefenderTowardSaunaThreat(
   return true;
 }
 
+function allLootDrops(state: RunState): InventoryDrop[] {
+  return [...state.headerItems, ...state.headerSkills, ...state.inventory];
+}
+
+function setRecentLootFromState(state: RunState): void {
+  const drops = allLootDrops(state);
+  state.recentDropId = drops.length > 0 ? drops[drops.length - 1].instanceId : null;
+}
+
+function removeLootDrop(state: RunState, dropId: number): InventoryDrop | null {
+  const groups = [state.headerItems, state.headerSkills, state.inventory];
+  for (const group of groups) {
+    const index = group.findIndex((entry) => entry.instanceId === dropId);
+    if (index >= 0) {
+      const [removed] = group.splice(index, 1);
+      if (state.selectedInventoryDropId === dropId) {
+        state.selectedInventoryDropId = allLootDrops(state)[0]?.instanceId ?? null;
+      }
+      if (state.recentDropId === dropId) {
+        setRecentLootFromState(state);
+      }
+      return removed;
+    }
+  }
+  return null;
+}
+
+function storeLootDrop(state: RunState, drop: InventoryDrop, content: GameContent): 'header' | 'stash' | 'discarded' {
+  if (drop.kind === 'item' && state.headerItems.length < headerItemCap(content)) {
+    state.headerItems.push(drop);
+    return 'header';
+  }
+  if (drop.kind === 'skill' && state.headerSkills.length < headerSkillCap(content)) {
+    state.headerSkills.push(drop);
+    return 'header';
+  }
+  if (inventoryUnlocked(state) && state.inventory.length < inventoryCap(state, content)) {
+    state.inventory.push(drop);
+    return 'stash';
+  }
+  return 'discarded';
+}
+
 function maybeDrop(state: RunState, enemyId: EnemyUnitId, content: GameContent): void {
-  if (state.inventory.length >= inventoryCap(state, content)) return;
   const chance = enemyId === 'chieftain' ? content.config.bossLootChance : content.config.baseLootChance + state.meta.upgrades.loot_luck * 0.06;
   if (rng(state) > chance) return;
   const rarityRoll = rng(state);
@@ -1073,10 +1128,17 @@ function maybeDrop(state: RunState, enemyId: EnemyUnitId, content: GameContent):
     waveFound: state.waveIndex,
     sourceEnemyId: enemyId
   };
-  state.inventory.push(drop);
+  const storage = storeLootDrop(state, drop, content);
+  if (storage === 'discarded') {
+    state.message = `${drop.name} dropped, but there was no room. Buy the Overflow Stash in the shop to keep extra loot.`;
+    return;
+  }
   state.recentDropId = drop.instanceId;
   state.selectedInventoryDropId = drop.instanceId;
-  state.message = `${drop.name} looted. Pause if you want to think before equipping it.`;
+  state.message =
+    storage === 'header'
+      ? `${drop.name} dropped into the header loot bar.`
+      : `${drop.name} was sent to your Overflow Stash.`;
 }
 
 function grantXp(state: RunState, defender: DefenderInstance, amount: number, content: GameContent): string | null {
@@ -1378,7 +1440,7 @@ function metaCost(state: RunState, upgradeId: MetaUpgradeId, content: GameConten
 }
 
 function getInventoryDrop(state: RunState, dropId: number | null): InventoryDrop | null {
-  return dropId === null ? null : state.inventory.find((drop) => drop.instanceId === dropId) ?? null;
+  return dropId === null ? null : allLootDrops(state).find((drop) => drop.instanceId === dropId) ?? null;
 }
 
 function canEquipDrop(defender: DefenderInstance, drop: InventoryDrop, state: RunState, content: GameContent): boolean {
@@ -1404,8 +1466,7 @@ function equipDropOnDefender(
   defender: DefenderInstance,
   content: GameContent
 ): boolean {
-  const dropIndex = state.inventory.findIndex((entry) => entry.instanceId === drop.instanceId);
-  if (dropIndex < 0 || !canEquipDrop(defender, drop, state, content)) return false;
+  if (!getInventoryDrop(state, drop.instanceId) || !canEquipDrop(defender, drop, state, content)) return false;
 
   const prevMax = derivedStats(state, defender, content).maxHp;
   if (drop.kind === 'item') {
@@ -1414,12 +1475,7 @@ function equipDropOnDefender(
     defender.skills.push(drop.definitionId as SkillId);
   }
 
-  state.inventory.splice(dropIndex, 1);
-  state.recentDropId = state.inventory.length > 0 ? state.inventory[state.inventory.length - 1].instanceId : null;
-  state.selectedInventoryDropId =
-    state.selectedInventoryDropId === drop.instanceId
-      ? state.inventory[0]?.instanceId ?? null
-      : state.selectedInventoryDropId;
+  removeLootDrop(state, drop.instanceId);
   defender.hp += Math.max(0, derivedStats(state, defender, content).maxHp - prevMax);
   normalizeDefender(state, defender, content);
   return true;
@@ -1564,6 +1620,12 @@ function nextSubclassMilestoneLevel(defender: DefenderInstance, content: GameCon
   return SUBCLASS_MILESTONE_LEVELS.find((level) => defender.level >= level ? !unlockedLevels.has(level) : true) ?? null;
 }
 
+function xpToNextSubclassMilestone(defender: DefenderInstance, content: GameContent): number | null {
+  const next = nextSubclassMilestoneLevel(defender, content);
+  if (next === null) return null;
+  return Math.max(0, xpForLevel(next) - defender.xp);
+}
+
 function subclassSummary(defender: DefenderInstance, content: GameContent): string {
   const unlocked = unlockedSubclassDefinitions(defender, content);
   if (unlocked.length === 0) {
@@ -1576,12 +1638,15 @@ function subclassSummary(defender: DefenderInstance, content: GameContent): stri
 function subclassDescription(defender: DefenderInstance, content: GameContent): string {
   const unlocked = unlockedSubclassDefinitions(defender, content);
   const next = nextSubclassMilestoneLevel(defender, content);
+  const xpToNext = xpToNextSubclassMilestone(defender, content);
   if (unlocked.length === 0) {
-    return next ? `This hero has no subclass path yet. Reach level ${next} to pick the first branch.` : 'This hero already unlocked every subclass milestone.';
+    return next
+      ? `No branch chosen yet. Reach level ${next} to branch, ${xpToNext} XP away.`
+      : 'This hero already unlocked every subclass milestone.';
   }
   const active = unlocked.map((definition) => definition.name).join(', ');
   return next
-    ? `Active branches: ${active}. Next branch unlocks at level ${next}.`
+    ? `Active branches: ${active}. Next branch unlocks at level ${next}, ${xpToNext} XP away.`
     : `Active branches: ${active}. Every subclass milestone is already unlocked.`;
 }
 
@@ -1773,6 +1838,8 @@ export function createInitialState(
     nextRecruitOfferId: 1,
     nextFxEventId: 1,
     nextDeathLogEntryId: 1,
+    headerItems: [],
+    headerSkills: [],
     inventory: [],
     selectedInventoryDropId: null,
     recentDropId: null,
@@ -1904,7 +1971,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     case 'selectInventoryDrop': {
       const drop = getInventoryDrop(next, action.dropId);
       if (!drop) return next;
-      next.inventoryOpen = true;
+      next.inventoryOpen = next.inventory.some((entry) => entry.instanceId === drop.instanceId) && inventoryUnlocked(next);
       next.selectedInventoryDropId = drop.instanceId;
       next.message = `${drop.name} ready to equip.`;
       return next;
@@ -1914,6 +1981,11 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     case 'toggleInventory':
       if (next.overlayMode === 'intermission') return next;
+      if (!inventoryUnlocked(next)) {
+        next.inventoryOpen = false;
+        next.message = 'Overflow Stash unlocks from the metashop.';
+        return next;
+      }
       next.inventoryOpen = !next.inventoryOpen;
       if (next.inventoryOpen) {
         next.recruitmentOpen = false;
@@ -2198,9 +2270,10 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     placedBoardLabel: `${boardCount}/${content.config.boardCap} heroes placed`,
     rosterCount: livingDefenders(state).length,
     rosterCap: rosterCap(state, content),
+    inventoryUnlocked: inventoryUnlocked(state),
     inventoryCount: state.inventory.length,
     inventoryCap: inventoryCap(state, content),
-    inventoryOpen: state.inventoryOpen,
+    inventoryOpen: inventoryUnlocked(state) ? state.inventoryOpen : false,
     recruitmentOpen: state.recruitmentOpen,
     hasRecentLoot: state.recentDropId !== null,
     saunaOccupantName: saunaDefender?.name ?? null,
@@ -2287,6 +2360,30 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       enemyName: entry.enemyName,
       text: entry.text
     })),
+    headerItemEntries: state.headerItems.map((drop) => ({
+      id: drop.instanceId,
+      kind: drop.kind,
+      name: drop.name,
+      rarity: drop.rarity,
+      effectText: drop.effectText,
+      flavorText: drop.flavorText,
+      artPath: drop.artPath,
+      waveFound: drop.waveFound,
+      isRecent: drop.instanceId === state.recentDropId,
+      selected: drop.instanceId === state.selectedInventoryDropId
+    })),
+    headerSkillEntries: state.headerSkills.map((drop) => ({
+      id: drop.instanceId,
+      kind: drop.kind,
+      name: drop.name,
+      rarity: drop.rarity,
+      effectText: drop.effectText,
+      flavorText: drop.flavorText,
+      artPath: drop.artPath,
+      waveFound: drop.waveFound,
+      isRecent: drop.instanceId === state.recentDropId,
+      selected: drop.instanceId === state.selectedInventoryDropId
+    })),
     inventoryEntries: state.inventory.map((drop) => ({
       id: drop.instanceId,
       kind: drop.kind,
@@ -2323,6 +2420,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         subclassName: subclassSummary(selected, content),
         subclassDescription: subclassDescription(selected, content),
         nextSubclassUnlockLevel: nextSubclassMilestoneLevel(selected, content),
+        xpToNextBranch: xpToNextSubclassMilestone(selected, content),
         level: selected.level,
         xp: selected.xp,
         nextLevelXp: selected.level >= MAX_DEFENDER_LEVEL ? null : xpForLevel(selected.level + 1),

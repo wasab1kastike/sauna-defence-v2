@@ -64,8 +64,11 @@ export type GlobalModifierId =
   | 'triage_circle'
   | 'fallen_saints'
   | 'stone_oath'
+  | 'bastion_engine'
   | 'coal_echoes'
+  | 'scope_lattice'
   | 'oracle_draft'
+  | 'afterglow_watch'
   | 'cinder_cadence'
   | 'battle_psalm'
   | 'shield_mist'
@@ -290,6 +293,8 @@ export interface MetaProgress {
 export interface GameConfig {
   gridRadius: number;
   buildRadius: number;
+  headerItemCap: number;
+  headerSkillCap: number;
   saunaHp: number;
   startingSisu: number;
   sisuAbilityCost: number;
@@ -372,6 +377,8 @@ export interface RunState {
   nextRecruitOfferId: number;
   nextFxEventId: number;
   nextDeathLogEntryId: number;
+  headerItems: InventoryDrop[];
+  headerSkills: InventoryDrop[];
   inventory: InventoryDrop[];
   selectedInventoryDropId: number | null;
   recentDropId: number | null;
@@ -443,6 +450,7 @@ export interface HudSelectedDefender {
   subclassName: string;
   subclassDescription: string;
   nextSubclassUnlockLevel: number | null;
+  xpToNextBranch: number | null;
   level: number;
   xp: number;
   nextLevelXp: number | null;
@@ -543,6 +551,7 @@ export interface HudViewModel {
   placedBoardLabel: string;
   rosterCount: number;
   rosterCap: number;
+  inventoryUnlocked: boolean;
   inventoryCount: number;
   inventoryCap: number;
   inventoryOpen: boolean;
@@ -576,6 +585,8 @@ export interface HudViewModel {
   freeRecruitSlots: number;
   rosterEntries: HudRosterEntry[];
   deathLogEntries: HudDeathLogEntry[];
+  headerItemEntries: HudInventoryEntry[];
+  headerSkillEntries: HudInventoryEntry[];
   inventoryEntries: HudInventoryEntry[];
   selectedInventoryEntry: HudInventoryEntry | null;
   canAutoAssignSelectedLoot: boolean;

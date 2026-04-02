@@ -4,6 +4,8 @@ export const gameContent: GameContent = {
   config: {
     gridRadius: 6,
     buildRadius: 5,
+    headerItemCap: 3,
+    headerSkillCap: 3,
     saunaHp: 72,
     startingSisu: 10,
     sisuAbilityCost: 5,
@@ -593,7 +595,7 @@ export const gameContent: GameContent = {
     iron_brotherhood: {
       id: 'iron_brotherhood',
       name: 'Iron Brotherhood',
-      description: 'Every board Guardian hardens the whole roster.',
+      description: 'Each Frontline Tank on the board hardens the whole roster.',
       countScope: 'board',
       source: { kind: 'template', templateId: 'guardian' },
       effectStat: 'defense',
@@ -602,7 +604,7 @@ export const gameContent: GameContent = {
     triage_circle: {
       id: 'triage_circle',
       name: 'Triage Circle',
-      description: 'Living Menders keep everyone slowly recovering.',
+      description: 'Living Sauna Medics keep everyone slowly recovering.',
       countScope: 'living',
       source: { kind: 'template', templateId: 'mender' },
       effectStat: 'regenHpPerSecond',
@@ -611,7 +613,7 @@ export const gameContent: GameContent = {
     fallen_saints: {
       id: 'fallen_saints',
       name: 'Fallen Saints',
-      description: 'Every dead Mender steels the survivors against the next hit.',
+      description: 'Each fallen Sauna Medic steels the survivors against the next hit.',
       countScope: 'dead',
       source: { kind: 'template', templateId: 'mender' },
       effectStat: 'defense',
@@ -626,6 +628,15 @@ export const gameContent: GameContent = {
       effectStat: 'defense',
       amountPerStack: 1
     },
+    bastion_engine: {
+      id: 'bastion_engine',
+      name: 'Bastion Engine',
+      description: 'Iron Bastions turn every frontline into a thicker wall of bad news.',
+      countScope: 'living',
+      source: { kind: 'subclass', subclassId: 'iron_bastion' },
+      effectStat: 'maxHp',
+      amountPerStack: 3
+    },
     coal_echoes: {
       id: 'coal_echoes',
       name: 'Coal Echoes',
@@ -635,6 +646,15 @@ export const gameContent: GameContent = {
       effectStat: 'damage',
       amountPerStack: 1
     },
+    scope_lattice: {
+      id: 'scope_lattice',
+      name: 'Scope Lattice',
+      description: 'Ash Scopes help the whole roster line up cleaner shots through the steam.',
+      countScope: 'living',
+      source: { kind: 'subclass', subclassId: 'ash_scope' },
+      effectStat: 'range',
+      amountPerStack: 1
+    },
     oracle_draft: {
       id: 'oracle_draft',
       name: 'Oracle Draft',
@@ -642,6 +662,15 @@ export const gameContent: GameContent = {
       countScope: 'living',
       source: { kind: 'subclass', subclassId: 'towel_oracle' },
       effectStat: 'range',
+      amountPerStack: 1
+    },
+    afterglow_watch: {
+      id: 'afterglow_watch',
+      name: 'Afterglow Watch',
+      description: 'Afterglow Wardens leave the whole room steadier and harder to wear down.',
+      countScope: 'living',
+      source: { kind: 'subclass', subclassId: 'afterglow_warden' },
+      effectStat: 'regenHpPerSecond',
       amountPerStack: 1
     },
     cinder_cadence: {
@@ -767,8 +796,8 @@ export const gameContent: GameContent = {
     },
     inventory_slots: {
       id: 'inventory_slots',
-      name: 'Bigger Pockets',
-      description: 'Increase shared drop inventory size.',
+      name: 'Overflow Stash',
+      description: 'Unlock the loot stash, then expand how many overflow drops it can hold.',
       baseCost: 3,
       costStep: 3,
       maxLevel: 3

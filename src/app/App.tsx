@@ -48,8 +48,8 @@ const GUIDE_STEPS = [
     body: 'Spend SISU on the combat burst when you need a spike, or use it to scout and buy recruitment offers. The market works in prep, live waves, and pause.'
   },
   {
-    title: 'Loot Lives In The Drawer',
-    body: 'Open Loot from the header, inspect drops, use Auto Assign for quick gearing, or equip them to the hero you have selected.'
+    title: 'Loot Starts In The Header',
+    body: 'Fresh items and skills land in the header first. Overflow only goes into the stash after you unlock it in the shop.'
   }
 ] as const;
 
@@ -177,6 +177,7 @@ export function App() {
   const isIntermission = snapshot?.hud.showIntermission ?? false;
   const isPaused = snapshot?.hud.isPaused ?? false;
   const introOpen = snapshot?.hud.introOpen ?? false;
+  const inventoryUnlocked = snapshot?.hud.inventoryUnlocked ?? false;
   const inventoryOpen = snapshot?.hud.inventoryOpen ?? false;
   const recruitmentOpen = snapshot?.hud.recruitmentOpen ?? false;
   const hasRecentLoot = snapshot?.hud.hasRecentLoot ?? false;
@@ -186,6 +187,8 @@ export function App() {
   const boardEntries = rosterEntries.filter((entry) => entry.location === 'board');
   const readyEntries = rosterEntries.filter((entry) => entry.location === 'ready');
   const deathLogEntries = snapshot?.hud.deathLogEntries ?? [];
+  const headerItemEntries = snapshot?.hud.headerItemEntries ?? [];
+  const headerSkillEntries = snapshot?.hud.headerSkillEntries ?? [];
   const globalModifiers = snapshot?.hud.globalModifiers ?? [];
   const modifierDraftOffers = snapshot?.hud.globalModifierDraftOffers ?? [];
   const showModifierDraft = snapshot?.hud.showGlobalModifierDraft ?? false;
@@ -238,6 +241,44 @@ export function App() {
       ) : (
         <p className="panel-copy small-copy">{emptyText}</p>
       )}
+    </div>
+  );
+
+  const renderHeaderLootRow = (
+    title: string,
+    entries: typeof headerItemEntries,
+    capacity: number
+  ) => (
+    <div className="header-loot-row">
+      <span className="header-loot-label">{title}</span>
+      <div className="header-loot-list">
+        {entries.map((entry) => (
+          <button
+            key={entry.id}
+            className={entry.selected ? 'header-loot-chip selected' : 'header-loot-chip'}
+            onClick={() =>
+              runtimeRef.current?.dispatch(
+                entry.selected
+                  ? { type: 'clearSelectedInventoryDrop' }
+                  : { type: 'selectInventoryDrop', dropId: entry.id }
+              )
+            }
+            title={`${entry.name}: ${entry.effectText}`}
+          >
+            <img src={assetUrl(entry.artPath)} alt={entry.name} className="header-loot-art" />
+            <div className="header-loot-copy">
+              <strong>{entry.name}</strong>
+              <small>{entry.effectText}</small>
+            </div>
+            {entry.isRecent ? <span className="loot-ping mini-ping">New</span> : null}
+          </button>
+        ))}
+        {Array.from({ length: Math.max(0, capacity - entries.length) }).map((_, index) => (
+          <div key={`${title}-${index}`} className="header-loot-slot-empty">
+            Empty
+          </div>
+        ))}
+      </div>
     </div>
   );
 
@@ -295,9 +336,12 @@ export function App() {
                     </button>
                     <button
                       className={inventoryOpen ? 'secondary-button' : 'ghost-button'}
+                      disabled={!inventoryUnlocked}
                       onClick={() => runtimeRef.current?.dispatch({ type: 'toggleInventory' })}
                     >
-                      Loot {snapshot.hud.inventoryCount}/{snapshot.hud.inventoryCap}
+                      {inventoryUnlocked
+                        ? `Stash ${snapshot.hud.inventoryCount}/${snapshot.hud.inventoryCap}`
+                        : 'Stash Locked'}
                       {hasRecentLoot ? ' · New' : ''}
                     </button>
                     <button
@@ -323,6 +367,59 @@ export function App() {
                   {snapshot.hud.pressureSignals.map((signal) => (
                     <span key={signal} className="tag warning-tag">{signal}</span>
                   ))}
+                </div>
+                <div className="header-loot-stage">
+                  {renderHeaderLootRow('Items', headerItemEntries, snapshot.config.headerItemCap)}
+                  {renderHeaderLootRow('Skills', headerSkillEntries, snapshot.config.headerSkillCap)}
+                  {!inventoryUnlocked ? (
+                    <p className="panel-copy small-copy">
+                      Overflow Stash is still locked. Extra loot is lost until you buy the metashop upgrade.
+                    </p>
+                  ) : null}
+                  {selectedLoot ? (
+                    <div className="detail-card compact-header-loot-detail">
+                      <img src={assetUrl(selectedLoot.artPath)} alt={selectedLoot.name} className="detail-art compact-detail-art" />
+                      <div className="detail-copy">
+                        <strong>{selectedLoot.name} · {formatRarity(selectedLoot.rarity)}</strong>
+                        <p className="panel-copy flavor-copy small-copy">{selectedLoot.flavorText}</p>
+                        <p className="panel-copy small-copy">{selectedLoot.effectText}</p>
+                      </div>
+                      <div className="button-row tight compact-loot-actions">
+                        <button
+                          className="mini-button"
+                          disabled={!snapshot.hud.canAutoAssignSelectedLoot}
+                          onClick={() =>
+                            runtimeRef.current?.dispatch({
+                              type: 'autoAssignInventoryDrop',
+                              dropId: selectedLoot.id
+                            })
+                          }
+                        >
+                          Auto Assign
+                        </button>
+                        <button
+                          className="mini-button"
+                          disabled={!selectedDefender}
+                          onClick={() =>
+                            selectedDefender &&
+                            runtimeRef.current?.dispatch({
+                              type: 'equipInventoryDrop',
+                              dropId: selectedLoot.id,
+                              defenderId: selectedDefender.id
+                            })
+                          }
+                        >
+                          Equip To Selected
+                        </button>
+                        <button
+                          className="ghost-button"
+                          onClick={() => runtimeRef.current?.dispatch({ type: 'clearSelectedInventoryDrop' })}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </section>
 
@@ -536,7 +633,7 @@ export function App() {
                       <span className="tag">Skills {selectedDefender.skillNames.length}/{selectedDefender.skillSlotCount}</span>
                       <span className="tag">
                         {selectedDefender.nextSubclassUnlockLevel !== null
-                          ? `Next branch at ${selectedDefender.nextSubclassUnlockLevel}`
+                          ? `${selectedDefender.xpToNextBranch ?? 0} XP to branch at Lv ${selectedDefender.nextSubclassUnlockLevel}`
                           : 'All branches unlocked'}
                       </span>
                       {selectedDefender.itemNames.length === 0 && selectedDefender.skillNames.length === 0 ? (
@@ -741,7 +838,7 @@ export function App() {
         </aside>
       </section>
 
-      {snapshot && !isIntermission ? (
+      {snapshot && !isIntermission && inventoryUnlocked ? (
         <>
           <div
             className={anyDrawerOpen ? 'drawer-backdrop visible' : 'drawer-backdrop'}
@@ -758,7 +855,7 @@ export function App() {
           <aside className={inventoryOpen ? 'inventory-drawer open' : 'inventory-drawer'}>
             <section className="panel drawer-panel">
               <div className="panel-head">
-                <h2>Inventory</h2>
+                <h2>Overflow Stash</h2>
                 <div className="header-actions">
                   <span>{snapshot.hud.inventoryCount}/{snapshot.hud.inventoryCap}</span>
                   <button
@@ -842,12 +939,12 @@ export function App() {
                     </div>
                   ) : (
                     <p className="panel-copy small-copy">
-                      Pick a loot card to inspect it, auto-assign it, or equip it to the currently selected hero.
+                      Pick an overflow drop to inspect it, auto-assign it, or equip it to the currently selected hero.
                     </p>
                   )}
                 </div>
               ) : (
-                <p className="panel-copy">No loot waiting. Fresh drops will appear here.</p>
+                <p className="panel-copy">No overflow loot waiting. Fresh excess drops will appear here after the header fills up.</p>
               )}
             </section>
           </aside>
@@ -879,8 +976,8 @@ export function App() {
                 <small>Spend SISU on combat bursts or scout recruitment offers between waves.</small>
               </div>
               <div className="inventory-card">
-                <strong>Loot Needs A Home</strong>
-                <small>Open Loot, inspect drops, auto-assign them, or equip them to a selected hero.</small>
+                <strong>Loot Starts In The Header</strong>
+                <small>Fresh drops land in the header first. Overflow only goes into the stash after you unlock it in the metashop.</small>
               </div>
               <div className="inventory-card">
                 <strong>Runs Build In Cycles</strong>
