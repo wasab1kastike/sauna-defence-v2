@@ -482,7 +482,7 @@ export const gameContent: GameContent = {
       rarity: 'common',
       effectText: '+5 HP, -40 ms attack speed.',
       flavorText: 'Still warm from a soup no one admits making.',
-      artPath: 'loot/lucky-ladle.svg',
+      artPath: 'loot/lucky-ladle.png',
       modifiers: {
         maxHp: 5,
         attackCooldownMs: -40
@@ -495,7 +495,7 @@ export const gameContent: GameContent = {
       rarity: 'rare',
       effectText: '+3 damage, -2 HP.',
       flavorText: 'Beats angrily whenever someone throws weak löyly.',
-      artPath: 'loot/coal-heart.svg',
+      artPath: 'loot/coal-heart.png',
       modifiers: {
         damage: 3,
         maxHp: -2
@@ -508,7 +508,7 @@ export const gameContent: GameContent = {
       rarity: 'common',
       effectText: '+8 HP, -1 range.',
       flavorText: 'A heroic amount of towel for a suspiciously small warrior.',
-      artPath: 'loot/towel-wrap.svg',
+      artPath: 'loot/towel-wrap.png',
       modifiers: {
         maxHp: 8,
         range: -1
@@ -521,7 +521,7 @@ export const gameContent: GameContent = {
       rarity: 'rare',
       effectText: '+1 range, +120 ms attack cooldown.',
       flavorText: 'Clonk louder, kick farther, think slower.',
-      artPath: 'loot/bucket-boots.svg',
+      artPath: 'loot/bucket-boots.png',
       modifiers: {
         range: 1,
         attackCooldownMs: 120
@@ -534,7 +534,7 @@ export const gameContent: GameContent = {
       rarity: 'epic',
       effectText: '+2 heal, +1 damage, -60 ms attack cooldown.',
       flavorText: 'A blessed vihta trinket that smells like trouble and midsummer.',
-      artPath: 'loot/birch-charm.svg',
+      artPath: 'loot/birch-charm.png',
       modifiers: {
         heal: 2,
         damage: 1,
@@ -548,7 +548,7 @@ export const gameContent: GameContent = {
       rarity: 'common',
       effectText: '+3 HP, +1 heal.',
       flavorText: 'Smells expensive even when it clearly was not.',
-      artPath: 'loot/cedar-ring.svg',
+      artPath: 'loot/cedar-ring.png',
       modifiers: {
         maxHp: 3,
         heal: 1
@@ -561,7 +561,7 @@ export const gameContent: GameContent = {
       rarity: 'rare',
       effectText: '+2 damage, -70 ms attack cooldown.',
       flavorText: 'Still glowing from a terrible idea that somehow worked.',
-      artPath: 'loot/ember-amulet.svg',
+      artPath: 'loot/ember-amulet.png',
       modifiers: {
         damage: 2,
         attackCooldownMs: -70
@@ -574,7 +574,7 @@ export const gameContent: GameContent = {
       rarity: 'epic',
       effectText: '+10 HP, +2 damage.',
       flavorText: 'Too heavy for normal sauna use, perfect for abnormal heroics.',
-      artPath: 'loot/iron-whisk.svg',
+      artPath: 'loot/iron-whisk.png',
       modifiers: {
         maxHp: 10,
         damage: 2
@@ -587,7 +587,7 @@ export const gameContent: GameContent = {
       rarity: 'common',
       effectText: '+1 range, -2 HP.',
       flavorText: 'Sharpens the senses and dries every lip in the building.',
-      artPath: 'loot/sauna-salt.svg',
+      artPath: 'loot/sauna-salt.png',
       modifiers: {
         range: 1,
         maxHp: -2
@@ -602,7 +602,7 @@ export const gameContent: GameContent = {
       rarity: 'rare',
       effectText: 'Basic attacks splash ember damage to nearby enemies.',
       flavorText: 'Throws a rude little sun at anyone standing too close.',
-      artPath: 'loot/fireball.svg'
+      artPath: 'loot/fireball.png'
     },
     spin2win: {
       id: 'spin2win',
@@ -611,7 +611,7 @@ export const gameContent: GameContent = {
       rarity: 'epic',
       effectText: 'Basic attacks sweep all enemies within 1 tile for full damage.',
       flavorText: 'Invented after one slippery sauna floor incident too many.',
-      artPath: 'loot/spin-2-win.svg'
+      artPath: 'loot/spin-2-win.png'
     },
     blink_step: {
       id: 'blink_step',
@@ -620,7 +620,7 @@ export const gameContent: GameContent = {
       rarity: 'rare',
       effectText: 'Below 50% HP, blink back to your home tile. Kills reset this 12s cooldown.',
       flavorText: 'A deeply unwise technique for entering rooms dramatically.',
-      artPath: 'loot/blink-step.svg'
+      artPath: 'loot/blink-step.png'
     },
     chain_spark: {
       id: 'chain_spark',
@@ -629,7 +629,7 @@ export const gameContent: GameContent = {
       rarity: 'rare',
       effectText: 'Attacks arc bonus damage to one nearby enemy.',
       flavorText: 'The electricity is mostly symbolic, but the second target still hates it.',
-      artPath: 'loot/chain-spark.svg'
+      artPath: 'loot/chain-spark.png'
     },
     steam_shield: {
       id: 'steam_shield',
@@ -638,7 +638,7 @@ export const gameContent: GameContent = {
       rarity: 'common',
       effectText: 'After attacking, restore a little HP to yourself.',
       flavorText: 'Wraps the user in a smug, medicinal cloud.',
-      artPath: 'loot/steam-shield.svg'
+      artPath: 'loot/steam-shield.png'
     },
     battle_hymn: {
       id: 'battle_hymn',
@@ -647,7 +647,7 @@ export const gameContent: GameContent = {
       rarity: 'epic',
       effectText: 'Attacks also pulse a small heal into a nearby ally.',
       flavorText: 'Half prayer, half terrace chant, all morale.',
-      artPath: 'loot/battle-hymn.svg'
+      artPath: 'loot/battle-hymn.png'
     }
   },
   alcoholDefinitions: {
@@ -656,7 +656,7 @@ export const gameContent: GameContent = {
       name: 'Light Lager',
       flavorText: 'Crisp, brave, and just dumb enough to feel tactical.',
       price: 2,
-      artPath: 'loot/sauna-salt.svg',
+      artPath: 'loot/sauna-salt.png',
       positive: { damage: 1 },
       negative: { defense: 1 }
     },
@@ -665,7 +665,7 @@ export const gameContent: GameContent = {
       name: 'Sauna Stout',
       flavorText: 'Heavy enough to count as emotional armor.',
       price: 3,
-      artPath: 'loot/coal-heart.svg',
+      artPath: 'loot/coal-heart.png',
       positive: { maxHp: 8 },
       negative: { attackCooldownMs: 60 }
     },
@@ -674,7 +674,7 @@ export const gameContent: GameContent = {
       name: 'Medic Mule',
       flavorText: 'A healing classic with terrible depth perception.',
       price: 3,
-      artPath: 'loot/cedar-ring.svg',
+      artPath: 'loot/cedar-ring.png',
       positive: { heal: 2 },
       negative: { range: 1 }
     },
@@ -683,7 +683,7 @@ export const gameContent: GameContent = {
       name: 'Sniper Cider',
       flavorText: 'Sees farther, stands shakier.',
       price: 3,
-      artPath: 'loot/bucket-boots.svg',
+      artPath: 'loot/bucket-boots.png',
       positive: { range: 1 },
       negative: { maxHp: 4 }
     },
@@ -692,7 +692,7 @@ export const gameContent: GameContent = {
       name: 'Boiler IPA',
       flavorText: 'Fast hands, dry throat, zero restraint.',
       price: 3,
-      artPath: 'loot/ember-amulet.svg',
+      artPath: 'loot/ember-amulet.png',
       positive: { attackCooldownMs: 60 },
       negative: { regenHpPerSecond: 1 }
     },
@@ -701,7 +701,7 @@ export const gameContent: GameContent = {
       name: 'Birch Porter',
       flavorText: 'Makes everyone sturdier and significantly less subtle.',
       price: 2,
-      artPath: 'loot/towel-wrap.svg',
+      artPath: 'loot/towel-wrap.png',
       positive: { defense: 1 },
       negative: { damage: 1 }
     },
@@ -710,7 +710,7 @@ export const gameContent: GameContent = {
       name: 'Lucky Pils',
       flavorText: 'Loot gets luckier, decision-making gets worse.',
       price: 4,
-      artPath: 'loot/birch-charm.svg',
+      artPath: 'loot/birch-charm.png',
       positive: { lootChance: 0.08 },
       negative: { rewardSisu: 1 }
     },
@@ -719,7 +719,7 @@ export const gameContent: GameContent = {
       name: 'Overproof Koskenkorva',
       flavorText: 'Hits like a train, patches like an apology.',
       price: 4,
-      artPath: 'loot/iron-whisk.svg',
+      artPath: 'loot/iron-whisk.png',
       positive: { damage: 2 },
       negative: { heal: 2 }
     }
