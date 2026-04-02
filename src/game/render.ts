@@ -731,6 +731,267 @@ function getEnemyStyle(styleId: number) {
   return ENEMY_TOKEN_STYLES[styleId % ENEMY_TOKEN_STYLES.length];
 }
 
+function clamp(value: number, min = 0, max = 1) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function lerp(start: number, end: number, progress: number) {
+  return start + (end - start) * progress;
+}
+
+function easeOutCubic(value: number) {
+  const t = clamp(value);
+  return 1 - (1 - t) ** 3;
+}
+
+function pointLerp(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  progress: number
+) {
+  return {
+    x: lerp(start.x, end.x, progress),
+    y: lerp(start.y, end.y, progress)
+  };
+}
+
+function fxNoise(seed: number) {
+  const value = Math.sin(seed * 127.1) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function drawGlowDisc(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  radius: number,
+  innerColor: string,
+  outerColor: string,
+  alpha = 1
+) {
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.globalCompositeOperation = 'screen';
+  const gradient = ctx.createRadialGradient(center.x, center.y, radius * 0.08, center.x, center.y, radius);
+  gradient.addColorStop(0, innerColor);
+  gradient.addColorStop(1, outerColor);
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawShockRing(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  radius: number,
+  color: string,
+  lineWidth: number,
+  alpha = 1
+) {
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSparkBurst(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  radius: number,
+  color: string,
+  alpha: number,
+  spokes: number,
+  rotation = 0
+) {
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1.2, radius * 0.08);
+  for (let index = 0; index < spokes; index += 1) {
+    const angle = rotation + (Math.PI * 2 * index) / spokes;
+    const inner = radius * 0.2;
+    const outer = radius;
+    ctx.beginPath();
+    ctx.moveTo(center.x + Math.cos(angle) * inner, center.y + Math.sin(angle) * inner);
+    ctx.lineTo(center.x + Math.cos(angle) * outer, center.y + Math.sin(angle) * outer);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawEmberParticles(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  baseRadius: number,
+  progress: number,
+  seedBase: number,
+  color: string,
+  count: number
+) {
+  ctx.save();
+  ctx.fillStyle = color;
+  for (let index = 0; index < count; index += 1) {
+    const seed = seedBase + index * 17.13;
+    const angle = fxNoise(seed) * Math.PI * 2;
+    const drift = baseRadius * (0.25 + fxNoise(seed + 1) * 0.9) * progress;
+    const wobble = (fxNoise(seed + 2) - 0.5) * baseRadius * 0.12;
+    const size = Math.max(1.2, baseRadius * (0.03 + fxNoise(seed + 3) * 0.04) * (1 - progress * 0.35));
+    const x = center.x + Math.cos(angle) * drift + wobble;
+    const y = center.y + Math.sin(angle) * drift - baseRadius * 0.14 * progress;
+    ctx.globalAlpha = clamp(0.9 - progress * 0.75, 0, 0.9);
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawSmokeParticles(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  baseRadius: number,
+  progress: number,
+  seedBase: number,
+  color: string,
+  count: number
+) {
+  ctx.save();
+  for (let index = 0; index < count; index += 1) {
+    const seed = seedBase + index * 29.7;
+    const angle = fxNoise(seed) * Math.PI * 2;
+    const drift = baseRadius * (0.18 + fxNoise(seed + 1) * 0.6) * progress;
+    const rise = baseRadius * (0.08 + fxNoise(seed + 2) * 0.26) * progress;
+    const radius = baseRadius * (0.08 + fxNoise(seed + 3) * 0.12) * (0.7 + progress * 0.5);
+    ctx.globalAlpha = clamp(0.26 - progress * 0.2, 0, 0.26);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(
+      center.x + Math.cos(angle) * drift,
+      center.y + Math.sin(angle) * drift - rise,
+      radius,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawLightningArc(
+  ctx: CanvasRenderingContext2D,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  color: string,
+  width: number,
+  alpha: number,
+  seed: number
+) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.max(1, Math.hypot(dx, dy));
+  const normalX = -dy / length;
+  const normalY = dx / length;
+
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.moveTo(start.x, start.y);
+  const segments = 6;
+  for (let index = 1; index < segments; index += 1) {
+    const t = index / segments;
+    const offset = (fxNoise(seed + index * 11) - 0.5) * length * 0.14;
+    const x = lerp(start.x, end.x, t) + normalX * offset;
+    const y = lerp(start.y, end.y, t) + normalY * offset;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(end.x, end.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawAfterimageTrail(
+  ctx: CanvasRenderingContext2D,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  color: string,
+  alpha: number
+) {
+  ctx.save();
+  for (let index = 0; index < 4; index += 1) {
+    const t = index / 3;
+    const point = pointLerp(start, end, t);
+    ctx.globalAlpha = alpha * (1 - t) * 0.55;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(point.x, point.y, lerp(6, 15, t), lerp(3, 9, t), 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawSpinBlade(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  orbitRadius: number,
+  angle: number,
+  bladeLength: number,
+  bladeWidth: number,
+  color: string,
+  glow: string,
+  alpha: number
+) {
+  const x = center.x + Math.cos(angle) * orbitRadius;
+  const y = center.y + Math.sin(angle) * orbitRadius;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle + Math.PI / 2);
+  ctx.globalAlpha *= alpha;
+  drawGlowDisc(ctx, { x: 0, y: 0 }, bladeLength * 0.72, glow, 'rgba(255,255,255,0)', 0.6);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, -bladeLength * 0.56);
+  ctx.lineTo(bladeWidth * 0.42, bladeLength * 0.18);
+  ctx.lineTo(0, bladeLength * 0.52);
+  ctx.lineTo(-bladeWidth * 0.42, bladeLength * 0.18);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function getCombatShake(snapshot: GameSnapshot) {
+  let x = 0;
+  let y = 0;
+  for (const event of snapshot.state.fxEvents) {
+    const progress = event.ageMs / event.durationMs;
+    const strength =
+      event.kind === 'sauna_hit'
+        ? 8 * (1 - progress)
+        : event.kind === 'boss_hit'
+          ? 4.5 * (1 - progress)
+          : event.kind === 'fireball' && progress > 0.42
+            ? 2.2 * (1 - progress)
+            : 0;
+    if (strength <= 0) continue;
+    const angle = event.id * 1.73 + event.ageMs * 0.055;
+    x += Math.cos(angle) * strength;
+    y += Math.sin(angle * 1.37) * strength * 0.7;
+  }
+  const magnitude = Math.hypot(x, y);
+  if (magnitude > 10) {
+    const scale = 10 / magnitude;
+    x *= scale;
+    y *= scale;
+  }
+  return { x, y };
+}
+
 function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, layout: BoardLayout) {
   for (const event of snapshot.state.fxEvents) {
     const center = axialToPixel(event.tile, layout);
@@ -738,85 +999,122 @@ function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, lay
     const fade = 1 - progress;
     ctx.save();
     ctx.globalAlpha = Math.max(0, fade);
-
-    if (event.secondaryTile) {
-      const secondary = axialToPixel(event.secondaryTile, layout);
-      ctx.strokeStyle = event.kind === 'heal' ? 'rgba(123, 235, 165, 0.7)' : 'rgba(255, 214, 140, 0.45)';
-      ctx.lineWidth = Math.max(1.5, layout.hexSize * 0.08 * fade);
-      ctx.beginPath();
-      ctx.moveTo(secondary.x, secondary.y);
-      ctx.lineTo(center.x, center.y);
-      ctx.stroke();
-    }
+    const secondary = event.secondaryTile ? axialToPixel(event.secondaryTile, layout) : null;
+    const burstRadius = layout.hexSize * (0.42 + progress * 0.5);
 
     switch (event.kind) {
       case 'heal':
-        ctx.strokeStyle = '#8ef0ad';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, layout.hexSize * (0.16 + progress * 0.34), 0, Math.PI * 2);
-        ctx.stroke();
+        if (secondary) {
+          drawLightningArc(
+            ctx,
+            secondary,
+            center,
+            'rgba(173, 255, 189, 0.65)',
+            Math.max(2, layout.hexSize * 0.08),
+            0.85,
+            event.id * 5.3
+          );
+        }
+        drawGlowDisc(ctx, center, layout.hexSize * (0.34 + progress * 0.28), 'rgba(192,255,208,0.72)', 'rgba(110,248,162,0)', 0.85);
+        drawShockRing(ctx, center, layout.hexSize * (0.18 + progress * 0.44), '#8ef0ad', 2.6, 0.8);
+        drawEmberParticles(ctx, center, layout.hexSize * 0.9, progress, event.id * 3.1, '#d4ffd3', 9);
         break;
       case 'fireball':
-        ctx.fillStyle = 'rgba(255, 152, 78, 0.35)';
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, layout.hexSize * (0.18 + progress * 0.46), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#ffd27b';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, layout.hexSize * (0.14 + progress * 0.32), 0, Math.PI * 2);
-        ctx.stroke();
+        if (secondary) {
+          const travelPhase = clamp(progress / 0.42);
+          const explosionPhase = clamp((progress - 0.34) / 0.66);
+          if (progress < 0.48) {
+            const orb = pointLerp(secondary, center, easeOutCubic(travelPhase));
+            drawAfterimageTrail(ctx, secondary, orb, 'rgba(255, 154, 74, 0.95)', 0.9);
+            drawGlowDisc(ctx, orb, layout.hexSize * 0.42, 'rgba(255,245,196,0.98)', 'rgba(255,136,58,0)', 0.95);
+            drawGlowDisc(ctx, orb, layout.hexSize * 0.2, 'rgba(255,255,245,0.95)', 'rgba(255,255,255,0)', 0.95);
+            drawSparkBurst(ctx, orb, layout.hexSize * 0.24, '#ffd27b', 0.9 * (1 - travelPhase * 0.5), 4, travelPhase * Math.PI);
+            drawEmberParticles(ctx, orb, layout.hexSize * 0.55, travelPhase * 0.55, event.id * 13.1, '#ffcb73', 6);
+          }
+          if (progress > 0.28) {
+            drawGlowDisc(ctx, center, layout.hexSize * (0.55 + explosionPhase * 0.9), 'rgba(255,226,150,0.95)', 'rgba(255,108,46,0)', 0.85);
+            drawShockRing(ctx, center, layout.hexSize * (0.16 + explosionPhase * 0.9), '#ffd27b', Math.max(2, layout.hexSize * 0.08), 0.95 - explosionPhase * 0.4);
+            drawSparkBurst(ctx, center, layout.hexSize * (0.28 + explosionPhase * 0.62), '#fff0be', 0.9 - explosionPhase * 0.4, 7, explosionPhase * Math.PI * 0.7);
+            drawEmberParticles(ctx, center, layout.hexSize * 1.45, explosionPhase, event.id * 7.7, '#ffb05f', 16);
+            drawSmokeParticles(ctx, center, layout.hexSize * 1.2, explosionPhase, event.id * 9.4, 'rgba(51, 36, 31, 1)', 8);
+          }
+        } else {
+          drawGlowDisc(ctx, center, layout.hexSize * (0.34 + progress * 0.56), 'rgba(255,232,164,0.9)', 'rgba(255,122,58,0)', 0.9);
+          drawShockRing(ctx, center, layout.hexSize * (0.18 + progress * 0.52), '#ffd27b', 2.2, 0.8);
+        }
         break;
       case 'spin':
-        ctx.strokeStyle = '#ffd27b';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, layout.hexSize * (0.22 + progress * 0.28), -Math.PI * 0.8, Math.PI * 0.8);
-        ctx.stroke();
+        drawGlowDisc(ctx, center, layout.hexSize * (0.42 + Math.sin(progress * Math.PI) * 0.2), 'rgba(255,220,144,0.38)', 'rgba(255,171,77,0)', 0.7);
+        drawShockRing(ctx, center, layout.hexSize * (0.46 + progress * 0.18), 'rgba(255,211,125,0.72)', Math.max(2, layout.hexSize * 0.06), 0.65);
+        drawSparkBurst(ctx, center, layout.hexSize * (0.5 + progress * 0.12), '#ffecc5', 0.24, 10, progress * Math.PI * 4.5);
+        for (let blade = 0; blade < 2; blade += 1) {
+          drawSpinBlade(
+            ctx,
+            center,
+            layout.hexSize * 0.52,
+            progress * Math.PI * 5.6 + blade * Math.PI,
+            layout.hexSize * 0.54,
+            layout.hexSize * 0.18,
+            '#fff1d2',
+            'rgba(255,199,102,0.9)',
+            0.92
+          );
+        }
         break;
       case 'blink':
-        ctx.strokeStyle = '#91dfff';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, layout.hexSize * (0.14 + progress * 0.26), 0, Math.PI * 2);
-        ctx.stroke();
+        if (secondary) {
+          drawAfterimageTrail(ctx, secondary, center, 'rgba(120, 214, 255, 0.95)', 0.95);
+          drawLightningArc(ctx, secondary, center, 'rgba(142, 232, 255, 0.3)', Math.max(1.5, layout.hexSize * 0.035), 0.45, event.id * 2.7);
+        }
+        drawGlowDisc(ctx, center, layout.hexSize * (0.22 + progress * 0.3), 'rgba(213,249,255,0.72)', 'rgba(100,188,255,0)', 0.8);
+        drawShockRing(ctx, center, layout.hexSize * (0.14 + progress * 0.24), '#91dfff', 2.3, 0.8);
         break;
       case 'chain':
-        ctx.strokeStyle = '#9fe8ff';
-        ctx.lineWidth = 2.4;
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, layout.hexSize * (0.1 + progress * 0.18), 0, Math.PI * 2);
-        ctx.stroke();
+        if (secondary) {
+          drawLightningArc(ctx, secondary, center, '#b9f2ff', Math.max(2, layout.hexSize * 0.08), 0.94, event.id * 7.9);
+          drawLightningArc(ctx, secondary, center, '#6dd6ff', Math.max(1.2, layout.hexSize * 0.04), 0.9, event.id * 9.1);
+        }
+        drawGlowDisc(ctx, center, layout.hexSize * (0.24 + progress * 0.2), 'rgba(214,248,255,0.68)', 'rgba(117,206,255,0)', 0.78);
+        drawSparkBurst(ctx, center, layout.hexSize * 0.28, '#d4fbff', 0.78, 5, progress * Math.PI * 2.8);
         break;
       case 'defender_hit':
-        ctx.strokeStyle = '#8adfff';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, layout.hexSize * (0.16 + progress * 0.28), 0, Math.PI * 2);
-        ctx.stroke();
+        if (secondary) {
+          const impact = pointLerp(secondary, center, 0.84);
+          drawLightningArc(ctx, impact, center, 'rgba(164, 227, 255, 0.55)', Math.max(1.2, layout.hexSize * 0.03), 0.48, event.id * 4.3);
+        }
+        drawGlowDisc(ctx, center, burstRadius * 0.7, 'rgba(197,241,255,0.52)', 'rgba(108,197,255,0)', 0.75);
+        drawShockRing(ctx, center, layout.hexSize * (0.16 + progress * 0.36), '#8adfff', 2.8, 0.82);
+        drawSparkBurst(ctx, center, layout.hexSize * (0.22 + progress * 0.26), '#dff8ff', 0.72, 6, progress * Math.PI);
         break;
       case 'sauna_hit':
-        ctx.strokeStyle = '#ff9a5e';
-        ctx.lineWidth = 3.5;
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, layout.hexSize * (0.2 + progress * 0.42), 0, Math.PI * 2);
-        ctx.stroke();
+        drawGlowDisc(ctx, center, layout.hexSize * (0.72 + progress * 0.92), 'rgba(255,222,151,0.75)', 'rgba(255,106,61,0)', 0.95);
+        drawShockRing(ctx, center, layout.hexSize * (0.22 + progress * 0.72), '#ff9a5e', Math.max(3, layout.hexSize * 0.11), 0.95);
+        drawShockRing(ctx, center, layout.hexSize * (0.4 + progress * 1.04), 'rgba(255,211,152,0.58)', Math.max(1.5, layout.hexSize * 0.05), 0.7);
+        drawSparkBurst(ctx, center, layout.hexSize * (0.3 + progress * 0.68), '#fff1d3', 0.88, 8, progress * Math.PI * 0.85);
+        drawSmokeParticles(ctx, center, layout.hexSize * 1.5, progress, event.id * 11.2, 'rgba(54, 34, 28, 1)', 10);
         break;
       case 'boss_hit':
-        ctx.strokeStyle = '#ff6e63';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, layout.hexSize * (0.18 + progress * 0.48), 0, Math.PI * 2);
-        ctx.stroke();
+        drawGlowDisc(ctx, center, layout.hexSize * (0.66 + progress * 0.86), 'rgba(255,214,173,0.7)', 'rgba(255,76,62,0)', 0.9);
+        drawShockRing(ctx, center, layout.hexSize * (0.2 + progress * 0.82), '#ff6e63', Math.max(3, layout.hexSize * 0.1), 0.92);
+        drawSparkBurst(ctx, center, layout.hexSize * (0.34 + progress * 0.62), '#ffe4c9', 0.82, 9, progress * Math.PI * 0.6);
+        drawEmberParticles(ctx, center, layout.hexSize * 1.2, progress, event.id * 14.7, '#ff9e74', 14);
         break;
       case 'hit':
       default:
-        ctx.strokeStyle = '#ffe3a4';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, layout.hexSize * (0.12 + progress * 0.22), 0, Math.PI * 2);
-        ctx.stroke();
+        if (secondary) {
+          const dir = {
+            x: center.x - secondary.x,
+            y: center.y - secondary.y
+          };
+          const len = Math.max(1, Math.hypot(dir.x, dir.y));
+          const impact = {
+            x: center.x - (dir.x / len) * layout.hexSize * 0.12,
+            y: center.y - (dir.y / len) * layout.hexSize * 0.12
+          };
+          drawLightningArc(ctx, impact, center, 'rgba(255,224,162,0.42)', Math.max(1, layout.hexSize * 0.03), 0.5, event.id * 2.1);
+        }
+        drawGlowDisc(ctx, center, layout.hexSize * (0.22 + progress * 0.18), 'rgba(255,238,196,0.52)', 'rgba(255,183,92,0)', 0.7);
+        drawSparkBurst(ctx, center, layout.hexSize * (0.16 + progress * 0.18), '#ffe3a4', 0.8, 5, progress * Math.PI * 0.7);
         break;
     }
     ctx.restore();
@@ -839,6 +1137,9 @@ export function paintSnapshot(
   const placementMode = Boolean(selected && (selected.location === 'ready' || selected.location === 'sauna'));
 
   ctx.clearRect(0, 0, viewportWidth, viewportHeight);
+  const shake = getCombatShake(snapshot);
+  ctx.save();
+  ctx.translate(shake.x, shake.y);
 
   const background = ctx.createLinearGradient(0, 0, 0, viewportHeight);
   background.addColorStop(0, '#08161a');
@@ -990,6 +1291,7 @@ export function paintSnapshot(
   }
 
   drawCombatFx(ctx, snapshot, layout);
+  ctx.restore();
 
   if (snapshot.state.overlayMode === 'paused') {
     ctx.fillStyle = 'rgba(6, 12, 14, 0.48)';
