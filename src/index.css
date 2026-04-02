@@ -107,7 +107,7 @@ button {
   align-items: start;
   justify-content: space-between;
   gap: 14px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-radius: 20px;
   background: rgba(8, 18, 21, 0.72);
   backdrop-filter: blur(12px);
@@ -145,7 +145,7 @@ button {
 
 .topbar-stat,
 .mini-tag {
-  padding: 7px 10px;
+  padding: 6px 10px;
   border-radius: 999px;
   background: rgba(29, 55, 58, 0.82);
   border: 1px solid rgba(132, 230, 220, 0.12);
@@ -183,11 +183,11 @@ button {
 }
 
 .hud-action-cluster {
-  top: 104px;
+  top: 118px;
   left: 18px;
-  width: min(400px, calc(100% - 150px));
+  width: min(340px, calc(100% - 240px));
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .hud-status-card,
@@ -200,15 +200,15 @@ button {
 }
 
 .compact-popup-head {
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .hud-utility-rail {
-  top: 132px;
+  top: 156px;
   right: 18px;
   display: grid;
-  gap: 10px;
-  width: 128px;
+  gap: 8px;
+  width: 118px;
 }
 
 .utility-button,
@@ -230,10 +230,10 @@ button {
 }
 
 .utility-button {
-  padding: 10px 12px;
+  padding: 8px 10px;
   text-align: left;
   display: grid;
-  gap: 4px;
+  gap: 3px;
 }
 
 .utility-button.active {
@@ -268,7 +268,32 @@ button {
 
 .board-popup-utility {
   right: 158px;
-  top: 132px;
+  top: 156px;
+}
+
+.hud-hint-card {
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.hud-hint-card .popup-head h2 {
+  font-size: 0.95rem;
+}
+
+.hint-copy {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.hud-action-buttons {
+  gap: 10px;
+}
+
+.hud-action-buttons .primary-button,
+.hud-action-buttons .secondary-button {
+  min-width: 132px;
 }
 
 .popup-head,
@@ -513,7 +538,7 @@ em {
 
   .hud-action-cluster {
     width: calc(100% - 36px);
-    top: 170px;
+    top: 164px;
   }
 
   .hud-utility-rail {

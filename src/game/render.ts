@@ -1466,17 +1466,6 @@ export function paintSnapshot(
     ctx.fillText(snapshot.hud.statusText, layout.centerX, 88);
   }
 
-  ctx.fillStyle = 'rgba(234, 247, 244, 0.96)';
-  ctx.textAlign = 'left';
-  ctx.font = '700 14px Trebuchet MS';
-  ctx.fillText(
-    snapshot.hud.isBossWave
-      ? `${snapshot.hud.bossName ?? 'Boss'} · Wave ${snapshot.hud.waveNumber}`
-      : `Wave ${snapshot.hud.waveNumber}`,
-    18,
-    24
-  );
-  ctx.fillText(snapshot.hud.placedBoardLabel, 18, 44);
 }
 
 export function pickTileAtCanvasPoint(

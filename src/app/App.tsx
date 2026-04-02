@@ -38,29 +38,34 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-const GUIDE_STORAGE_KEY = 'sauna-defense-v2-guide-seen';
+const GUIDE_STORAGE_KEY = 'sauna-defense-v3-guide-seen';
 const GUIDE_STEPS = [
   {
-    title: 'Board, Path, And Buildable Hexes',
-    body: 'Dark tiles are the enemy path. When you select a bench hero, every valid build hex lights up bright green so you can place them fast.'
+    title: 'Topbar At A Glance',
+    body: 'The topbar is your quick read: wave, board count, SISU, Steam and Sauna HP all live there now.'
   },
   {
-    title: 'Bench Heroes Can Join Mid-Wave',
-    body: 'The bench is your live reserve. If a slot opens on the board, select a bench hero and drop them onto any green build hex, even during combat.'
+    title: 'Use The Right Rail',
+    body: 'Modifiers, Roster, Loot and Recruit open from the compact right-side rail so the board stays visible underneath.'
   },
   {
-    title: 'Sauna Holds One Reserve',
-    body: 'Click the sauna in the center to inspect its reserve hero. Sauna upgrades can auto-deploy that hero or swap them in when someone gets badly hurt.'
+    title: 'Selection Pops Up On Board',
+    body: 'Click a hero or the sauna to open a small selection card on top of the map instead of using a permanent side panel.'
   },
   {
-    title: 'SISU Fuels Both Power And Recruitment',
-    body: 'Spend SISU on the combat burst when you need a spike, or use it to scout and buy recruitment offers. The market works in prep, live waves, and pause.'
+    title: 'Map Buildings Matter',
+    body: 'Permanent unlocks can appear as buildings on the board. Click them to open things like the Beer Shop or Metashop when available.'
   },
   {
-    title: 'Loot Starts In The Header',
-    body: 'Fresh items and skills land in the header first. Overflow only goes into the stash after you unlock it in the shop.'
+    title: 'Hint Card And Action Buttons',
+    body: 'The small left hint card tells you the next step. Start Wave and SISU stay just below it as your main live controls.'
   }
 ] as const;
+
+function compactHintBody(text: string) {
+  const [firstSentence] = text.split('. ');
+  return firstSentence.endsWith('.') ? firstSentence : `${firstSentence}.`;
+}
 
 function getLandmarkStyle(
   snapshot: GameSnapshot,
@@ -271,6 +276,7 @@ export function App() {
   const headerSkillEntries = snapshot?.hud.headerSkillEntries ?? [];
   const inventoryEntries = snapshot?.hud.inventoryEntries ?? [];
   const globalModifiers = snapshot?.hud.globalModifiers ?? [];
+  const hintBody = snapshot ? compactHintBody(snapshot.hud.actionBody) : '';
 
   const renderRosterCards = (entries: typeof rosterEntries, emptyText: string) => (
     entries.length > 0 ? (
@@ -890,20 +896,19 @@ export function App() {
             </header>
 
             <div className="hud-action-cluster">
-              <div className="hud-status-card">
+              <div className="hud-status-card hud-hint-card">
                 <div className="popup-head compact-popup-head">
                   <h2>{snapshot.hud.actionTitle}</h2>
                   <span>{snapshot.hud.bossName ?? snapshot.hud.nextWavePattern}</span>
                 </div>
-                <p className="panel-copy small-copy">{snapshot.hud.actionBody}</p>
-                {snapshot.hud.bossHint ? <p className="panel-copy small-copy">{snapshot.hud.bossHint}</p> : null}
+                <p className="panel-copy small-copy hint-copy">{hintBody}</p>
                 <div className="mini-tag-row">
                   <span className="mini-tag">{snapshot.hud.nextWaveThreat}</span>
                   <span className="mini-tag">Bench {snapshot.hud.readyBenchCount}</span>
                   <span className="mini-tag">Recruit Slots {snapshot.hud.freeRecruitSlots}</span>
                 </div>
               </div>
-              <div className="hud-main-actions">
+              <div className="hud-main-actions hud-action-buttons">
                 {snapshot.hud.showIntermission ? (
                   <button className="primary-button" onClick={() => dispatch({ type: 'startNextRun' })}>
                     {snapshot.state.phase === 'lost' ? 'Start Next Run' : 'Back To The Sauna'}
@@ -977,20 +982,20 @@ export function App() {
             <p className="panel-copy">One quick briefing, then the weird heat-defense begins.</p>
             <div className="intermission-grid intro-grid">
               <div className="inventory-card">
-                <strong>Board, Bench, Sauna</strong>
-                <small>Board heroes fight, bench heroes wait, and one reserve hero can recover in the sauna.</small>
+                <strong>Board First</strong>
+                <small>The map is the main view now. Most info opens as small HUD popups instead of large permanent panels.</small>
               </div>
               <div className="inventory-card">
-                <strong>SISU Does Two Jobs</strong>
-                <small>Spend SISU on combat bursts or scout recruitment offers between waves.</small>
+                <strong>Topbar + Utility Rail</strong>
+                <small>The topbar tracks your run state, and the right rail opens Modifiers, Roster, Loot and Recruit.</small>
               </div>
               <div className="inventory-card">
-                <strong>Loot Starts In The Header</strong>
-                <small>Fresh drops land in the header first. Overflow only goes into the stash after you unlock it in the metashop.</small>
+                <strong>Selection Lives On The Map</strong>
+                <small>Click a hero or the sauna to inspect them in a small on-board popup without losing sight of the fight.</small>
               </div>
               <div className="inventory-card">
-                <strong>Runs Build In Cycles</strong>
-                <small>Normal waves chain forward, bosses create a break, and both the metashop and beer shop now live on the board.</small>
+                <strong>Buildings Unlock On The Map</strong>
+                <small>Shops and future upgrades can show up as map landmarks, so progression changes the board visually too.</small>
               </div>
             </div>
             <div className="button-row intermission-actions">
