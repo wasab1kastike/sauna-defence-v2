@@ -1,5 +1,13 @@
 import { coordKey, hexDistance } from './logic';
-import type { AxialCoord, DefenderTemplateId, EnemyUnitId, GameSnapshot } from './types';
+import type {
+  AxialCoord,
+  BossId,
+  DefenderTemplateId,
+  EnemyUnitId,
+  GameSnapshot,
+  UnitMotionState,
+  WaveDefinition
+} from './types';
 
 const SQRT3 = Math.sqrt(3);
 
@@ -15,6 +23,29 @@ interface TokenPalette {
   accent: string;
   glow: string;
   glyph: string;
+}
+
+interface HealthBarOptions {
+  height?: number;
+  offsetMultiplier?: number;
+  backdropAlpha?: number;
+  strokeColor?: string;
+}
+
+export interface AnimatedHexPosition {
+  q: number;
+  r: number;
+  progress: number;
+  motionStyle: UnitMotionState['style'] | 'static';
+  isMoving: boolean;
+}
+
+export interface BossVisualProfile {
+  bossId: BossId | null;
+  presentation: 'normal' | 'boss_unit' | 'boss_horde_member';
+  label: string | null;
+  glowColor: string;
+  accentColor: string;
 }
 
 const DEFENDER_TOKEN_STYLES: TokenPalette[] = [
@@ -50,6 +81,8 @@ const ENEMY_PORTRAIT_URLS = [
   `${import.meta.env.BASE_URL}enemies/enemy_steamhog4.png`,
   `${import.meta.env.BASE_URL}enemies/enemy_undead3.png`
 ];
+const PEBBLE_HEAD_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_head.png`;
+const PEBBLE_BODY_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_body.png`;
 const DEFENDER_SPRITE_SHEET_URL = `${import.meta.env.BASE_URL}defenders/sauna-party-sheet.png`;
 const DEFENDER_ROLE_PORTRAITS: Record<DefenderTemplateId, number[]> = {
   guardian: [0],
@@ -70,6 +103,9 @@ let defenderPortraits: Array<HTMLImageElement | null | undefined> | undefined;
 let enemyPortraits: Array<HTMLImageElement | null | undefined> | undefined;
 let defenderSpriteSheet: HTMLImageElement | null | undefined;
 let processedPortraits = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
+let pebbleHeadSprite: HTMLImageElement | null | undefined;
+let pebbleBodySprite: HTMLImageElement | null | undefined;
+let processedPebbleSprites = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 
 function getBoardLayout(width: number, height: number, radius: number): BoardLayout {
   const padding = Math.max(14, Math.min(width, height) * 0.04);
@@ -261,14 +297,22 @@ function drawHealthBar(
   center: { x: number; y: number },
   width: number,
   ratio: number,
-  color: string
+  color: string,
+  options: HealthBarOptions = {}
 ) {
+  const height = options.height ?? 5;
+  const offsetMultiplier = options.offsetMultiplier ?? 1.2;
   const x = center.x - width / 2;
-  const y = center.y - width * 1.2;
-  ctx.fillStyle = 'rgba(10, 16, 18, 0.45)';
-  ctx.fillRect(x, y, width, 5);
+  const y = center.y - width * offsetMultiplier;
+  ctx.fillStyle = `rgba(10, 16, 18, ${options.backdropAlpha ?? 0.45})`;
+  ctx.fillRect(x, y, width, height);
   ctx.fillStyle = color;
-  ctx.fillRect(x, y, width * Math.max(0, Math.min(1, ratio)), 5);
+  ctx.fillRect(x, y, width * Math.max(0, Math.min(1, ratio)), height);
+  if (options.strokeColor) {
+    ctx.strokeStyle = options.strokeColor;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, width, height);
+  }
 }
 
 function drawPolygon(ctx: CanvasRenderingContext2D, center: { x: number; y: number }, radius: number, sides: number, rotation = 0) {
@@ -567,6 +611,28 @@ function getDefenderSpriteSheet(): HTMLImageElement | null {
   return defenderSpriteSheet;
 }
 
+function getPebbleHeadSprite(): HTMLImageElement | null {
+  if (typeof Image === 'undefined') {
+    return null;
+  }
+  if (!pebbleHeadSprite) {
+    pebbleHeadSprite = new Image();
+    pebbleHeadSprite.src = PEBBLE_HEAD_SPRITE_URL;
+  }
+  return pebbleHeadSprite;
+}
+
+function getPebbleBodySprite(): HTMLImageElement | null {
+  if (typeof Image === 'undefined') {
+    return null;
+  }
+  if (!pebbleBodySprite) {
+    pebbleBodySprite = new Image();
+    pebbleBodySprite.src = PEBBLE_BODY_SPRITE_URL;
+  }
+  return pebbleBodySprite;
+}
+
 function fitSpriteDimensions(sourceWidth: number, sourceHeight: number, maxWidth: number, maxHeight: number) {
   const scale = Math.min(maxWidth / sourceWidth, maxHeight / sourceHeight);
   return {
@@ -614,6 +680,33 @@ function drawSprite(
   } else {
     ctx.drawImage(image, destX, destY, dims.width, dims.height);
   }
+  ctx.imageSmoothingEnabled = previousSmoothing;
+  ctx.restore();
+}
+
+function drawRotatedSprite(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement | HTMLCanvasElement,
+  center: { x: number; y: number },
+  maxWidth: number,
+  maxHeight: number,
+  angle: number,
+  shadowWidth = 0,
+  shadowHeight = 0
+) {
+  const sourceWidth = image instanceof HTMLImageElement ? image.naturalWidth : image.width;
+  const sourceHeight = image instanceof HTMLImageElement ? image.naturalHeight : image.height;
+  const dims = fitSpriteDimensions(sourceWidth, sourceHeight, maxWidth, maxHeight);
+  if (shadowWidth > 0 && shadowHeight > 0) {
+    drawGroundShadow(ctx, { x: center.x, y: center.y + shadowHeight * 0.6 }, shadowWidth, shadowHeight, 'rgba(7, 10, 8, 0.4)');
+  }
+
+  ctx.save();
+  ctx.translate(center.x, center.y);
+  ctx.rotate(angle);
+  const previousSmoothing = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(image, -dims.width / 2, -dims.height * 0.72, dims.width, dims.height);
   ctx.imageSmoothingEnabled = previousSmoothing;
   ctx.restore();
 }
@@ -688,6 +781,98 @@ function getProcessedPortrait(image: HTMLImageElement | null): HTMLCanvasElement
   return canvas;
 }
 
+function rgbaDistance(
+  left: { r: number; g: number; b: number },
+  right: { r: number; g: number; b: number }
+) {
+  return Math.abs(left.r - right.r) + Math.abs(left.g - right.g) + Math.abs(left.b - right.b);
+}
+
+function getProcessedPebbleSprite(image: HTMLImageElement | null): HTMLCanvasElement | HTMLImageElement | null {
+  if (!image || !image.complete || image.naturalWidth === 0 || typeof document === 'undefined') {
+    return image;
+  }
+
+  const cached = processedPebbleSprites.get(image);
+  if (cached) {
+    return cached;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) {
+    return image;
+  }
+
+  ctx.drawImage(image, 0, 0);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const { data, width, height } = imageData;
+  const cornerSamples = [
+    { r: data[0], g: data[1], b: data[2] },
+    { r: data[(width - 1) * 4], g: data[(width - 1) * 4 + 1], b: data[(width - 1) * 4 + 2] },
+    {
+      r: data[((height - 1) * width) * 4],
+      g: data[((height - 1) * width) * 4 + 1],
+      b: data[((height - 1) * width) * 4 + 2]
+    },
+    {
+      r: data[((height * width) - 1) * 4],
+      g: data[((height * width) - 1) * 4 + 1],
+      b: data[((height * width) - 1) * 4 + 2]
+    }
+  ];
+  const background = cornerSamples.reduce(
+    (total, sample) => ({
+      r: total.r + sample.r / cornerSamples.length,
+      g: total.g + sample.g / cornerSamples.length,
+      b: total.b + sample.b / cornerSamples.length
+    }),
+    { r: 0, g: 0, b: 0 }
+  );
+
+  const visited = new Uint8Array(width * height);
+  const queue: number[] = [];
+  const threshold = 72;
+
+  const enqueue = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const index = y * width + x;
+    if (visited[index]) return;
+    visited[index] = 1;
+    const offset = index * 4;
+    const pixel = { r: data[offset], g: data[offset + 1], b: data[offset + 2] };
+    if (data[offset + 3] === 0 || rgbaDistance(pixel, background) > threshold) return;
+    queue.push(index);
+  };
+
+  for (let x = 0; x < width; x += 1) {
+    enqueue(x, 0);
+    enqueue(x, height - 1);
+  }
+  for (let y = 0; y < height; y += 1) {
+    enqueue(0, y);
+    enqueue(width - 1, y);
+  }
+
+  while (queue.length > 0) {
+    const index = queue.pop()!;
+    const offset = index * 4;
+    data[offset + 3] = 0;
+    const x = index % width;
+    const y = Math.floor(index / width);
+    enqueue(x + 1, y);
+    enqueue(x - 1, y);
+    enqueue(x, y + 1);
+    enqueue(x, y - 1);
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  processedPebbleSprites.set(image, canvas);
+  return canvas;
+}
+
 function drawDefenderPortrait(
   ctx: CanvasRenderingContext2D,
   center: { x: number; y: number },
@@ -752,9 +937,114 @@ function lerp(start: number, end: number, progress: number) {
   return start + (end - start) * progress;
 }
 
+function easeInOutSine(value: number) {
+  const t = clamp(value);
+  return -(Math.cos(Math.PI * t) - 1) / 2;
+}
+
 function easeOutCubic(value: number) {
   const t = clamp(value);
   return 1 - (1 - t) ** 3;
+}
+
+function easeInOutSmooth(value: number) {
+  const t = clamp(value);
+  return t * t * (3 - 2 * t);
+}
+
+export function resolveAnimatedHexPosition(
+  tile: AxialCoord,
+  motion: UnitMotionState | null | undefined,
+  timeMs: number
+): AnimatedHexPosition {
+  if (!motion) {
+    return {
+      q: tile.q,
+      r: tile.r,
+      progress: 1,
+      motionStyle: 'static',
+      isMoving: false
+    };
+  }
+
+  const rawProgress = clamp((timeMs - motion.startedAtMs) / Math.max(1, motion.durationMs));
+  const easedProgress =
+    motion.style === 'blink'
+      ? easeOutCubic(rawProgress)
+      : motion.style === 'slither'
+        ? easeInOutSine(rawProgress)
+        : easeInOutSmooth(rawProgress);
+
+  return {
+    q: lerp(motion.fromTile.q, motion.toTile.q, easedProgress),
+    r: lerp(motion.fromTile.r, motion.toTile.r, easedProgress),
+    progress: rawProgress,
+    motionStyle: motion.style,
+    isMoving: rawProgress < 1
+  };
+}
+
+export function resolveBossVisualProfile(currentWave: WaveDefinition, archetypeId: EnemyUnitId): BossVisualProfile {
+  if (!currentWave.isBoss || !currentWave.bossId) {
+    return {
+      bossId: null,
+      presentation: 'normal',
+      label: null,
+      glowColor: 'rgba(0,0,0,0)',
+      accentColor: 'rgba(0,0,0,0)'
+    };
+  }
+
+  switch (currentWave.bossId) {
+    case 'pebble':
+      return archetypeId === 'pebble'
+        ? {
+            bossId: 'pebble',
+            presentation: 'boss_unit',
+            label: 'Pebble',
+            glowColor: 'rgba(255, 166, 92, 0.42)',
+            accentColor: '#ffca78'
+          }
+        : { bossId: null, presentation: 'normal', label: null, glowColor: 'rgba(0,0,0,0)', accentColor: 'rgba(0,0,0,0)' };
+    case 'electric_bather':
+      return archetypeId === 'electric_bather'
+        ? {
+            bossId: 'electric_bather',
+            presentation: 'boss_unit',
+            label: 'Electric Sauna User',
+            glowColor: 'rgba(122, 220, 255, 0.44)',
+            accentColor: '#d9f6ff'
+          }
+        : { bossId: null, presentation: 'normal', label: null, glowColor: 'rgba(0,0,0,0)', accentColor: 'rgba(0,0,0,0)' };
+    case 'escalation_manager':
+      return archetypeId === 'escalation_manager'
+        ? {
+            bossId: 'escalation_manager',
+            presentation: 'boss_unit',
+            label: 'Escalation Manager',
+            glowColor: 'rgba(255, 113, 199, 0.38)',
+            accentColor: '#ffe2ff'
+          }
+        : { bossId: null, presentation: 'normal', label: null, glowColor: 'rgba(0,0,0,0)', accentColor: 'rgba(0,0,0,0)' };
+    case 'end_user_horde':
+      return archetypeId === 'thirsty_user'
+        ? {
+            bossId: 'end_user_horde',
+            presentation: 'boss_horde_member',
+            label: 'End-User Horde',
+            glowColor: 'rgba(255, 130, 98, 0.3)',
+            accentColor: '#ffe2c7'
+          }
+        : { bossId: null, presentation: 'normal', label: null, glowColor: 'rgba(0,0,0,0)', accentColor: 'rgba(0,0,0,0)' };
+    default:
+      return {
+        bossId: null,
+        presentation: 'normal',
+        label: null,
+        glowColor: 'rgba(0,0,0,0)',
+        accentColor: 'rgba(0,0,0,0)'
+      };
+  }
 }
 
 function pointLerp(
@@ -975,6 +1265,342 @@ function drawSpinBlade(
   ctx.lineTo(-bladeWidth * 0.42, bladeLength * 0.18);
   ctx.closePath();
   ctx.fill();
+  ctx.restore();
+}
+
+function axialFloatToPixel(tile: { q: number; r: number }, layout: BoardLayout) {
+  return {
+    x: layout.centerX + layout.hexSize * SQRT3 * (tile.q + tile.r / 2),
+    y: layout.centerY + layout.hexSize * 1.5 * tile.r
+  };
+}
+
+function getTravelAngle(tile: AxialCoord, motion: UnitMotionState | null | undefined, layout: BoardLayout) {
+  const from = motion?.fromTile ?? tile;
+  const to = motion?.toTile ?? tile;
+  const start = axialToPixel(from, layout);
+  const end = axialToPixel(to, layout);
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  if (Math.abs(dx) + Math.abs(dy) > 0.5) {
+    return Math.atan2(dy, dx);
+  }
+  const fallback = axialToPixel(tile, layout);
+  return Math.atan2(layout.centerY - fallback.y, layout.centerX - fallback.x);
+}
+
+function resolveAnimatedCanvasUnit(
+  tile: AxialCoord,
+  motion: UnitMotionState | null | undefined,
+  timeMs: number,
+  layout: BoardLayout
+) {
+  const animated = resolveAnimatedHexPosition(tile, motion, timeMs);
+  const center = axialFloatToPixel(animated, layout);
+  const angle = getTravelAngle(tile, motion, layout);
+  const bounce =
+    animated.isMoving && animated.motionStyle === 'blink'
+      ? -Math.sin(animated.progress * Math.PI) * layout.hexSize * 0.16
+      : animated.isMoving && animated.motionStyle === 'step'
+        ? -Math.sin(animated.progress * Math.PI) * layout.hexSize * 0.07
+        : 0;
+  return {
+    animated,
+    angle,
+    center: {
+      x: center.x,
+      y: center.y + bounce
+    }
+  };
+}
+
+function drawGroundShadow(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  width: number,
+  height: number,
+  color = 'rgba(5, 8, 10, 0.34)'
+) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(center.x, center.y, width, height, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawLabelPill(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  text: string,
+  width: number,
+  fill: string,
+  stroke: string,
+  color: string
+) {
+  ctx.save();
+  const height = 18;
+  const x = center.x - width / 2;
+  const y = center.y;
+  const radius = height / 2;
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '800 10px Trebuchet MS';
+  ctx.fillText(text, center.x, y + height / 2 + 0.5);
+  ctx.restore();
+}
+
+function drawPebbleBoss(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  radius: number,
+  angle: number,
+  timeMs: number
+) {
+  const direction = { x: Math.cos(angle), y: Math.sin(angle) };
+  const normal = { x: -direction.y, y: direction.x };
+  const headSprite = getProcessedPebbleSprite(getPebbleHeadSprite());
+  const bodySprite = getProcessedPebbleSprite(getPebbleBodySprite());
+  drawGlowDisc(ctx, center, radius * 2.4, 'rgba(255, 184, 108, 0.4)', 'rgba(255, 112, 53, 0)', 0.88);
+  drawGroundShadow(ctx, { x: center.x, y: center.y + radius * 0.92 }, radius * 1.25, radius * 0.36, 'rgba(8, 6, 4, 0.46)');
+  const head = {
+    x: center.x + direction.x * radius * 0.18,
+    y: center.y + direction.y * radius * 0.18
+  };
+  const body = {
+    x: center.x - direction.x * radius * 0.56 + normal.x * Math.sin(timeMs * 0.012) * radius * 0.08,
+    y: center.y - direction.y * radius * 0.56 + normal.y * Math.sin(timeMs * 0.012) * radius * 0.08
+  };
+  drawSmokeParticles(ctx, center, radius * 1.65, 0.36 + Math.sin(timeMs * 0.003) * 0.08, timeMs * 0.02, 'rgba(86, 54, 32, 1)', 8);
+  if (bodySprite && !(bodySprite instanceof HTMLImageElement && (!bodySprite.complete || bodySprite.naturalWidth === 0))) {
+    drawRotatedSprite(ctx, bodySprite, body, radius * 5.2, radius * 2.8, angle + Math.PI, radius * 1.55, radius * 0.42);
+  } else {
+    for (let index = 0; index < 6; index += 1) {
+      const progress = index / 5;
+      const sway = Math.sin(timeMs * 0.012 + index * 0.72) * radius * 0.18;
+      const segmentCenter = {
+        x: center.x - direction.x * radius * 0.7 * index + normal.x * sway,
+        y: center.y - direction.y * radius * 0.7 * index + normal.y * sway
+      };
+      const segmentRadius = radius * (1.1 - progress * 0.32);
+      ctx.save();
+      ctx.translate(segmentCenter.x, segmentCenter.y);
+      ctx.rotate(angle + Math.sin(timeMs * 0.008 + index * 0.45) * 0.08);
+      const gradient = ctx.createLinearGradient(-segmentRadius, 0, segmentRadius, 0);
+      gradient.addColorStop(0, '#4c2b15');
+      gradient.addColorStop(0.55, '#8f5e35');
+      gradient.addColorStop(1, '#d79255');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, segmentRadius, segmentRadius * 0.66, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(43, 18, 7, 0.9)';
+      ctx.lineWidth = Math.max(1.5, radius * 0.06);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+  if (headSprite && !(headSprite instanceof HTMLImageElement && (!headSprite.complete || headSprite.naturalWidth === 0))) {
+    drawRotatedSprite(ctx, headSprite, head, radius * 2.6, radius * 2.35, angle + Math.PI, radius * 0.85, radius * 0.3);
+  } else {
+    ctx.save();
+    ctx.translate(head.x, head.y);
+    ctx.rotate(angle);
+    ctx.fillStyle = '#f6c67a';
+    ctx.beginPath();
+    ctx.ellipse(radius * 0.5, -radius * 0.14, radius * 0.12, radius * 0.08, 0, 0, Math.PI * 2);
+    ctx.ellipse(radius * 0.5, radius * 0.14, radius * 0.12, radius * 0.08, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#1b0d05';
+    ctx.beginPath();
+    ctx.arc(radius * 0.52, -radius * 0.14, radius * 0.04, 0, Math.PI * 2);
+    ctx.arc(radius * 0.52, radius * 0.14, radius * 0.04, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawElectricBoss(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  radius: number,
+  timeMs: number,
+  chargeProgress: number
+) {
+  drawGroundShadow(ctx, { x: center.x, y: center.y + radius * 1.02 }, radius * 0.98, radius * 0.3, 'rgba(6, 15, 22, 0.42)');
+  drawGlowDisc(ctx, center, radius * (2.1 + chargeProgress * 0.45), 'rgba(208, 245, 255, 0.42)', 'rgba(94, 190, 255, 0)', 0.9);
+  drawShockRing(ctx, center, radius * (0.9 + chargeProgress * 0.26), 'rgba(167, 237, 255, 0.95)', Math.max(2, radius * 0.08), 0.72);
+  drawSparkBurst(ctx, center, radius * (1.15 + chargeProgress * 0.35), '#def7ff', 0.62 + chargeProgress * 0.2, 10, timeMs * 0.01);
+  ctx.save();
+  ctx.translate(center.x, center.y);
+  const bodyGradient = ctx.createLinearGradient(0, -radius * 1.1, 0, radius * 1.2);
+  bodyGradient.addColorStop(0, '#dff7ff');
+  bodyGradient.addColorStop(0.4, '#71a8d8');
+  bodyGradient.addColorStop(1, '#20334b');
+  ctx.fillStyle = bodyGradient;
+  ctx.beginPath();
+  ctx.ellipse(0, radius * 0.15, radius * 0.62, radius * 0.92, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(228, 250, 255, 0.92)';
+  ctx.lineWidth = Math.max(2, radius * 0.06);
+  ctx.stroke();
+  ctx.fillStyle = '#f8ffff';
+  ctx.beginPath();
+  ctx.arc(-radius * 0.18, -radius * 0.16, radius * 0.1, 0, Math.PI * 2);
+  ctx.arc(radius * 0.18, -radius * 0.16, radius * 0.1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawEscalationManagerBoss(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  radius: number,
+  timeMs: number,
+  shielded: boolean
+) {
+  drawGroundShadow(ctx, { x: center.x, y: center.y + radius * 1.05 }, radius, radius * 0.32, 'rgba(14, 8, 15, 0.45)');
+  drawGlowDisc(ctx, center, radius * 1.9, shielded ? 'rgba(255, 178, 240, 0.4)' : 'rgba(222, 133, 195, 0.28)', 'rgba(132, 32, 98, 0)', 0.86);
+  if (shielded) {
+    drawShockRing(ctx, center, radius * 1.08, 'rgba(255, 216, 252, 0.84)', Math.max(2, radius * 0.07), 0.8);
+  }
+  ctx.save();
+  ctx.translate(center.x, center.y);
+  ctx.fillStyle = '#321729';
+  ctx.beginPath();
+  ctx.moveTo(-radius * 0.56, radius * 0.94);
+  ctx.lineTo(-radius * 0.48, -radius * 0.18);
+  ctx.lineTo(-radius * 0.18, -radius * 0.88);
+  ctx.lineTo(radius * 0.18, -radius * 0.88);
+  ctx.lineTo(radius * 0.48, -radius * 0.18);
+  ctx.lineTo(radius * 0.56, radius * 0.94);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#ffdff7';
+  ctx.lineWidth = Math.max(2, radius * 0.06);
+  ctx.stroke();
+  ctx.fillStyle = '#ffd8ef';
+  ctx.fillRect(-radius * 0.18, -radius * 0.18, radius * 0.36, radius * 0.56);
+  ctx.restore();
+  for (let index = 0; index < 3; index += 1) {
+    const orbitAngle = timeMs * 0.004 + index * ((Math.PI * 2) / 3);
+    const ticketCenter = {
+      x: center.x + Math.cos(orbitAngle) * radius * 1.2,
+      y: center.y + Math.sin(orbitAngle) * radius * 0.7 - radius * 0.18
+    };
+    ctx.save();
+    ctx.translate(ticketCenter.x, ticketCenter.y);
+    ctx.rotate(orbitAngle + Math.PI / 2);
+    ctx.fillStyle = shielded ? '#fff4fb' : '#f1bfd7';
+    ctx.fillRect(-radius * 0.16, -radius * 0.12, radius * 0.32, radius * 0.24);
+    ctx.strokeStyle = '#7f325d';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-radius * 0.16, -radius * 0.12, radius * 0.32, radius * 0.24);
+    ctx.restore();
+  }
+}
+
+function drawHordeMemberBoss(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  radius: number,
+  timeMs: number,
+  hordeCount: number
+) {
+  const intensity = clamp(hordeCount / 10, 0.35, 1);
+  drawGroundShadow(ctx, { x: center.x, y: center.y + radius * 0.85 }, radius * 0.9, radius * 0.28, 'rgba(11, 8, 6, 0.35)');
+  drawGlowDisc(ctx, center, radius * (1.5 + intensity * 0.4), 'rgba(255, 182, 126, 0.28)', 'rgba(183, 48, 24, 0)', 0.76);
+  for (let index = 0; index < 3; index += 1) {
+    const angle = timeMs * 0.002 + index * 2.1;
+    const offset = index === 0 ? 0 : radius * 0.26;
+    const memberCenter = {
+      x: center.x + Math.cos(angle) * offset,
+      y: center.y + Math.sin(angle * 1.3) * offset * 0.55
+    };
+    ctx.save();
+    ctx.translate(memberCenter.x, memberCenter.y);
+    ctx.fillStyle = index === 0 ? '#f1b082' : '#d98063';
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * (index === 0 ? 0.4 : 0.28), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(84, 28, 16, 0.82)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawEnemyBossNameplate(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  label: string,
+  radius: number,
+  profile: BossVisualProfile
+) {
+  drawLabelPill(
+    ctx,
+    { x: center.x, y: center.y - radius * 1.95 },
+    label,
+    Math.max(104, label.length * 6.8),
+    'rgba(16, 13, 18, 0.86)',
+    profile.glowColor,
+    '#fff7ea'
+  );
+}
+
+function drawBossWaveAtmosphere(
+  ctx: CanvasRenderingContext2D,
+  snapshot: GameSnapshot,
+  layout: BoardLayout,
+  viewportWidth: number,
+  viewportHeight: number
+) {
+  const bossId = snapshot.state.currentWave.bossId;
+  if (!snapshot.hud.isBossWave || !bossId) return;
+
+  const atmosphere = ctx.createRadialGradient(
+    layout.centerX,
+    layout.centerY,
+    layout.hexSize * 1.4,
+    layout.centerX,
+    layout.centerY,
+    layout.hexSize * 7.8
+  );
+
+  if (bossId === 'pebble') {
+    atmosphere.addColorStop(0, 'rgba(255, 166, 94, 0.16)');
+    atmosphere.addColorStop(1, 'rgba(82, 34, 16, 0)');
+  } else if (bossId === 'electric_bather') {
+    atmosphere.addColorStop(0, 'rgba(120, 222, 255, 0.16)');
+    atmosphere.addColorStop(1, 'rgba(20, 52, 88, 0)');
+  } else if (bossId === 'escalation_manager') {
+    atmosphere.addColorStop(0, 'rgba(255, 116, 214, 0.14)');
+    atmosphere.addColorStop(1, 'rgba(62, 11, 38, 0)');
+  } else {
+    atmosphere.addColorStop(0, 'rgba(255, 136, 88, 0.14)');
+    atmosphere.addColorStop(1, 'rgba(66, 16, 12, 0)');
+  }
+
+  ctx.save();
+  ctx.fillStyle = atmosphere;
+  ctx.fillRect(0, 0, viewportWidth, viewportHeight);
   ctx.restore();
 }
 
@@ -1319,6 +1945,7 @@ export function paintSnapshot(
   smoke.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = smoke;
   ctx.fillRect(0, 0, viewportWidth, viewportHeight);
+  drawBossWaveAtmosphere(ctx, snapshot, layout, viewportWidth, viewportHeight);
 
   for (const tile of snapshot.tiles) {
     const center = axialToPixel(tile, layout);
@@ -1392,7 +2019,11 @@ export function paintSnapshot(
 
   for (const defender of snapshot.state.defenders) {
     if (defender.location !== 'board' || !defender.tile) continue;
-    const center = axialToPixel(defender.tile, layout);
+    const animatedUnit = resolveAnimatedCanvasUnit(defender.tile, defender.motion ?? null, snapshot.state.timeMs, layout);
+    const center = {
+      x: animatedUnit.center.x,
+      y: animatedUnit.center.y + Math.sin(snapshot.state.timeMs * 0.004 + defender.tokenStyleId) * layout.hexSize * 0.012
+    };
     const template = snapshot.defenderTemplates[defender.templateId];
     const stats = defender.items.reduce(
       (total, itemId) => {
@@ -1414,6 +2045,7 @@ export function paintSnapshot(
     );
     const radius = layout.hexSize * 0.48;
     const style = getDefenderStyle(defender.tokenStyleId);
+    drawGroundShadow(ctx, { x: center.x, y: center.y + radius * 1.05 }, radius * 0.88, radius * 0.28);
     const hasPortrait = drawDefenderPortrait(ctx, center, radius, defender.templateId, defender.tokenStyleId);
 
     if (selected?.id === defender.id) {
@@ -1437,24 +2069,99 @@ export function paintSnapshot(
     drawDefenderName(ctx, center, radius, defender.name);
   }
 
+  const hordeCount = snapshot.state.enemies.filter((enemy) => enemy.archetypeId === 'thirsty_user').length;
+  const shieldedManagerIds = new Set(
+    snapshot.state.enemies
+      .filter((enemy) => enemy.spawnedByEnemyInstanceId != null)
+      .map((enemy) => enemy.spawnedByEnemyInstanceId as number)
+  );
+
   for (const enemy of snapshot.state.enemies) {
-    const center = axialToPixel(enemy.tile, layout);
+    const bossProfile = resolveBossVisualProfile(snapshot.state.currentWave, enemy.archetypeId);
+    const animatedUnit = resolveAnimatedCanvasUnit(enemy.tile, enemy.motion ?? null, snapshot.state.timeMs, layout);
+    const idleAngle = snapshot.state.timeMs * 0.004 + enemy.instanceId * 0.71;
+    const idleX =
+      bossProfile.bossId === 'electric_bather'
+        ? Math.sin(idleAngle * 1.7) * layout.hexSize * 0.016
+        : bossProfile.bossId === 'escalation_manager'
+          ? Math.cos(idleAngle) * layout.hexSize * 0.014
+          : Math.sin(idleAngle) * layout.hexSize * 0.01;
+    const idleY =
+      bossProfile.bossId === 'pebble'
+        ? Math.sin(idleAngle * 1.3) * layout.hexSize * 0.015
+        : Math.cos(idleAngle * 1.2) * layout.hexSize * 0.014;
+    const center = {
+      x: animatedUnit.center.x + idleX,
+      y: animatedUnit.center.y + idleY
+    };
     const archetype = snapshot.enemyArchetypes[enemy.archetypeId];
     const radius = layout.hexSize * (
-      enemy.archetypeId === 'pebble'
-        ? 0.66
-        : enemy.archetypeId === 'chieftain' || enemy.archetypeId === 'electric_bather' || enemy.archetypeId === 'escalation_manager'
-          ? 0.54
+      bossProfile.bossId === 'pebble'
+        ? 0.92
+        : bossProfile.presentation === 'boss_unit'
+          ? 0.72
+          : bossProfile.presentation === 'boss_horde_member'
+            ? 0.56
+            : enemy.archetypeId === 'chieftain'
+              ? 0.54
           : 0.45
     );
     const style = getEnemyStyle(enemy.tokenStyleId);
-    const hasPortrait = drawEnemyPortrait(ctx, center, radius, enemy.archetypeId, enemy.tokenStyleId);
-    if (!hasPortrait) {
-      drawTokenBase(ctx, center, radius, style, archetype.fill);
-      drawGlyph(ctx, center, radius, style.glyph, style.accent);
-      drawTokenLabel(ctx, center, radius, archetype.label, '#fff0e8');
+    drawGroundShadow(
+      ctx,
+      { x: center.x, y: center.y + radius * (bossProfile.presentation === 'boss_unit' ? 1.1 : 0.98) },
+      radius * (bossProfile.presentation === 'boss_unit' ? 1.16 : 0.86),
+      radius * (bossProfile.presentation === 'boss_unit' ? 0.36 : 0.26),
+      bossProfile.presentation === 'boss_unit' ? 'rgba(8, 8, 10, 0.46)' : 'rgba(6, 6, 8, 0.3)'
+    );
+
+    if (bossProfile.presentation === 'boss_unit') {
+      if (bossProfile.bossId === 'pebble') {
+        drawPebbleBoss(ctx, center, radius, animatedUnit.angle, snapshot.state.timeMs);
+      } else if (bossProfile.bossId === 'electric_bather') {
+        const chargeProgress = clamp(
+          1 - ((enemy.nextAbilityAtMs ?? Number.POSITIVE_INFINITY) - snapshot.state.timeMs) / 1250,
+          0,
+          1
+        );
+        drawElectricBoss(ctx, center, radius, snapshot.state.timeMs, chargeProgress);
+      } else if (bossProfile.bossId === 'escalation_manager') {
+        drawEscalationManagerBoss(ctx, center, radius, snapshot.state.timeMs, shieldedManagerIds.has(enemy.instanceId));
+      }
+      drawEnemyBossNameplate(ctx, center, bossProfile.label ?? archetype.name, radius, bossProfile);
+    } else if (bossProfile.presentation === 'boss_horde_member') {
+      drawHordeMemberBoss(ctx, center, radius, snapshot.state.timeMs, hordeCount);
+    } else {
+      const hasPortrait = drawEnemyPortrait(ctx, center, radius, enemy.archetypeId, enemy.tokenStyleId);
+      if (!hasPortrait) {
+        drawTokenBase(ctx, center, radius, style, archetype.fill);
+        drawGlyph(ctx, center, radius, style.glyph, style.accent);
+        drawTokenLabel(ctx, center, radius, archetype.label, '#fff0e8');
+      }
     }
-    drawHealthBar(ctx, center, layout.hexSize * 1.04, enemy.hp / archetype.maxHp, '#ff8772');
+
+    drawHealthBar(
+      ctx,
+      center,
+      layout.hexSize * (bossProfile.presentation === 'boss_unit' ? 1.56 : bossProfile.presentation === 'boss_horde_member' ? 1.2 : 1.04),
+      enemy.hp / archetype.maxHp,
+      bossProfile.presentation === 'boss_unit' ? '#ff9f85' : bossProfile.presentation === 'boss_horde_member' ? '#ffb189' : '#ff8772',
+      bossProfile.presentation === 'boss_unit'
+        ? {
+            height: 7,
+            offsetMultiplier: 1.45,
+            backdropAlpha: 0.62,
+            strokeColor: bossProfile.accentColor
+          }
+        : bossProfile.presentation === 'boss_horde_member'
+          ? {
+              height: 6,
+              offsetMultiplier: 1.32,
+              backdropAlpha: 0.56,
+              strokeColor: 'rgba(255, 221, 184, 0.42)'
+            }
+          : undefined
+    );
   }
 
   drawCombatFx(ctx, snapshot, layout);
@@ -1510,7 +2217,10 @@ export function pickDefenderAtCanvasPoint(
     .filter((defender) => defender.location === 'board' && defender.tile)
     .map((defender) => ({
       id: defender.id,
-      center: axialToPixel(defender.tile as AxialCoord, layout),
+      center: axialFloatToPixel(
+        resolveAnimatedHexPosition(defender.tile as AxialCoord, defender.motion ?? null, snapshot.state.timeMs),
+        layout
+      ),
       radius: layout.hexSize * 0.62
     }))
     .sort((left, right) => right.radius - left.radius);

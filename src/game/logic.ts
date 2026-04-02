@@ -36,6 +36,7 @@ import type {
   RunState,
   SkillId,
   SubclassDraftRequest,
+  UnitMotionState,
   UnitStats,
   WaveDefinition,
   WavePattern,
@@ -110,6 +111,10 @@ const GLOBAL_MODIFIER_STAT_ORDER: GlobalModifierEffectStat[] = [
 ];
 const ELECTRIC_BATHER_ABILITY_COOLDOWN_MS = 5200;
 const ESCALATION_MANAGER_ABILITY_COOLDOWN_MS = 6000;
+const STEP_MOTION_DURATION_MS = 240;
+const PEBBLE_MOTION_DURATION_MS = 520;
+const BLINK_MOTION_DURATION_MS = 320;
+const SPAWN_SETTLE_DURATION_MS = 260;
 const PEBBLE_PATH_BASE: AxialCoord[] = [
   { q: 0, r: -6 },
   { q: 1, r: -5 },
@@ -213,6 +218,82 @@ export function sameCoord(left: AxialCoord, right: AxialCoord): boolean {
 
 function add(left: AxialCoord, right: AxialCoord): AxialCoord {
   return { q: left.q + right.q, r: left.r + right.r };
+}
+
+function cloneCoord(coord: AxialCoord): AxialCoord {
+  return { q: coord.q, r: coord.r };
+}
+
+function assignUnitMotion(
+  unit: { motion?: UnitMotionState | null },
+  fromTile: AxialCoord,
+  toTile: AxialCoord,
+  startedAtMs: number,
+  durationMs: number,
+  style: UnitMotionState['style']
+): void {
+  unit.motion = {
+    fromTile: cloneCoord(fromTile),
+    toTile: cloneCoord(toTile),
+    startedAtMs,
+    durationMs: Math.max(1, durationMs),
+    style
+  };
+}
+
+function clearUnitMotion(unit: { motion?: UnitMotionState | null }): void {
+  unit.motion = null;
+}
+
+function moveDefenderToTile(
+  state: RunState,
+  defender: DefenderInstance,
+  toTile: AxialCoord,
+  style: UnitMotionState['style'],
+  durationMs: number,
+  fromTile: AxialCoord | null = defender.tile
+): void {
+  defender.tile = cloneCoord(toTile);
+  if (fromTile) {
+    assignUnitMotion(defender, fromTile, toTile, state.timeMs, durationMs, style);
+  } else {
+    clearUnitMotion(defender);
+  }
+}
+
+function moveEnemyToTile(
+  state: RunState,
+  enemy: EnemyInstance,
+  toTile: AxialCoord,
+  style: UnitMotionState['style'],
+  durationMs: number,
+  fromTile: AxialCoord | null = enemy.tile
+): void {
+  enemy.tile = cloneCoord(toTile);
+  if (fromTile) {
+    assignUnitMotion(enemy, fromTile, toTile, state.timeMs, durationMs, style);
+  } else {
+    clearUnitMotion(enemy);
+  }
+}
+
+function spawnApproachTile(tile: AxialCoord): AxialCoord {
+  const outward = DIRS
+    .slice()
+    .sort((left, right) => hexDistance(add(tile, right), CENTER) - hexDistance(add(tile, left), CENTER))[0];
+  return add(tile, outward);
+}
+
+function clearExpiredMotions(state: RunState): void {
+  const clearIfExpired = (unit: { motion?: UnitMotionState | null }) => {
+    if (!unit.motion) return;
+    if (state.timeMs >= unit.motion.startedAtMs + unit.motion.durationMs) {
+      unit.motion = null;
+    }
+  };
+
+  for (const defender of state.defenders) clearIfExpired(defender);
+  for (const enemy of state.enemies) clearIfExpired(enemy);
 }
 
 function rotateClockwise(coord: AxialCoord): AxialCoord {
@@ -790,6 +871,7 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
     location: 'ready',
     tile: null,
     homeTile: null,
+    motion: null,
     attackReadyAtMs: 0,
     blinkReadyAtMs: 0,
     items: [],
@@ -1083,7 +1165,7 @@ function deploySaunaOccupant(state: RunState, content: GameContent, preferredTil
   if (!tile) return null;
 
   saunaDefender.location = 'board';
-  saunaDefender.tile = tile;
+  moveDefenderToTile(state, saunaDefender, tile, 'blink', BLINK_MOTION_DURATION_MS, CENTER);
   saunaDefender.attackReadyAtMs = state.timeMs + derivedStats(state, saunaDefender, content).attackCooldownMs;
   state.saunaDefenderId = null;
   autoFillSaunaFromBench(state, content);
@@ -1101,6 +1183,7 @@ function autoFillSaunaFromBench(state: RunState, content: GameContent): Defender
   }
   reserve.location = 'sauna';
   reserve.tile = null;
+  clearUnitMotion(reserve);
   state.saunaDefenderId = reserve.id;
   return reserve;
 }
@@ -1116,11 +1199,12 @@ function maybeSaunaSlapSwap(state: RunState, defender: DefenderInstance, content
 
   const swapTile = { ...defender.tile };
   saunaDefender.location = 'board';
-  saunaDefender.tile = swapTile;
+  moveDefenderToTile(state, saunaDefender, swapTile, 'blink', BLINK_MOTION_DURATION_MS, CENTER);
   saunaDefender.attackReadyAtMs = state.timeMs + derivedStats(state, saunaDefender, content).attackCooldownMs;
 
   defender.location = 'sauna';
   defender.tile = null;
+  clearUnitMotion(defender);
   state.saunaDefenderId = defender.id;
   state.waveSwapUsed = true;
   state.message = `${saunaDefender.name} storms out of the sauna while ${defender.name} limps inside.`;
@@ -1477,6 +1561,7 @@ function replaceDefenderWithRecruit(
 ): void {
   incoming.location = outgoing.location;
   incoming.tile = outgoing.tile ? { ...outgoing.tile } : null;
+  incoming.motion = outgoing.motion ? { ...outgoing.motion, fromTile: cloneCoord(outgoing.motion.fromTile), toTile: cloneCoord(outgoing.motion.toTile) } : null;
   incoming.attackReadyAtMs =
     incoming.location === 'board'
       ? state.timeMs + derivedStats(state, incoming, content).attackCooldownMs
@@ -1560,7 +1645,7 @@ function tryBlink(state: RunState, defender: DefenderInstance, content: GameCont
       !occupied(state, defender.homeTile) &&
       (defender.homeTile.q !== defender.tile.q || defender.homeTile.r !== defender.tile.r);
     if (canRetreat) {
-      defender.tile = { ...defender.homeTile };
+      moveDefenderToTile(state, defender, defender.homeTile, 'blink', 420, from);
       defender.blinkReadyAtMs = state.timeMs + BLINK_STEP_COOLDOWN_MS;
       pushFx(state, 'blink', defender.tile, 420, from);
       return true;
@@ -1573,7 +1658,7 @@ function tryBlink(state: RunState, defender: DefenderInstance, content: GameCont
     .filter((next) => isBuildable(next, content) && !occupied(state, next))
     .sort((left, right) => hexDistance(left, enemy.tile) - hexDistance(right, enemy.tile))[0];
   if (!tile) return false;
-  defender.tile = tile;
+  moveDefenderToTile(state, defender, tile, 'blink', BLINK_MOTION_DURATION_MS, from);
   defender.blinkReadyAtMs = state.timeMs + BLINK_STEP_COOLDOWN_MS;
   pushFx(state, 'blink', tile, 320, from);
   return true;
@@ -1609,7 +1694,7 @@ function moveDefenderTowardSaunaThreat(
   const closesCenterGap = hexDistance(nextTile, CENTER) < currentCenterDistance;
   if (!closesThreatGap && !closesCenterGap) return false;
 
-  defender.tile = nextTile;
+  moveDefenderToTile(state, defender, nextTile, 'step', STEP_MOTION_DURATION_MS);
   defender.attackReadyAtMs = state.timeMs + Math.max(260, (stats.attackCooldownMs / cooldownMultiplier) * 0.45);
   return true;
 }
@@ -1777,6 +1862,7 @@ function resolveDefenderDeaths(state: RunState, content: GameContent): void {
       const deathLog = createDeathLogText(state, defender, content);
       defender.location = 'dead';
       defender.tile = null;
+      clearUnitMotion(defender);
       if (state.saunaDefenderId === defender.id) state.saunaDefenderId = null;
       if (state.selectedDefenderId === defender.id) state.selectedDefenderId = null;
       state.deathLog.unshift({
@@ -2249,7 +2335,7 @@ function moveEnemyTowardCenter(state: RunState, enemy: EnemyInstance, content: G
     .filter((next) => !occupied(state, next))
     .sort((left, right) => (hexDistance(left, CENTER) - hexDistance(right, CENTER)) || (left.r - right.r) || (left.q - right.q))[0];
   if (!tile) return false;
-  enemy.tile = tile;
+  moveEnemyToTile(state, enemy, tile, 'step', STEP_MOTION_DURATION_MS);
   enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
   return true;
 }
@@ -2293,7 +2379,7 @@ function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent)
     enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
     return;
   }
-  enemy.tile = { ...nextTile };
+  moveEnemyToTile(state, enemy, nextTile, 'slither', PEBBLE_MOTION_DURATION_MS);
   enemy.pathIndex = nextPathIndex;
   enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
 }
@@ -2398,6 +2484,13 @@ function spawnEnemies(state: RunState, content: GameContent): void {
       archetypeId: spawn.enemyId,
       tokenStyleId: randomInt(state, 0, 4),
       tile: { ...lane },
+      motion: {
+        fromTile: spawnApproachTile(lane),
+        toTile: { ...lane },
+        startedAtMs: state.timeMs,
+        durationMs: SPAWN_SETTLE_DURATION_MS,
+        style: spawn.enemyId === 'pebble' ? 'slither' : 'step'
+      },
       hp: archetype.maxHp,
       lastHitByDefenderId: null,
       attackReadyAtMs: state.timeMs + archetype.attackCooldownMs,
@@ -3487,8 +3580,14 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         next.message = 'Board cap reached.';
         return next;
       }
+      const cameFromSauna = defender.location === 'sauna';
       defender.location = 'board';
-      defender.tile = { ...action.tile };
+      if (cameFromSauna) {
+        moveDefenderToTile(next, defender, action.tile, 'blink', BLINK_MOTION_DURATION_MS, CENTER);
+      } else {
+        defender.tile = { ...action.tile };
+        clearUnitMotion(defender);
+      }
       defender.homeTile = { ...action.tile };
       defender.attackReadyAtMs = next.timeMs + derivedStats(next, defender, content).attackCooldownMs;
       if (next.saunaDefenderId === defender.id) next.saunaDefenderId = null;
@@ -3506,6 +3605,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       if (!defender || defender.location !== 'board') return next;
       defender.location = 'sauna';
       defender.tile = null;
+      clearUnitMotion(defender);
       next.saunaDefenderId = defender.id;
       next.message = `${defender.name} went to recover in the sauna.`;
       return next;
@@ -3752,6 +3852,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     const next = clone(state);
     next.timeMs += deltaMs;
     next.waveElapsedMs += deltaMs;
+    clearExpiredMotions(next);
     maybeStartAutoplayWave(next);
     return next;
   }
@@ -3764,6 +3865,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
   }
   next.timeMs += deltaMs;
   next.waveElapsedMs += deltaMs;
+  clearExpiredMotions(next);
   while (next.timeMs >= next.nextRegenTickAtMs) {
     applyGlobalRegenTick(next, content);
     next.nextRegenTickAtMs += 1000;

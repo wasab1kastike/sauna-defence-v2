@@ -304,6 +304,16 @@ export interface CombatFxEvent {
   durationMs: number;
 }
 
+export type UnitMotionStyle = 'step' | 'slither' | 'blink';
+
+export interface UnitMotionState {
+  fromTile: AxialCoord;
+  toTile: AxialCoord;
+  startedAtMs: number;
+  durationMs: number;
+  style: UnitMotionStyle;
+}
+
 export interface DefenderInstance {
   id: string;
   templateId: DefenderTemplateId;
@@ -319,6 +329,7 @@ export interface DefenderInstance {
   location: DefenderLocation;
   tile: AxialCoord | null;
   homeTile: AxialCoord | null;
+  motion?: UnitMotionState | null;
   attackReadyAtMs: number;
   blinkReadyAtMs: number;
   items: ItemId[];
@@ -332,6 +343,7 @@ export interface EnemyInstance {
   archetypeId: EnemyUnitId;
   tokenStyleId: number;
   tile: AxialCoord;
+  motion?: UnitMotionState | null;
   hp: number;
   lastHitByDefenderId: string | null;
   attackReadyAtMs: number;

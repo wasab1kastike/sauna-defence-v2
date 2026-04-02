@@ -76,6 +76,66 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.defenders.find((entry) => entry.id === defender!.id)?.hp).toBe(20);
     expect(state.enemies[0]?.tile).toEqual({ q: 1, r: -5 });
     expect(state.enemies[0]?.pathIndex).toBe(1);
+    expect(state.enemies[0]?.motion?.style).toBe('slither');
+    expect(state.enemies[0]?.motion?.fromTile).toEqual({ q: 0, r: -6 });
+    expect(state.enemies[0]?.motion?.toTile).toEqual({ q: 1, r: -5 });
+  });
+
+  it('creates step motion metadata when a standard enemy advances', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -4 },
+      hp: gameContent.enemyArchetypes.raider.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: null,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies[0]?.tile).toEqual({ q: 0, r: -3 });
+    expect(state.enemies[0]?.motion?.style).toBe('step');
+    expect(state.enemies[0]?.motion?.fromTile).toEqual({ q: 0, r: -4 });
+    expect(state.enemies[0]?.motion?.toTile).toEqual({ q: 0, r: -3 });
+  });
+
+  it('creates blink motion metadata when a defender retreats home with Blink Step', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.location = 'board';
+    defender.tile = { q: 0, r: -2 };
+    defender.homeTile = { q: 0, r: -1 };
+    defender.skills = ['blink_step'];
+    defender.hp = Math.max(1, Math.floor(defender.hp * 0.4));
+    defender.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 5, r: -5 },
+      hp: gameContent.enemyArchetypes.raider.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.defenders.find((entry) => entry.id === defender.id)?.tile).toEqual({ q: 0, r: -1 });
+    expect(state.defenders.find((entry) => entry.id === defender.id)?.motion?.style).toBe('blink');
+    expect(state.defenders.find((entry) => entry.id === defender.id)?.motion?.fromTile).toEqual({ q: 0, r: -2 });
+    expect(state.defenders.find((entry) => entry.id === defender.id)?.motion?.toTile).toEqual({ q: 0, r: -1 });
   });
 
   it('ramps thirsty user damage based on how many are still alive', () => {
