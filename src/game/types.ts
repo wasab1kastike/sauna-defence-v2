@@ -110,7 +110,7 @@ export type CombatFxKind =
   | 'chain'
   | 'volley'
   | 'pulse';
-export type MapTarget = 'defender' | 'sauna';
+export type MapTarget = 'defender' | 'sauna' | 'enemy';
 export type HudPanelId = 'modifiers' | 'loot' | 'recruit' | 'beer_shop' | 'metashop';
 export type WorldLandmarkId = 'metashop' | 'beer_shop';
 export type GlobalModifierCountScope = 'board' | 'living' | 'dead';
@@ -214,6 +214,8 @@ export interface EnemyArchetype {
   id: EnemyUnitId;
   name: string;
   behavior: EnemyBehavior;
+  description: string;
+  lore: string;
   maxHp: number;
   damage: number;
   range: number;
@@ -483,6 +485,7 @@ export interface RunState {
   seed: number;
   selectedMapTarget: MapTarget | null;
   selectedDefenderId: string | null;
+  selectedEnemyInstanceId: number | null;
   hoveredTile: AxialCoord | null;
   defenders: DefenderInstance[];
   enemies: EnemyInstance[];
@@ -629,6 +632,23 @@ export interface HudSelectedSauna {
   occupantMaxHp: number | null;
   autoDeployUnlocked: boolean;
   slapSwapUnlocked: boolean;
+}
+
+export interface HudSelectedEnemy {
+  instanceId: number;
+  name: string;
+  description: string;
+  lore: string;
+  isBoss: boolean;
+  hp: number;
+  maxHp: number;
+  damage: number;
+  range: number;
+  attackCooldownMs: number;
+  moveCooldownMs: number;
+  threat: number;
+  behaviorLabel: string;
+  bossLabel: string | null;
 }
 
 export interface HudMetaUpgradeEntry {
@@ -824,6 +844,7 @@ export interface HudViewModel {
   canAutoAssignSelectedLoot: boolean;
   selectedDefender: HudSelectedDefender | null;
   selectedSauna: HudSelectedSauna | null;
+  selectedEnemy: HudSelectedEnemy | null;
   globalModifiers: HudGlobalModifierEntry[];
   globalModifierSummary: HudGlobalModifierSummaryEntry[];
   globalModifierDraftOffers: HudGlobalModifierDraftEntry[];
@@ -856,6 +877,7 @@ export interface GameSnapshot {
 
 export type InputAction =
   | { type: 'selectDefender'; defenderId: string }
+  | { type: 'selectEnemy'; enemyInstanceId: number }
   | { type: 'selectSauna' }
   | { type: 'clearSelection' }
   | { type: 'closeSaunaPopup' }

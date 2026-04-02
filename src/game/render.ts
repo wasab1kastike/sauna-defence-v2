@@ -3,6 +3,7 @@ import type {
   AxialCoord,
   BossId,
   DefenderTemplateId,
+  EnemyInstance,
   EnemyUnitId,
   GameSnapshot,
   UnitMotionState,
@@ -692,7 +693,8 @@ function drawRotatedSprite(
   maxHeight: number,
   angle: number,
   shadowWidth = 0,
-  shadowHeight = 0
+  shadowHeight = 0,
+  flipY = false
 ) {
   const sourceWidth = image instanceof HTMLImageElement ? image.naturalWidth : image.width;
   const sourceHeight = image instanceof HTMLImageElement ? image.naturalHeight : image.height;
@@ -704,9 +706,12 @@ function drawRotatedSprite(
   ctx.save();
   ctx.translate(center.x, center.y);
   ctx.rotate(angle);
+  if (flipY) {
+    ctx.scale(1, -1);
+  }
   const previousSmoothing = ctx.imageSmoothingEnabled;
   ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(image, -dims.width / 2, -dims.height * 0.72, dims.width, dims.height);
+  ctx.drawImage(image, -dims.width / 2, -dims.height * (flipY ? 0.28 : 0.72), dims.width, dims.height);
   ctx.imageSmoothingEnabled = previousSmoothing;
   ctx.restore();
 }
@@ -1045,6 +1050,46 @@ export function resolveBossVisualProfile(currentWave: WaveDefinition, archetypeI
         accentColor: 'rgba(0,0,0,0)'
       };
   }
+}
+
+function enemyRenderRadius(layout: BoardLayout, enemy: EnemyInstance, bossProfile: BossVisualProfile): number {
+  return layout.hexSize * (
+    bossProfile.bossId === 'pebble'
+      ? 0.92
+      : bossProfile.presentation === 'boss_unit'
+        ? 0.72
+        : bossProfile.presentation === 'boss_horde_member'
+          ? 0.56
+          : enemy.archetypeId === 'chieftain'
+            ? 0.54
+            : 0.45
+  );
+}
+
+function resolveEnemyCanvasUnit(enemy: EnemyInstance, snapshot: GameSnapshot, layout: BoardLayout) {
+  const bossProfile = resolveBossVisualProfile(snapshot.state.currentWave, enemy.archetypeId);
+  const animatedUnit = resolveAnimatedCanvasUnit(enemy.tile, enemy.motion ?? null, snapshot.state.timeMs, layout);
+  const idleAngle = snapshot.state.timeMs * 0.004 + enemy.instanceId * 0.71;
+  const idleX =
+    bossProfile.bossId === 'electric_bather'
+      ? Math.sin(idleAngle * 1.7) * layout.hexSize * 0.016
+      : bossProfile.bossId === 'escalation_manager'
+        ? Math.cos(idleAngle) * layout.hexSize * 0.014
+        : Math.sin(idleAngle) * layout.hexSize * 0.01;
+  const idleY =
+    bossProfile.bossId === 'pebble'
+      ? Math.sin(idleAngle * 1.3) * layout.hexSize * 0.015
+      : Math.cos(idleAngle * 1.2) * layout.hexSize * 0.014;
+
+  return {
+    bossProfile,
+    animatedUnit,
+    center: {
+      x: animatedUnit.center.x + idleX,
+      y: animatedUnit.center.y + idleY
+    },
+    radius: enemyRenderRadius(layout, enemy, bossProfile)
+  };
 }
 
 function pointLerp(
@@ -1390,7 +1435,7 @@ function drawPebbleBoss(
   };
   drawSmokeParticles(ctx, center, radius * 1.65, 0.36 + Math.sin(timeMs * 0.003) * 0.08, timeMs * 0.02, 'rgba(86, 54, 32, 1)', 8);
   if (bodySprite && !(bodySprite instanceof HTMLImageElement && (!bodySprite.complete || bodySprite.naturalWidth === 0))) {
-    drawRotatedSprite(ctx, bodySprite, body, radius * 5.2, radius * 2.8, angle + Math.PI, radius * 1.55, radius * 0.42);
+    drawRotatedSprite(ctx, bodySprite, body, radius * 5.2, radius * 2.8, angle + Math.PI, radius * 1.55, radius * 0.42, true);
   } else {
     for (let index = 0; index < 6; index += 1) {
       const progress = index / 5;
@@ -1418,7 +1463,7 @@ function drawPebbleBoss(
     }
   }
   if (headSprite && !(headSprite instanceof HTMLImageElement && (!headSprite.complete || headSprite.naturalWidth === 0))) {
-    drawRotatedSprite(ctx, headSprite, head, radius * 2.6, radius * 2.35, angle + Math.PI, radius * 0.85, radius * 0.3);
+    drawRotatedSprite(ctx, headSprite, head, radius * 2.6, radius * 2.35, angle + Math.PI, radius * 0.85, radius * 0.3, true);
   } else {
     ctx.save();
     ctx.translate(head.x, head.y);
@@ -2077,35 +2122,8 @@ export function paintSnapshot(
   );
 
   for (const enemy of snapshot.state.enemies) {
-    const bossProfile = resolveBossVisualProfile(snapshot.state.currentWave, enemy.archetypeId);
-    const animatedUnit = resolveAnimatedCanvasUnit(enemy.tile, enemy.motion ?? null, snapshot.state.timeMs, layout);
-    const idleAngle = snapshot.state.timeMs * 0.004 + enemy.instanceId * 0.71;
-    const idleX =
-      bossProfile.bossId === 'electric_bather'
-        ? Math.sin(idleAngle * 1.7) * layout.hexSize * 0.016
-        : bossProfile.bossId === 'escalation_manager'
-          ? Math.cos(idleAngle) * layout.hexSize * 0.014
-          : Math.sin(idleAngle) * layout.hexSize * 0.01;
-    const idleY =
-      bossProfile.bossId === 'pebble'
-        ? Math.sin(idleAngle * 1.3) * layout.hexSize * 0.015
-        : Math.cos(idleAngle * 1.2) * layout.hexSize * 0.014;
-    const center = {
-      x: animatedUnit.center.x + idleX,
-      y: animatedUnit.center.y + idleY
-    };
+    const { bossProfile, animatedUnit, center, radius } = resolveEnemyCanvasUnit(enemy, snapshot, layout);
     const archetype = snapshot.enemyArchetypes[enemy.archetypeId];
-    const radius = layout.hexSize * (
-      bossProfile.bossId === 'pebble'
-        ? 0.92
-        : bossProfile.presentation === 'boss_unit'
-          ? 0.72
-          : bossProfile.presentation === 'boss_horde_member'
-            ? 0.56
-            : enemy.archetypeId === 'chieftain'
-              ? 0.54
-          : 0.45
-    );
     const style = getEnemyStyle(enemy.tokenStyleId);
     drawGroundShadow(
       ctx,
@@ -2138,6 +2156,20 @@ export function paintSnapshot(
         drawGlyph(ctx, center, radius, style.glyph, style.accent);
         drawTokenLabel(ctx, center, radius, archetype.label, '#fff0e8');
       }
+    }
+
+    if (snapshot.state.selectedEnemyInstanceId === enemy.instanceId) {
+      ctx.save();
+      ctx.beginPath();
+      if (bossProfile.presentation === 'boss_unit') {
+        ctx.ellipse(center.x, center.y + radius * 0.72, radius * 1.16, radius * 0.44, 0, 0, Math.PI * 2);
+      } else {
+        ctx.arc(center.x, center.y, radius + 10, 0, Math.PI * 2);
+      }
+      ctx.strokeStyle = bossProfile.presentation === 'normal' ? 'rgba(255, 241, 214, 0.96)' : (bossProfile.accentColor || '#fff1d6');
+      ctx.lineWidth = 2.8;
+      ctx.stroke();
+      ctx.restore();
     }
 
     drawHealthBar(
@@ -2229,4 +2261,29 @@ export function pickDefenderAtCanvasPoint(
     Math.hypot(defender.center.x - pointer.x, defender.center.y - pointer.y) <= defender.radius
   ));
   return hit?.id ?? null;
+}
+
+export function pickEnemyAtCanvasPoint(
+  snapshot: GameSnapshot,
+  rect: DOMRect,
+  clientX: number,
+  clientY: number
+): number | null {
+  const layout = getBoardLayout(rect.width, rect.height, snapshot.config.gridRadius);
+  const pointer = { x: clientX - rect.left, y: clientY - rect.top };
+  const enemies = snapshot.state.enemies
+    .map((enemy) => {
+      const resolved = resolveEnemyCanvasUnit(enemy, snapshot, layout);
+      return {
+        instanceId: enemy.instanceId,
+        center: resolved.center,
+        radius: resolved.bossProfile.presentation === 'boss_unit' ? resolved.radius * 1.18 : resolved.radius * 1.05
+      };
+    })
+    .sort((left, right) => right.radius - left.radius);
+
+  const hit = enemies.find((enemy) => (
+    Math.hypot(enemy.center.x - pointer.x, enemy.center.y - pointer.y) <= enemy.radius
+  ));
+  return hit?.instanceId ?? null;
 }

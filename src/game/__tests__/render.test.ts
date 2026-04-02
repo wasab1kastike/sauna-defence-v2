@@ -1,4 +1,6 @@
-import { resolveAnimatedHexPosition, resolveBossVisualProfile } from '../render';
+import { getTileViewportPosition, pickEnemyAtCanvasPoint, resolveAnimatedHexPosition, resolveBossVisualProfile } from '../render';
+import { gameContent } from '../../content/gameContent';
+import { createDefaultMetaProgress, createInitialState, createSnapshot, createWaveDefinition } from '../logic';
 import type { UnitMotionState, WaveDefinition } from '../types';
 
 describe('render helpers', () => {
@@ -62,5 +64,30 @@ describe('render helpers', () => {
     expect(resolveBossVisualProfile(pebbleWave, 'pebble').presentation).toBe('boss_unit');
     expect(resolveBossVisualProfile(hordeWave, 'thirsty_user').presentation).toBe('boss_horde_member');
     expect(resolveBossVisualProfile(hordeWave, 'brute').presentation).toBe('normal');
+  });
+
+  it('hit-tests enemies at their rendered position, including bosses', () => {
+    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+    state.currentWave = createWaveDefinition(5, gameContent);
+    state.enemies = [{
+      instanceId: 44,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: gameContent.enemyArchetypes.pebble.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    const snapshot = createSnapshot(state, gameContent);
+    const rect = { left: 0, top: 0, width: 900, height: 700 } as DOMRect;
+    const point = getTileViewportPosition(snapshot, rect.width, rect.height, state.enemies[0].tile);
+
+    expect(pickEnemyAtCanvasPoint(snapshot, rect, point.x, point.y)).toBe(44);
   });
 });

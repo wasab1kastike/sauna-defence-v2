@@ -2,13 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 
 import { gameContent } from '../content/gameContent';
-import { getTileViewportPosition, pickDefenderAtCanvasPoint, pickTileAtCanvasPoint } from '../game/render';
+import { getTileViewportPosition, pickDefenderAtCanvasPoint, pickEnemyAtCanvasPoint, pickTileAtCanvasPoint } from '../game/render';
 import { createGameRuntime } from '../game/runtime';
 import type {
   GameRuntime,
   GameSnapshot,
   HudPanelId,
-  HudWorldLandmarkEntry
+  HudSelectedEnemy,
+  HudWorldLandmarkEntry,
+  InputAction
 } from '../game/types';
 
 function formatRarity(value: string) {
@@ -36,6 +38,17 @@ function formatLocationLabel(location: 'ready' | 'board' | 'sauna' | 'dead') {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function formatCadence(ms: number) {
+  const seconds = ms / 1000;
+  return `${seconds >= 10 ? seconds.toFixed(0) : seconds.toFixed(1)}s`;
+}
+
+export function getSelectionCardTitle(selectedSauna: boolean, selectedEnemy: HudSelectedEnemy | null): string {
+  if (selectedSauna) return 'Sauna Reserve';
+  if (selectedEnemy) return selectedEnemy.isBoss ? 'Boss Profile' : 'Target Profile';
+  return 'Selected Hero';
 }
 
 const BOARD_POPUP_MIN_WIDTH = 280;
@@ -122,6 +135,43 @@ function getLandmarkPopupStyle(
     left: `${placement.left}px`,
     top: `${placement.top}px`
   };
+}
+
+export function resolveBoardPointerAction(
+  snapshot: GameSnapshot,
+  rect: DOMRect,
+  clientX: number,
+  clientY: number,
+  pickLandmark: (
+    nextSnapshot: GameSnapshot,
+    nextRect: DOMRect,
+    nextClientX: number,
+    nextClientY: number
+  ) => HudWorldLandmarkEntry | null
+): InputAction {
+  const clickedLandmark = pickLandmark(snapshot, rect, clientX, clientY);
+  if (clickedLandmark) {
+    return { type: 'selectWorldLandmark', landmarkId: clickedLandmark.id };
+  }
+
+  const clickedDefenderId = pickDefenderAtCanvasPoint(snapshot, rect, clientX, clientY);
+  if (clickedDefenderId) {
+    return { type: 'selectDefender', defenderId: clickedDefenderId };
+  }
+
+  const clickedEnemyInstanceId = pickEnemyAtCanvasPoint(snapshot, rect, clientX, clientY);
+  if (clickedEnemyInstanceId !== null) {
+    return { type: 'selectEnemy', enemyInstanceId: clickedEnemyInstanceId };
+  }
+
+  const tile = pickTileAtCanvasPoint(snapshot, rect, clientX, clientY);
+  if (!tile) {
+    return { type: 'clearSelection' };
+  }
+  if (tile.q === 0 && tile.r === 0) {
+    return { type: 'selectSauna' };
+  }
+  return { type: 'placeSelectedDefender', tile };
 }
 
 export function App() {
@@ -269,32 +319,12 @@ export function App() {
     }
 
     const rect = event.currentTarget.getBoundingClientRect();
-    const clickedLandmark = pickLandmarkAtPointer(nextSnapshot, rect, event.clientX, event.clientY);
-    if (clickedLandmark) {
-      runtime.dispatch({ type: 'selectWorldLandmark', landmarkId: clickedLandmark.id });
-      return;
-    }
-
-    const clickedDefenderId = pickDefenderAtCanvasPoint(nextSnapshot, rect, event.clientX, event.clientY);
-    if (clickedDefenderId) {
-      runtime.dispatch({ type: 'selectDefender', defenderId: clickedDefenderId });
-      return;
-    }
-
-    const tile = pickTileAtCanvasPoint(nextSnapshot, rect, event.clientX, event.clientY);
-    if (!tile) {
-      runtime.dispatch({ type: 'clearSelection' });
-      return;
-    }
-    if (tile.q === 0 && tile.r === 0) {
-      runtime.dispatch({ type: 'selectSauna' });
-      return;
-    }
-    runtime.dispatch({ type: 'placeSelectedDefender', tile });
+    runtime.dispatch(resolveBoardPointerAction(nextSnapshot, rect, event.clientX, event.clientY, pickLandmarkAtPointer));
   };
 
   const selectedDefender = snapshot?.hud.selectedDefender ?? null;
   const selectedSauna = snapshot?.hud.selectedSauna ?? null;
+  const selectedEnemy = snapshot?.hud.selectedEnemy ?? null;
   const selectedLoot = snapshot?.hud.selectedInventoryEntry ?? null;
   const activePanel = snapshot?.hud.activePanel ?? null;
   const activeLandmark = snapshot?.hud.worldLandmarks.find((entry) => entry.selected) ?? null;
@@ -434,13 +464,13 @@ export function App() {
   };
 
   const renderSelectionCard = () => {
-    if (!snapshot || (!selectedDefender && !selectedSauna)) {
+    if (!snapshot || (!selectedDefender && !selectedSauna && !selectedEnemy)) {
       return null;
     }
     return (
       <section className="selection-card popup-card">
         <div className="popup-head">
-          <h2>{selectedSauna ? 'Sauna Reserve' : 'Selected Hero'}</h2>
+          <h2>{getSelectionCardTitle(Boolean(selectedSauna), selectedEnemy)}</h2>
           <button className="ghost-button small-ghost" onClick={() => dispatch({ type: 'clearSelection' })}>
             Close
           </button>
@@ -460,6 +490,32 @@ export function App() {
               </>
             ) : (
               <p className="panel-copy small-copy">Send one board hero here during prep to create a reserve.</p>
+            )}
+          </>
+        ) : selectedEnemy ? (
+          <>
+            <strong>
+              {selectedEnemy.name}
+              {selectedEnemy.bossLabel ? ` ${selectedEnemy.bossLabel}` : ''}
+            </strong>
+            <small>{selectedEnemy.behaviorLabel} · Threat {selectedEnemy.threat}</small>
+            <p className="panel-copy small-copy">{selectedEnemy.description}</p>
+            <p className="panel-copy flavor-copy small-copy">{selectedEnemy.lore}</p>
+            <div className="mini-tag-row">
+              <span className="mini-tag">HP {selectedEnemy.hp}/{selectedEnemy.maxHp}</span>
+              <span className="mini-tag">ATK {selectedEnemy.damage}</span>
+              <span className="mini-tag">Range {selectedEnemy.range}</span>
+              <span className="mini-tag">Attack {formatCadence(selectedEnemy.attackCooldownMs)}</span>
+              <span className="mini-tag">Move {formatCadence(selectedEnemy.moveCooldownMs)}</span>
+              <span className="mini-tag">Threat {selectedEnemy.threat}</span>
+            </div>
+            {selectedEnemy.isBoss ? (
+              <div className="popup-card">
+                <strong>Boss Threat</strong>
+                <small>{selectedEnemy.behaviorLabel}. This one deserves immediate attention.</small>
+              </div>
+            ) : (
+              <p className="panel-copy small-copy">Inspection only. Clicking an enemy does not change targeting or combat commands.</p>
             )}
           </>
         ) : selectedDefender ? (

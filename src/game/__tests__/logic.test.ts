@@ -416,6 +416,125 @@ describe('Sauna Defense V2 logic', () => {
     expect(pickDefenderAtCanvasPoint(snapshot, rect, point.x, point.y)).toBe(defender.id);
   });
 
+  it('selects an enemy and clears previous defender or sauna selection', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location !== 'dead')!;
+    state.selectedDefenderId = defender.id;
+    state.selectedMapTarget = 'defender';
+    state.enemies = [{
+      instanceId: 11,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -2 },
+      hp: gameContent.enemyArchetypes.raider.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = applyAction(state, { type: 'selectEnemy', enemyInstanceId: 11 }, gameContent);
+
+    expect(state.selectedMapTarget).toBe('enemy');
+    expect(state.selectedEnemyInstanceId).toBe(11);
+    expect(state.selectedDefenderId).toBeNull();
+
+    state = applyAction(state, { type: 'selectSauna' }, gameContent);
+    expect(state.selectedMapTarget).toBe('sauna');
+    expect(state.selectedEnemyInstanceId).toBeNull();
+  });
+
+  it('clears enemy selection through clearSelection', () => {
+    let state = prepState();
+    state.selectedMapTarget = 'enemy';
+    state.selectedEnemyInstanceId = 7;
+
+    state = applyAction(state, { type: 'clearSelection' }, gameContent);
+
+    expect(state.selectedMapTarget).toBeNull();
+    expect(state.selectedEnemyInstanceId).toBeNull();
+    expect(state.selectedDefenderId).toBeNull();
+  });
+
+  it('surfaces selected enemy stats, description and lore in the HUD snapshot', () => {
+    const state = prepState();
+    state.selectedMapTarget = 'enemy';
+    state.selectedEnemyInstanceId = 2;
+    state.enemies = [{
+      instanceId: 2,
+      archetypeId: 'brute',
+      tokenStyleId: 0,
+      tile: { q: 1, r: -2 },
+      hp: 17,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(snapshot.hud.selectedEnemy?.instanceId).toBe(2);
+    expect(snapshot.hud.selectedEnemy?.name).toBe(gameContent.enemyArchetypes.brute.name);
+    expect(snapshot.hud.selectedEnemy?.description).toBe(gameContent.enemyArchetypes.brute.description);
+    expect(snapshot.hud.selectedEnemy?.lore).toBe(gameContent.enemyArchetypes.brute.lore);
+    expect(snapshot.hud.selectedEnemy?.hp).toBe(17);
+    expect(snapshot.hud.selectedEnemy?.maxHp).toBe(gameContent.enemyArchetypes.brute.maxHp);
+    expect(snapshot.hud.selectedEnemy?.behaviorLabel).toBe('Rushes the nearest hero');
+  });
+
+  it('clears selected enemy data when that enemy dies', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.location = 'board';
+    defender.tile = { q: 0, r: -1 };
+    defender.homeTile = { q: 0, r: -1 };
+    defender.stats.damage = 99;
+    defender.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.selectedMapTarget = 'enemy';
+    state.selectedEnemyInstanceId = 1;
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 0 },
+      hp: 8,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.selectedEnemyInstanceId).toBeNull();
+    expect(state.selectedMapTarget).toBeNull();
+    expect(createSnapshot(state, gameContent).hud.selectedEnemy).toBeNull();
+  });
+
+  it('flags boss enemies correctly in selected-enemy HUD data', () => {
+    const state = prepState();
+    state.currentWave = createWaveDefinition(15, gameContent);
+    state.selectedMapTarget = 'enemy';
+    state.selectedEnemyInstanceId = 4;
+    state.enemies = [{
+      instanceId: 4,
+      archetypeId: 'electric_bather',
+      tokenStyleId: 0,
+      tile: { q: 2, r: -2 },
+      hp: gameContent.enemyArchetypes.electric_bather.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999,
+      nextAbilityAtMs: 0
+    }];
+
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(snapshot.hud.selectedEnemy?.isBoss).toBe(true);
+    expect(snapshot.hud.selectedEnemy?.bossLabel).toBe('Boss');
+    expect(snapshot.hud.actionTitle).toBe('Boss Profile');
+  });
+
   it('surfaces defender kill counts in roster and selected-hero HUD data', () => {
     const state = prepState();
     const defender = state.defenders.find((entry) => entry.location === 'ready')!;

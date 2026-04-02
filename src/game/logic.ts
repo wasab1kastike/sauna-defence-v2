@@ -14,6 +14,7 @@ import type {
   DefenderSubclassDefinition,
   DefenderLocation,
   DefenderTemplateId,
+  EnemyBehavior,
   EnemyInstance,
   EnemyUnitId,
   GameContent,
@@ -324,6 +325,44 @@ function bossHint(bossId: BossId | null): string | null {
   return BOSS_ROTATION.find((entry) => entry.bossId === bossId)?.hint ?? null;
 }
 
+function isWaveBossEnemy(currentWave: WaveDefinition, enemy: EnemyInstance): boolean {
+  if (!currentWave.isBoss || !currentWave.bossId) return false;
+  switch (currentWave.bossId) {
+    case 'pebble':
+      return enemy.archetypeId === 'pebble';
+    case 'electric_bather':
+      return enemy.archetypeId === 'electric_bather';
+    case 'escalation_manager':
+      return enemy.archetypeId === 'escalation_manager';
+    case 'end_user_horde':
+      return enemy.archetypeId === 'thirsty_user';
+    default:
+      return false;
+  }
+}
+
+function selectedEnemyBossLabel(currentWave: WaveDefinition, enemy: EnemyInstance): string | null {
+  if (!isWaveBossEnemy(currentWave, enemy)) return null;
+  if (currentWave.bossId === 'end_user_horde') return 'Boss Wave';
+  return 'Boss';
+}
+
+function enemyBehaviorLabel(enemyId: EnemyUnitId, behavior: EnemyBehavior): string {
+  switch (behavior) {
+    case 'pebble':
+      return 'Tunnels past heroes';
+    case 'swarm':
+      return 'Swarm scaling';
+    case 'electric':
+      return 'Chains shocks';
+    case 'summoner':
+      return 'Summons users';
+    case 'standard':
+    default:
+      return enemyId === 'chieftain' ? 'Elite lane crusher' : 'Rushes the nearest hero';
+  }
+}
+
 function isBossLootEnemy(enemyId: EnemyUnitId): boolean {
   return enemyId === 'chieftain' || enemyId === 'pebble' || enemyId === 'electric_bather' || enemyId === 'escalation_manager';
 }
@@ -505,6 +544,12 @@ function setActiveHudPanel(state: RunState, panel: HudPanelId | null, landmarkId
   state.selectedWorldLandmarkId = landmarkId;
 }
 
+function clearBoardSelection(state: RunState): void {
+  state.selectedMapTarget = null;
+  state.selectedDefenderId = null;
+  state.selectedEnemyInstanceId = null;
+}
+
 function boardDefenders(state: RunState): DefenderInstance[] {
   return state.defenders.filter((defender) => defender.location === 'board' && defender.tile);
 }
@@ -551,6 +596,12 @@ function nearestInjuredAllyWithin(
 
 function getDefender(state: RunState, defenderId: string | null): DefenderInstance | null {
   return defenderId ? state.defenders.find((defender) => defender.id === defenderId) ?? null : null;
+}
+
+function getEnemy(state: RunState, enemyInstanceId: number | null): EnemyInstance | null {
+  return enemyInstanceId != null
+    ? state.enemies.find((enemy) => enemy.instanceId === enemyInstanceId) ?? null
+    : null;
 }
 
 function xpForLevel(level: number): number {
@@ -1836,6 +1887,12 @@ function resolveEnemyDeaths(state: RunState, content: GameContent): void {
       living.push(enemy);
       continue;
     }
+    if (state.selectedEnemyInstanceId === enemy.instanceId) {
+      state.selectedEnemyInstanceId = null;
+      if (state.selectedMapTarget === 'enemy') {
+        state.selectedMapTarget = null;
+      }
+    }
     if (enemy.lastHitByDefenderId) {
       const killer = getDefender(state, enemy.lastHitByDefenderId);
       if (killer && killer.location !== 'dead') {
@@ -1864,7 +1921,12 @@ function resolveDefenderDeaths(state: RunState, content: GameContent): void {
       defender.tile = null;
       clearUnitMotion(defender);
       if (state.saunaDefenderId === defender.id) state.saunaDefenderId = null;
-      if (state.selectedDefenderId === defender.id) state.selectedDefenderId = null;
+      if (state.selectedDefenderId === defender.id) {
+        state.selectedDefenderId = null;
+        if (state.selectedMapTarget === 'defender') {
+          state.selectedMapTarget = null;
+        }
+      }
       state.deathLog.unshift({
         id: state.nextDeathLogEntryId++,
         wave: state.currentWave.index,
@@ -3167,6 +3229,7 @@ function activateNextSubclassDraft(state: RunState, content: GameContent): boole
 function actionCopy(state: RunState, content: GameContent): { title: string; body: string } {
   const selectedLoot = getInventoryDrop(state, state.selectedInventoryDropId);
   const selectedDefender = getDefender(state, state.selectedDefenderId);
+  const selectedEnemy = getEnemy(state, state.selectedEnemyInstanceId);
   const boardCount = boardDefenders(state).length;
   const readyCount = state.defenders.filter((defender) => defender.location === 'ready').length;
   const freeSlots = Math.max(0, rosterCap(state, content) - livingDefenders(state).length);
@@ -3236,6 +3299,14 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
         : 'The sauna is empty. Send a board hero there during prep if you want a reserve.'
     };
   }
+  if (state.selectedMapTarget === 'enemy' && selectedEnemy) {
+    return {
+      title: isWaveBossEnemy(state.currentWave, selectedEnemy) ? 'Boss Profile' : 'Target Profile',
+      body: isWaveBossEnemy(state.currentWave, selectedEnemy)
+        ? `${content.enemyArchetypes[selectedEnemy.archetypeId].name} is the active boss threat. Check the behavior tags, then plan around its gimmick before it steamrolls the sauna.`
+        : `${content.enemyArchetypes[selectedEnemy.archetypeId].name} is selected. Read its stats and lore, then decide which lane needs help first.`
+    };
+  }
   if (state.recruitOffers.length > 0) {
     return {
       title: 'Recruit Market Live',
@@ -3303,6 +3374,7 @@ export function createInitialState(
     seed,
     selectedMapTarget: null,
     selectedDefenderId: null,
+    selectedEnemyInstanceId: null,
     hoveredTile: null,
     defenders: [],
     enemies: [],
@@ -3503,6 +3575,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     }
     case 'selectSauna':
+      next.selectedEnemyInstanceId = null;
       next.selectedDefenderId = null;
       next.selectedMapTarget = 'sauna';
       next.message = next.saunaDefenderId ? 'Sauna selected. One hero is warming up inside.' : 'Sauna selected. It is empty right now.';
@@ -3512,13 +3585,24 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       if (!defender || defender.location === 'dead') return next;
       next.selectedMapTarget = 'defender';
       next.selectedDefenderId = defender.id;
+      next.selectedEnemyInstanceId = null;
       next.message = `${defender.name} ${defender.title} selected.`;
+      return next;
+    }
+    case 'selectEnemy': {
+      const enemy = getEnemy(next, action.enemyInstanceId);
+      if (!enemy || enemy.hp <= 0) return next;
+      next.selectedMapTarget = 'enemy';
+      next.selectedDefenderId = null;
+      next.selectedEnemyInstanceId = enemy.instanceId;
+      next.message = isWaveBossEnemy(next.currentWave, enemy)
+        ? `${content.enemyArchetypes[enemy.archetypeId].name} boss selected.`
+        : `${content.enemyArchetypes[enemy.archetypeId].name} selected.`;
       return next;
     }
     case 'closeSaunaPopup':
     case 'clearSelection':
-      next.selectedMapTarget = null;
-      next.selectedDefenderId = null;
+      clearBoardSelection(next);
       return next;
     case 'selectInventoryDrop': {
       const drop = getInventoryDrop(next, action.dropId);
@@ -3591,8 +3675,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       defender.homeTile = { ...action.tile };
       defender.attackReadyAtMs = next.timeMs + derivedStats(next, defender, content).attackCooldownMs;
       if (next.saunaDefenderId === defender.id) next.saunaDefenderId = null;
-      next.selectedMapTarget = null;
-      next.selectedDefenderId = null;
+      clearBoardSelection(next);
       const movedToSauna = autoFillSaunaFromBench(next, content);
       next.message = movedToSauna
         ? `${defender.name} entered the fight. ${movedToSauna.name} moved into the empty sauna reserve.`
@@ -3900,6 +3983,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const tiles = createHexGrid(content.config.gridRadius);
   const buildableTiles = tiles.filter((tile) => isBuildable(tile, content));
   const selected = getDefender(state, state.selectedDefenderId);
+  const selectedEnemy = getEnemy(state, state.selectedEnemyInstanceId);
   const selectedLoot = getInventoryDrop(state, state.selectedInventoryDropId);
   const currentWave = state.currentWave;
   const activeMs = Math.max(0, state.sisu.activeUntilMs - state.timeMs);
@@ -4196,6 +4280,26 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       autoDeployUnlocked: hasSaunaAutoDeploy(state),
       slapSwapUnlocked: hasSaunaSlapSwap(state)
     } : null,
+    selectedEnemy: state.selectedMapTarget === 'enemy' && selectedEnemy ? (() => {
+      const archetype = content.enemyArchetypes[selectedEnemy.archetypeId];
+      const isBoss = isWaveBossEnemy(state.currentWave, selectedEnemy);
+      return {
+        instanceId: selectedEnemy.instanceId,
+        name: archetype.name,
+        description: archetype.description,
+        lore: archetype.lore,
+        isBoss,
+        hp: selectedEnemy.hp,
+        maxHp: archetype.maxHp,
+        damage: archetype.damage,
+        range: archetype.range,
+        attackCooldownMs: archetype.attackCooldownMs,
+        moveCooldownMs: archetype.moveCooldownMs,
+        threat: archetype.threat,
+        behaviorLabel: enemyBehaviorLabel(archetype.id, archetype.behavior),
+        bossLabel: selectedEnemyBossLabel(state.currentWave, selectedEnemy)
+      };
+    })() : null,
     globalModifiers: activeGlobalModifiers,
     globalModifierSummary,
     globalModifierDraftOffers: draftGlobalModifiers,
