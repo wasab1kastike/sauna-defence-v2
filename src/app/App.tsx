@@ -151,7 +151,7 @@ export function App() {
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const runtime = runtimeRef.current;
     const nextSnapshot = snapshot;
-    if (!runtime || !nextSnapshot || nextSnapshot.hud.introOpen || guideStep !== null) {
+    if (!runtime || !nextSnapshot || nextSnapshot.hud.introOpen || nextSnapshot.hud.showGlobalModifierDraft || guideStep !== null) {
       return;
     }
     const tile = pickTileAtCanvasPoint(
@@ -186,6 +186,9 @@ export function App() {
   const boardEntries = rosterEntries.filter((entry) => entry.location === 'board');
   const readyEntries = rosterEntries.filter((entry) => entry.location === 'ready');
   const deathLogEntries = snapshot?.hud.deathLogEntries ?? [];
+  const globalModifiers = snapshot?.hud.globalModifiers ?? [];
+  const modifierDraftOffers = snapshot?.hud.globalModifierDraftOffers ?? [];
+  const showModifierDraft = snapshot?.hud.showGlobalModifierDraft ?? false;
   const openRecruitSlots = snapshot ? Math.max(0, snapshot.hud.rosterCap - snapshot.hud.rosterCount) : 0;
   const recruitReplacementName =
     openRecruitSlots <= 0
@@ -223,7 +226,9 @@ export function App() {
                   <span className="tag">Lvl {entry.level}</span>
                   <span className="tag">HP {entry.hp}/{entry.maxHp}</span>
                   <span className="tag">ATK {entry.damage}</span>
+                  {entry.defense > 0 ? <span className="tag">DEF {entry.defense}</span> : null}
                   {entry.heal > 0 ? <span className="tag">Heal {entry.heal}</span> : null}
+                  {entry.regenHpPerSecond > 0 ? <span className="tag">Regen {entry.regenHpPerSecond}/s</span> : null}
                   <span className="tag">Range {entry.range}</span>
                 </div>
               </button>
@@ -510,6 +515,14 @@ export function App() {
                         <span>Range</span>
                         <strong>{selectedDefender.range}</strong>
                       </div>
+                      <div>
+                        <span>DEF</span>
+                        <strong>{selectedDefender.defense}</strong>
+                      </div>
+                      <div>
+                        <span>Regen</span>
+                        <strong>{selectedDefender.regenHpPerSecond}/s</strong>
+                      </div>
                     </div>
                     <p className="panel-copy small-copy">
                       Attack cooldown: {selectedDefender.attackCooldownMs} ms
@@ -641,6 +654,9 @@ export function App() {
                     Activate SISU ({gameContent.config.sisuAbilityCost})
                   </button>
                 </div>
+                <p className="panel-copy small-copy ability-helper">
+                  {Math.round((gameContent.config.sisuDamageMultiplier - 1) * 100)}% damage and {Math.round((gameContent.config.sisuAttackMultiplier - 1) * 100)}% attack speed for {Math.round(gameContent.config.sisuDurationMs / 1000)}s.
+                </p>
                 <div className="incoming-strip">
                   {nextWavePreview.map((entry) => (
                     <div key={entry.id} className="incoming-pill">
@@ -649,6 +665,35 @@ export function App() {
                     </div>
                   ))}
                 </div>
+              </section>
+
+              <section className="panel modifier-panel">
+                <div className="panel-head">
+                  <h2>Global Modifiers</h2>
+                  <span>{globalModifiers.length} active</span>
+                </div>
+                <p className="panel-copy small-copy">
+                  Boss rewards affect the whole roster and keep scaling as your board, items, skills and casualties change.
+                </p>
+                {globalModifiers.length > 0 ? (
+                  <div className="button-stack modifier-stack">
+                    {globalModifiers.map((modifier) => (
+                      <div key={modifier.id} className="modifier-card">
+                        <strong>{modifier.name}</strong>
+                        <small>{modifier.description}</small>
+                        <small>{modifier.formulaText}</small>
+                        <div className="tag-row compact-tags">
+                          <span className="tag">{modifier.stackCount} stacks</span>
+                          <span className="tag">{modifier.resolvedEffectText}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="panel-copy small-copy">
+                    First boss kill opens a three-card draft here.
+                  </p>
+                )}
               </section>
 
               <section className="panel">
@@ -962,6 +1007,39 @@ export function App() {
               >
                 {snapshot.state.phase === 'lost' ? 'Start Next Run' : 'Back To The Sauna'}
               </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {snapshot && showModifierDraft ? (
+        <div className="overlay-shell">
+          <section className="overlay-card modifier-draft-card">
+            <div className="panel-head">
+              <h2>Boss Reward Draft</h2>
+              <span>Choose one</span>
+            </div>
+            <p className="panel-copy">
+              Pick one run-long modifier. Its stacks update automatically from your board, roster, items, skills and casualties.
+            </p>
+            <div className="modifier-draft-grid">
+              {modifierDraftOffers.map((modifier) => (
+                <div key={modifier.id} className="modifier-card draft-card">
+                  <strong>{modifier.name}</strong>
+                  <small>{modifier.description}</small>
+                  <small>{modifier.formulaText}</small>
+                  <div className="tag-row compact-tags">
+                    <span className="tag">{modifier.stackCount} stacks live</span>
+                    <span className="tag">{modifier.resolvedEffectText}</span>
+                  </div>
+                  <button
+                    className="primary-button"
+                    onClick={() => runtimeRef.current?.dispatch({ type: 'draftGlobalModifier', modifierId: modifier.id })}
+                  >
+                    Pick Modifier
+                  </button>
+                </div>
+              ))}
             </div>
           </section>
         </div>
