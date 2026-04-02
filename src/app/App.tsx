@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 
 import { gameContent } from '../content/gameContent';
-import { getTileViewportPosition, pickTileAtCanvasPoint } from '../game/render';
+import { getTileViewportPosition, pickDefenderAtCanvasPoint, pickTileAtCanvasPoint } from '../game/render';
 import { createGameRuntime } from '../game/runtime';
 import type {
   GameRuntime,
@@ -46,7 +46,7 @@ const GUIDE_STEPS = [
   },
   {
     title: 'Use The Right Rail',
-    body: 'Modifiers, Roster, Loot and Recruit open from the compact right-side rail so the board stays visible underneath.'
+    body: 'Modifiers, Loot and Recruit open from the compact right-side rail so the board stays visible underneath.'
   },
   {
     title: 'Selection Pops Up On Board',
@@ -58,7 +58,7 @@ const GUIDE_STEPS = [
   },
   {
     title: 'Hint Card And Action Buttons',
-    body: 'The small left hint card tells you the next step. Start Wave and SISU stay just below it as your main live controls.'
+    body: 'The small left hint card tells you the next step. Start Wave, Autoplay and SISU stay just below it as your main live controls.'
   }
 ] as const;
 
@@ -246,6 +246,12 @@ export function App() {
       return;
     }
 
+    const clickedDefenderId = pickDefenderAtCanvasPoint(nextSnapshot, rect, event.clientX, event.clientY);
+    if (clickedDefenderId) {
+      runtime.dispatch({ type: 'selectDefender', defenderId: clickedDefenderId });
+      return;
+    }
+
     const tile = pickTileAtCanvasPoint(nextSnapshot, rect, event.clientX, event.clientY);
     if (!tile) {
       runtime.dispatch({ type: 'clearSelection' });
@@ -269,7 +275,6 @@ export function App() {
   const showSubclassDraft = snapshot?.hud.showSubclassDraft ?? false;
 
   const rosterEntries = snapshot?.hud.rosterEntries ?? [];
-  const boardEntries = rosterEntries.filter((entry) => entry.location === 'board');
   const readyEntries = rosterEntries.filter((entry) => entry.location === 'ready');
   const deathLogEntries = snapshot?.hud.deathLogEntries ?? [];
   const headerItemEntries = snapshot?.hud.headerItemEntries ?? [];
@@ -277,37 +282,6 @@ export function App() {
   const inventoryEntries = snapshot?.hud.inventoryEntries ?? [];
   const globalModifiers = snapshot?.hud.globalModifiers ?? [];
   const hintBody = snapshot ? compactHintBody(snapshot.hud.actionBody) : '';
-
-  const renderRosterCards = (entries: typeof rosterEntries, emptyText: string) => (
-    entries.length > 0 ? (
-      <div className="popup-list">
-        {entries.map((entry) => (
-          <button
-            key={entry.id}
-            className={entry.selected ? 'popup-card unit-row selected' : 'popup-card unit-row'}
-            onClick={() => dispatch({ type: 'selectDefender', defenderId: entry.id })}
-          >
-            <div className="unit-row-top">
-              <strong>
-                {entry.name} <em>{entry.title}</em>
-              </strong>
-              <span className="mini-tag">{entry.templateName}</span>
-            </div>
-            <small>{entry.summary}</small>
-            <div className="mini-tag-row">
-              <span className="mini-tag">{entry.locationLabel}</span>
-              <span className="mini-tag">HP {entry.hp}/{entry.maxHp}</span>
-              <span className="mini-tag">ATK {entry.damage}</span>
-              {entry.defense > 0 ? <span className="mini-tag">DEF {entry.defense}</span> : null}
-              {entry.heal > 0 ? <span className="mini-tag">Heal {entry.heal}</span> : null}
-            </div>
-          </button>
-        ))}
-      </div>
-    ) : (
-      <p className="panel-copy small-copy">{emptyText}</p>
-    )
-  );
 
   const renderLootRow = (title: string, entries: typeof headerItemEntries, emptyText: string) => (
     <section className="popup-section">
@@ -391,6 +365,39 @@ export function App() {
           </button>
         </div>
       </section>
+    );
+  };
+
+  const renderBenchStrip = () => {
+    if (!snapshot || readyEntries.length === 0) {
+      return null;
+    }
+    return (
+      <aside className="bench-strip popup-card">
+        <div className="popup-head compact-popup-head">
+          <h2>Bench</h2>
+          <span>{readyEntries.length} waiting</span>
+        </div>
+        <div className="bench-list">
+          {readyEntries.map((entry) => (
+            <button
+              key={entry.id}
+              className={entry.selected ? 'bench-card selected' : 'bench-card'}
+              onClick={() => dispatch({ type: 'selectDefender', defenderId: entry.id })}
+            >
+              <strong>
+                {entry.name} <em>{entry.title}</em>
+              </strong>
+              <small>{entry.summary}</small>
+              <div className="mini-tag-row">
+                <span className="mini-tag">HP {entry.hp}/{entry.maxHp}</span>
+                <span className="mini-tag">ATK {entry.damage}</span>
+                {entry.heal > 0 ? <span className="mini-tag">Heal {entry.heal}</span> : null}
+              </div>
+            </button>
+          ))}
+        </div>
+      </aside>
     );
   };
 
@@ -519,39 +526,24 @@ export function App() {
     if (activePanel === 'modifiers') {
       title = 'Global Modifiers';
       subtitle = globalModifiers.length > 0 ? `${globalModifiers.length} active` : 'No active modifiers';
-      content = globalModifiers.length > 0 ? (
-        <div className="popup-list">
-          {globalModifiers.map((modifier) => (
-            <div key={modifier.id} className="popup-card modifier-card">
-              <strong>{modifier.name}</strong>
-              <small>{modifier.description}</small>
-              <small>{modifier.formulaText}</small>
-              <div className="mini-tag-row">
-                <span className="mini-tag">{modifier.stackCount} stacks</span>
-                <span className="mini-tag">{modifier.resolvedEffectText}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : <p className="panel-copy small-copy">First boss kill opens a three-card modifier draft.</p>;
-    } else if (activePanel === 'roster') {
-      title = 'Roster And Bench';
-      subtitle = `${snapshot.hud.rosterCount}/${snapshot.hud.rosterCap} living heroes`;
       content = (
         <div className="popup-scroll-stack">
           <section className="popup-section">
-            <div className="section-head">
-              <strong>Board</strong>
-              <span>{boardEntries.length}</span>
-            </div>
-            {renderRosterCards(boardEntries, 'No defenders on the board right now.')}
-          </section>
-          <section className="popup-section">
-            <div className="section-head">
-              <strong>Bench</strong>
-              <span>{readyEntries.length}</span>
-            </div>
-            {renderRosterCards(readyEntries, 'No bench defenders waiting.')}
+            {globalModifiers.length > 0 ? (
+              <div className="popup-list">
+                {globalModifiers.map((modifier) => (
+                  <div key={modifier.id} className="popup-card modifier-card">
+                    <strong>{modifier.name}</strong>
+                    <small>{modifier.description}</small>
+                    <small>{modifier.formulaText}</small>
+                    <div className="mini-tag-row">
+                      <span className="mini-tag">{modifier.stackCount} stacks</span>
+                      <span className="mini-tag">{modifier.resolvedEffectText}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="panel-copy small-copy">First boss kill opens a three-card modifier draft.</p>}
           </section>
           <section className="popup-section">
             <div className="section-head">
@@ -579,6 +571,32 @@ export function App() {
         : 'Overflow stash locked';
       content = (
         <div className="popup-scroll-stack">
+          {(snapshot.hud.autoAssignUnlocked || snapshot.hud.autoUpgradeUnlocked) ? (
+            <section className="popup-section">
+              <div className="section-head">
+                <strong>Automation</strong>
+                <span>Loot QoL</span>
+              </div>
+              <div className="button-row tight">
+                {snapshot.hud.autoAssignUnlocked ? (
+                  <button
+                    className={snapshot.hud.autoAssignEnabled ? 'secondary-button small-button' : 'ghost-button small-ghost'}
+                    onClick={() => dispatch({ type: 'toggleAutoAssign' })}
+                  >
+                    {snapshot.hud.autoAssignEnabled ? 'Auto Assign On' : 'Auto Assign Off'}
+                  </button>
+                ) : null}
+                {snapshot.hud.autoUpgradeUnlocked ? (
+                  <button
+                    className={snapshot.hud.autoUpgradeEnabled ? 'secondary-button small-button' : 'ghost-button small-ghost'}
+                    onClick={() => dispatch({ type: 'toggleAutoUpgrade' })}
+                  >
+                    {snapshot.hud.autoUpgradeEnabled ? 'Auto Upgrade On' : 'Auto Upgrade Off'}
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
           {renderLootRow('Header Items', headerItemEntries, 'No item drops waiting in the header.')}
           {renderLootRow('Header Skills', headerSkillEntries, 'No skill drops waiting in the header.')}
           <section className="popup-section">
@@ -825,7 +843,6 @@ export function App() {
 
   const utilityButtons: Array<{ id: HudPanelId; label: string; badge: string | null; disabled?: boolean }> = snapshot ? [
     { id: 'modifiers', label: 'Modifiers', badge: globalModifiers.length > 0 ? `${globalModifiers.length}` : null },
-    { id: 'roster', label: 'Roster', badge: `${snapshot.hud.rosterCount}` },
     {
       id: 'loot',
       label: snapshot.hud.inventoryUnlocked ? 'Loot / Stash' : 'Loot',
@@ -923,6 +940,13 @@ export function App() {
                   </button>
                 )}
                 <button
+                  className={snapshot.hud.autoplayEnabled ? 'secondary-button' : 'ghost-button'}
+                  disabled={snapshot.hud.showIntermission}
+                  onClick={() => dispatch({ type: 'toggleAutoplay' })}
+                >
+                  {snapshot.hud.autoplayEnabled ? 'Autoplay On' : 'Autoplay Off'}
+                </button>
+                <button
                   className="secondary-button"
                   disabled={!snapshot.hud.canUseSisu}
                   onClick={() => dispatch({ type: 'activateSisu' })}
@@ -945,6 +969,8 @@ export function App() {
                 </button>
               ))}
             </nav>
+
+            {renderBenchStrip()}
 
             {snapshot.hud.worldLandmarks.map((landmark) => (
               <button
@@ -987,7 +1013,7 @@ export function App() {
               </div>
               <div className="inventory-card">
                 <strong>Topbar + Utility Rail</strong>
-                <small>The topbar tracks your run state, and the right rail opens Modifiers, Roster, Loot and Recruit.</small>
+                <small>The topbar tracks your run state, the bench sits on the left, and the right rail opens Modifiers, Loot and Recruit.</small>
               </div>
               <div className="inventory-card">
                 <strong>Selection Lives On The Map</strong>

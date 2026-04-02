@@ -7,6 +7,7 @@ import {
   createSnapshot,
   stepState
 } from '../logic';
+import { getTileViewportPosition, pickDefenderAtCanvasPoint } from '../render';
 
 function prepState() {
   return createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
@@ -256,6 +257,54 @@ describe('Sauna Defense V2 logic', () => {
     expect(normal.enemies.find((enemy) => enemy.instanceId === 1)?.hp).toBe(gameContent.enemyArchetypes.escalation_manager.maxHp - 10);
   });
 
+  it('does not grant combat XP for normal damage hits anymore', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.location = 'board';
+    defender.tile = { q: 0, r: -1 };
+    defender.homeTile = { q: 0, r: -1 };
+    defender.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 0 },
+      hp: gameContent.enemyArchetypes.raider.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.defenders.find((entry) => entry.id === defender.id)?.xp).toBe(0);
+  });
+
+  it('still grants combat XP for healing actions', () => {
+    let state = prepState();
+    const readyDefenders = state.defenders.filter((entry) => entry.location === 'ready');
+    const mender = readyDefenders.find((entry) => entry.templateId === 'mender')!;
+    const ally = readyDefenders.find((entry) => entry.id !== mender.id)!;
+    mender.location = 'board';
+    mender.tile = { q: 0, r: -1 };
+    mender.homeTile = { q: 0, r: -1 };
+    mender.attackReadyAtMs = 0;
+    ally.location = 'board';
+    ally.tile = { q: 1, r: -1 };
+    ally.homeTile = { q: 1, r: -1 };
+    ally.hp = Math.max(1, ally.hp - 4);
+    ally.attackReadyAtMs = 999999;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.defenders.find((entry) => entry.id === mender.id)?.xp).toBe(1);
+  });
+
   it('surfaces the boss name and hint in the HUD for boss waves', () => {
     const state = prepState();
     state.currentWave = createWaveDefinition(5, gameContent);
@@ -265,6 +314,44 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.bossName).toBe('Pebble');
     expect(snapshot.hud.nextWavePattern).toBe('Pebble');
     expect(snapshot.hud.bossHint).toContain('Ignores heroes');
+  });
+
+  it('lets the player pick a board defender directly from the canvas', () => {
+    const state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.location = 'board';
+    defender.tile = { q: 0, r: -1 };
+    defender.homeTile = { q: 0, r: -1 };
+
+    const snapshot = createSnapshot(state, gameContent);
+    const rect = { left: 0, top: 0, width: 900, height: 700 } as DOMRect;
+    const point = getTileViewportPosition(snapshot, rect.width, rect.height, defender.tile!);
+
+    expect(pickDefenderAtCanvasPoint(snapshot, rect, point.x, point.y)).toBe(defender.id);
+  });
+
+  it('autoplay starts the next wave after the boss reward draft resolves', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.location = 'board';
+    defender.tile = { q: 0, r: -1 };
+    defender.homeTile = { q: 0, r: -1 };
+    state.currentWave = createWaveDefinition(6, gameContent);
+    state.phase = 'prep';
+    state.overlayMode = 'modifier_draft';
+    state.globalModifierDraftOffers = ['shared_grit'];
+    state.autoplayEnabled = true;
+
+    state = applyAction(state, { type: 'draftGlobalModifier', modifierId: 'shared_grit' }, gameContent);
+    expect(state.phase).toBe('prep');
+    expect(state.overlayMode).toBe('none');
+
+    state = stepState(state, 640, gameContent);
+    expect(state.phase).toBe('prep');
+
+    state = stepState(state, 20, gameContent);
+    expect(state.phase).toBe('wave');
+    expect(state.currentWave.index).toBe(6);
   });
 
   it('creates a named starter roster with one sauna defender', () => {
@@ -1462,7 +1549,8 @@ describe('Sauna Defense V2 logic', () => {
     const attackerAfter = state.defenders.find((defender) => defender.id === attacker!.id);
     expect(attackerAfter?.kills).toBe(1);
     expect(attackerAfter?.xp).toBeGreaterThan(0);
-    expect(attackerAfter?.level).toBeGreaterThan(1);
+    expect(attackerAfter?.xp).toBe(3);
+    expect(attackerAfter?.level).toBe(1);
   });
 
   it('opens a subclass draft when a hero reaches level five', () => {
@@ -1472,9 +1560,9 @@ describe('Sauna Defense V2 logic', () => {
     attacker!.location = 'board';
     attacker!.tile = { q: 0, r: -1 };
     attacker!.attackReadyAtMs = 0;
-    attacker!.xp = 17;
+    attacker!.xp = 25;
     attacker!.level = 4;
-    attacker!.stats.damage = 2;
+    attacker!.stats.damage = 99;
     state.phase = 'wave';
     state.pendingSpawns = [];
     state.enemies = [{
@@ -1482,7 +1570,7 @@ describe('Sauna Defense V2 logic', () => {
       archetypeId: 'brute',
       tokenStyleId: 0,
       tile: { q: 0, r: -2 },
-      hp: 30,
+      hp: 1,
       lastHitByDefenderId: null,
       attackReadyAtMs: 999999,
       moveReadyAtMs: 999999
@@ -1509,10 +1597,10 @@ describe('Sauna Defense V2 logic', () => {
     attacker!.location = 'board';
     attacker!.tile = { q: 0, r: -1 };
     attacker!.attackReadyAtMs = 0;
-    attacker!.xp = 117;
+    attacker!.xp = 162;
     attacker!.level = 9;
     attacker!.subclassIds = ['stonewall'];
-    attacker!.stats.damage = 2;
+    attacker!.stats.damage = 99;
     state.phase = 'wave';
     state.pendingSpawns = [];
     state.enemies = [{
@@ -1520,7 +1608,7 @@ describe('Sauna Defense V2 logic', () => {
       archetypeId: 'brute',
       tokenStyleId: 0,
       tile: { q: 0, r: -2 },
-      hp: 30,
+      hp: 1,
       lastHitByDefenderId: null,
       attackReadyAtMs: 999999,
       moveReadyAtMs: 999999
@@ -1532,32 +1620,29 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.subclassDraftOfferIds.every((subclassId) => gameContent.defenderSubclasses[subclassId].unlockLevel === 10)).toBe(true);
   });
 
-  it('grants xp from successful combat actions even without a kill', () => {
+  it('grants xp from successful healing actions even without a kill', () => {
     let state = prepState();
-    const attacker = state.defenders.find((defender) => defender.location === 'ready');
+    const readyDefenders = state.defenders.filter((defender) => defender.location === 'ready');
+    const attacker = readyDefenders.find((defender) => defender.templateId === 'mender');
+    const ally = readyDefenders.find((defender) => defender.id !== attacker?.id);
     expect(attacker).toBeTruthy();
+    expect(ally).toBeTruthy();
     attacker!.location = 'board';
     attacker!.tile = { q: 0, r: -1 };
     attacker!.attackReadyAtMs = 0;
-    attacker!.stats.damage = 2;
+    ally!.location = 'board';
+    ally!.tile = { q: 1, r: -1 };
+    ally!.hp = Math.max(1, ally!.hp - 4);
+    ally!.attackReadyAtMs = 999999;
     state.phase = 'wave';
     state.pendingSpawns = [];
-    state.enemies = [{
-      instanceId: 1,
-      archetypeId: 'brute',
-      tokenStyleId: 0,
-      tile: { q: 0, r: 0 },
-      hp: 30,
-      lastHitByDefenderId: null,
-      attackReadyAtMs: 999999,
-      moveReadyAtMs: 999999
-    }];
+    state.enemies = [];
 
     state = stepState(state, 16, gameContent);
 
     const attackerAfter = state.defenders.find((defender) => defender.id === attacker!.id);
     expect(attackerAfter?.xp).toBeGreaterThan(0);
-    expect(state.enemies[0]?.hp).toBeLessThan(30);
+    expect(state.defenders.find((defender) => defender.id === ally!.id)?.hp).toBeGreaterThan(ally!.hp);
   });
 
   it('targets a defender before the sauna when a defender is in range', () => {
@@ -2001,8 +2086,8 @@ describe('Sauna Defense V2 logic', () => {
   it('keeps only one non-blocking hud panel open at a time', () => {
     let state = prepState();
 
-    state = applyAction(state, { type: 'openHudPanel', panel: 'roster' }, gameContent);
-    expect(state.activePanel).toBe('roster');
+    state = applyAction(state, { type: 'openHudPanel', panel: 'modifiers' }, gameContent);
+    expect(state.activePanel).toBe('modifiers');
 
     state = applyAction(state, { type: 'openHudPanel', panel: 'loot' }, gameContent);
     expect(state.activePanel).toBe('loot');

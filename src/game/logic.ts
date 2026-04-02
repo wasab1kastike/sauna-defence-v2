@@ -26,10 +26,12 @@ import type {
   InputAction,
   InventoryDrop,
   ItemId,
+  LootKind,
   MetaProgress,
   MetaUpgradeId,
   Rarity,
   RecruitOffer,
+  RunPreferences,
   RunState,
   SkillId,
   SubclassDraftRequest,
@@ -66,6 +68,8 @@ const META_IDS: MetaUpgradeId[] = [
   'inventory_slots',
   'loot_luck',
   'loot_rarity',
+  'loot_auto_assign',
+  'loot_auto_upgrade',
   'item_slots',
   'beer_shop_unlock',
   'beer_shop_level',
@@ -84,6 +88,7 @@ const WORLD_LANDMARK_TILES: Record<WorldLandmarkId, AxialCoord> = {
   beer_shop: { q: -3, r: 6 }
 };
 const BLINK_STEP_COOLDOWN_MS = 12000;
+const AUTOPLAY_DELAY_MS = 650;
 const EMPTY_STATS: UnitStats = {
   maxHp: 0,
   damage: 0,
@@ -265,12 +270,22 @@ export function createDefaultMetaProgress(): MetaProgress {
       inventory_slots: 0,
       loot_luck: 0,
       loot_rarity: 0,
+      loot_auto_assign: 0,
+      loot_auto_upgrade: 0,
       item_slots: 0,
       beer_shop_unlock: 0,
       beer_shop_level: 0,
       sauna_auto_deploy: 0,
       sauna_slap_swap: 0
     }
+  };
+}
+
+export function createDefaultRunPreferences(): RunPreferences {
+  return {
+    autoAssignEnabled: false,
+    autoUpgradeEnabled: false,
+    autoplayEnabled: false
   };
 }
 
@@ -377,6 +392,14 @@ function hasSaunaSlapSwap(state: RunState): boolean {
   return state.meta.upgrades.sauna_slap_swap > 0;
 }
 
+function hasLootAutoAssign(state: RunState): boolean {
+  return state.meta.upgrades.loot_auto_assign > 0;
+}
+
+function hasLootAutoUpgrade(state: RunState): boolean {
+  return state.meta.upgrades.loot_auto_upgrade > 0;
+}
+
 function clearActiveHudPanel(state: RunState): void {
   state.activePanel = null;
   state.inventoryOpen = false;
@@ -406,7 +429,8 @@ function getDefender(state: RunState, defenderId: string | null): DefenderInstan
 function xpForLevel(level: number): number {
   let total = 0;
   for (let nextLevel = 2; nextLevel <= level; nextLevel += 1) {
-    total += nextLevel <= 5 ? nextLevel + 1 : 4 + nextLevel * 2;
+    const base = nextLevel <= 5 ? nextLevel + 1 : 4 + nextLevel * 2;
+    total += Math.ceil(base * 1.35);
   }
   return total;
 }
@@ -427,7 +451,7 @@ function xpForEnemy(enemyId: EnemyUnitId): number {
     case 'pebble':
     case 'electric_bather':
     case 'escalation_manager':
-      return 4;
+      return 3;
     default:
       return 1;
   }
@@ -1602,6 +1626,7 @@ function maybeDrop(state: RunState, enemyId: EnemyUnitId, content: GameContent):
     storage === 'header'
       ? `${drop.name} dropped into the header loot bar.`
       : `${drop.name} was sent to your Overflow Stash.`;
+  maybeAutoHandleLootDrop(state, drop, content);
 }
 
 function grantXp(state: RunState, defender: DefenderInstance, amount: number, content: GameContent): string | null {
@@ -1766,7 +1791,6 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
     applyDamageToEnemy(state, target, hitDamage, defender.id);
     pushFx(state, 'hit', target.tile, 180, defender.tile);
   }
-  grantCombatXp(state, defender, 1, content);
   if (defender.skills.includes('fireball')) {
     pushFx(state, 'fireball', target.tile, 260, defender.tile);
     for (const enemy of state.enemies) {
@@ -2047,6 +2071,7 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, message: strin
   state.fxEvents = [];
   state.waveSwapUsed = false;
   state.nextRegenTickAtMs = state.timeMs + 1000;
+  state.autoplayReadyAtMs = state.timeMs + AUTOPLAY_DELAY_MS;
   state.currentWave = waveDef;
   state.pendingSpawns = waveDef.spawns.map((spawn) => ({ ...spawn }));
   state.message = message;
@@ -2077,6 +2102,7 @@ function awardWave(state: RunState, content: GameContent): void {
     state.waveElapsedMs = 0;
     state.currentWave = upcomingWave;
     state.pendingSpawns = [];
+    scheduleAutoplay(state);
     state.message = `${bossDisplayName(upcomingWave.bossId) ?? `Boss wave ${upcomingWave.index}`} is coming. Reposition before it hits.`;
     return;
   }
@@ -2130,6 +2156,236 @@ function findAutoAssignTarget(state: RunState, drop: InventoryDrop, content: Gam
   }
 
   return livingDefenders(state).find((defender) => canEquipDrop(defender, drop, state, content)) ?? null;
+}
+
+function itemAutoScore(itemId: ItemId, content: GameContent): number {
+  const modifiers = content.itemDefinitions[itemId].modifiers;
+  return (
+    (modifiers.maxHp ?? 0) * 0.4 +
+    (modifiers.damage ?? 0) * 1.35 +
+    (modifiers.heal ?? 0) * 1.15 +
+    (modifiers.range ?? 0) * 0.95 +
+    (modifiers.defense ?? 0) * 0.9 +
+    (modifiers.regenHpPerSecond ?? 0) * 1.4 -
+    (modifiers.attackCooldownMs ?? 0) * 0.012
+  );
+}
+
+function skillAutoScore(skillId: SkillId): number {
+  switch (skillId) {
+    case 'fireball':
+      return 6.2;
+    case 'spin2win':
+      return 6.0;
+    case 'blink_step':
+      return 5.6;
+    case 'chain_spark':
+      return 5.4;
+    case 'battle_hymn':
+      return 5.2;
+    case 'steam_shield':
+      return 4.8;
+    default:
+      return 0;
+  }
+}
+
+function dropAutoScore(drop: InventoryDrop, content: GameContent): number {
+  return drop.kind === 'item'
+    ? itemAutoScore(drop.definitionId as ItemId, content)
+    : skillAutoScore(drop.definitionId as SkillId);
+}
+
+function equippedLootScore(kind: LootKind, definitionId: ItemId | SkillId, content: GameContent): number {
+  return kind === 'item'
+    ? itemAutoScore(definitionId as ItemId, content)
+    : skillAutoScore(definitionId as SkillId);
+}
+
+function orderedLivingDefenders(state: RunState): DefenderInstance[] {
+  const selected = getDefender(state, state.selectedDefenderId);
+  const living = livingDefenders(state);
+  if (!selected || selected.location === 'dead') {
+    return living;
+  }
+  return [selected, ...living.filter((defender) => defender.id !== selected.id)];
+}
+
+function createInventoryDropFromDefinition(
+  state: RunState,
+  content: GameContent,
+  kind: LootKind,
+  definitionId: ItemId | SkillId,
+  sourceEnemyId: EnemyUnitId,
+  waveFound = state.waveIndex
+): InventoryDrop {
+  const definition = kind === 'item'
+    ? content.itemDefinitions[definitionId as ItemId]
+    : content.skillDefinitions[definitionId as SkillId];
+  return {
+    instanceId: state.nextLootInstanceId++,
+    kind,
+    definitionId,
+    rarity: definition.rarity,
+    name: definition.name,
+    effectText: definition.effectText,
+    flavorText: definition.flavorText,
+    artPath: definition.artPath,
+    waveFound,
+    sourceEnemyId
+  };
+}
+
+function describeReturnedDropStorage(storage: 'header' | 'stash' | 'discarded'): string {
+  switch (storage) {
+    case 'header':
+      return ' The replaced loot was returned to the header.';
+    case 'stash':
+      return ' The replaced loot was moved into the stash.';
+    case 'discarded':
+      return ' The replaced loot had no room and was lost.';
+    default:
+      return '';
+  }
+}
+
+function swapDropOnDefender(
+  state: RunState,
+  drop: InventoryDrop,
+  defender: DefenderInstance,
+  replacedDefinitionId: ItemId | SkillId,
+  content: GameContent
+): { returnedDrop: InventoryDrop; storage: 'header' | 'stash' | 'discarded' } | null {
+  const previousMax = derivedStats(state, defender, content).maxHp;
+  if (drop.kind === 'item') {
+    const index = defender.items.indexOf(replacedDefinitionId as ItemId);
+    if (index < 0) return null;
+    defender.items.splice(index, 1, drop.definitionId as ItemId);
+  } else {
+    const index = defender.skills.indexOf(replacedDefinitionId as SkillId);
+    if (index < 0) return null;
+    defender.skills.splice(index, 1, drop.definitionId as SkillId);
+  }
+
+  removeLootDrop(state, drop.instanceId);
+  const returnedDrop = createInventoryDropFromDefinition(
+    state,
+    content,
+    drop.kind,
+    replacedDefinitionId,
+    drop.sourceEnemyId,
+    drop.waveFound
+  );
+  const storage = storeLootDrop(state, returnedDrop, content);
+  if (storage !== 'discarded') {
+    state.recentDropId = returnedDrop.instanceId;
+    state.selectedInventoryDropId = returnedDrop.instanceId;
+  } else if (state.recentDropId === returnedDrop.instanceId) {
+    setRecentLootFromState(state);
+  }
+  defender.hp += Math.max(0, derivedStats(state, defender, content).maxHp - previousMax);
+  normalizeDefender(state, defender, content);
+  return { returnedDrop, storage };
+}
+
+function findAutoUpgradeTarget(
+  state: RunState,
+  drop: InventoryDrop,
+  content: GameContent
+): { defender: DefenderInstance; replacedDefinitionId: ItemId | SkillId; scoreDelta: number } | null {
+  const incomingScore = dropAutoScore(drop, content);
+  let best: { defender: DefenderInstance; replacedDefinitionId: ItemId | SkillId; scoreDelta: number } | null = null;
+
+  for (const defender of orderedLivingDefenders(state)) {
+    const equipped = drop.kind === 'item' ? defender.items : defender.skills;
+    for (const definitionId of equipped) {
+      const scoreDelta = incomingScore - equippedLootScore(drop.kind, definitionId, content);
+      if (scoreDelta <= 0) {
+        continue;
+      }
+      if (!best || scoreDelta > best.scoreDelta) {
+        best = { defender, replacedDefinitionId: definitionId, scoreDelta };
+      }
+    }
+  }
+
+  return best;
+}
+
+function maybeAutoHandleLootDrop(state: RunState, drop: InventoryDrop, content: GameContent): void {
+  if (!state.autoAssignEnabled || !hasLootAutoAssign(state)) {
+    return;
+  }
+
+  const liveDrop = getInventoryDrop(state, drop.instanceId);
+  if (!liveDrop) {
+    return;
+  }
+
+  const freeSlotTarget = findAutoAssignTarget(state, liveDrop, content);
+  if (freeSlotTarget) {
+    equipDropOnDefender(state, liveDrop, freeSlotTarget, content);
+    state.message = `${liveDrop.name} auto-assigned to ${freeSlotTarget.name}.`;
+    return;
+  }
+
+  if (!state.autoUpgradeEnabled || !hasLootAutoUpgrade(state)) {
+    return;
+  }
+
+  const upgradeTarget = findAutoUpgradeTarget(state, liveDrop, content);
+  if (!upgradeTarget) {
+    return;
+  }
+
+  const result = swapDropOnDefender(
+    state,
+    liveDrop,
+    upgradeTarget.defender,
+    upgradeTarget.replacedDefinitionId,
+    content
+  );
+  if (!result) {
+    return;
+  }
+
+  const replacedName = liveDrop.kind === 'item'
+    ? content.itemDefinitions[upgradeTarget.replacedDefinitionId as ItemId].name
+    : content.skillDefinitions[upgradeTarget.replacedDefinitionId as SkillId].name;
+  state.message =
+    `${liveDrop.name} auto-upgraded ${upgradeTarget.defender.name}, replacing ${replacedName}.` +
+    describeReturnedDropStorage(result.storage);
+}
+
+function canStartWaveNow(state: RunState): boolean {
+  return state.overlayMode === 'none' && state.phase === 'prep' && boardDefenders(state).length > 0;
+}
+
+function scheduleAutoplay(state: RunState, delayMs = AUTOPLAY_DELAY_MS): void {
+  state.autoplayReadyAtMs = state.timeMs + delayMs;
+}
+
+function maybeStartAutoplayWave(state: RunState): boolean {
+  if (
+    !state.autoplayEnabled ||
+    state.phase !== 'prep' ||
+    state.overlayMode !== 'none' ||
+    state.activePanel !== null ||
+    state.introOpen ||
+    boardDefenders(state).length === 0 ||
+    state.timeMs < state.autoplayReadyAtMs
+  ) {
+    return false;
+  }
+
+  startWaveState(
+    state,
+    state.currentWave,
+    state.currentWave.isBoss
+      ? `Boss wave ${state.currentWave.index} started.`
+      : `Wave ${state.currentWave.index} started.`
+  );
+  return true;
 }
 
 function equipDropOnDefender(
@@ -2480,7 +2736,7 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
     return {
       title: 'Sauna Reserve',
       body: state.saunaDefenderId
-        ? 'The sauna is holding one reserve hero. Check their condition and the auto-upgrade status here.'
+        ? 'The sauna is holding one reserve hero. Check their condition and the auto-deploy tools here.'
         : 'The sauna is empty. Send a board hero there during prep if you want a reserve.'
     };
   }
@@ -2533,7 +2789,8 @@ export function createInitialState(
   seed = 123456789,
   showIntermission = false,
   introOpen = false,
-  activeAlcohols: ActiveAlcoholBuff[] = []
+  activeAlcohols: ActiveAlcoholBuff[] = [],
+  preferences: RunPreferences = createDefaultRunPreferences()
 ): RunState {
   const state: RunState = {
     phase: 'prep',
@@ -2586,6 +2843,10 @@ export function createInitialState(
     saunaHp: content.config.saunaHp,
     waveSwapUsed: false,
     nextRegenTickAtMs: 1000,
+    autoAssignEnabled: preferences.autoAssignEnabled,
+    autoUpgradeEnabled: preferences.autoUpgradeEnabled,
+    autoplayEnabled: preferences.autoplayEnabled,
+    autoplayReadyAtMs: AUTOPLAY_DELAY_MS,
     meta: clone(meta),
     message: showIntermission
       ? 'Spend Steam, browse upgrades, then begin the next sauna shift.'
@@ -2606,12 +2867,31 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       content,
       state.meta,
       (Date.now() >>> 0) || 1,
-      false
+      false,
+      false,
+      [],
+      {
+        autoAssignEnabled: state.autoAssignEnabled,
+        autoUpgradeEnabled: state.autoUpgradeEnabled,
+        autoplayEnabled: state.autoplayEnabled
+      }
     );
   }
   if (action.type === 'startNextRun') {
     return state.overlayMode === 'intermission'
-      ? createInitialState(content, state.meta, (Date.now() >>> 0) || 1, false, false, state.activeAlcohols)
+      ? createInitialState(
+        content,
+        state.meta,
+        (Date.now() >>> 0) || 1,
+        false,
+        false,
+        state.activeAlcohols,
+        {
+          autoAssignEnabled: state.autoAssignEnabled,
+          autoUpgradeEnabled: state.autoUpgradeEnabled,
+          autoplayEnabled: state.autoplayEnabled
+        }
+      )
       : state;
   }
   const next = clone(state);
@@ -2652,6 +2932,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       normalizeLivingDefenders(next, content);
       next.message = `${content.globalModifierDefinitions[action.modifierId].name} locked in for this run.`;
       activateNextSubclassDraft(next, content);
+      if (next.overlayMode === 'none') {
+        scheduleAutoplay(next);
+      }
       return next;
     }
     case 'draftSubclassChoice': {
@@ -2664,6 +2947,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         next.subclassDraftUnlockLevel = null;
         next.subclassDraftOfferIds = [];
         activateNextSubclassDraft(next, content);
+        if (next.overlayMode === 'none') {
+          scheduleAutoplay(next);
+        }
         return next;
       }
       const previousMaxHp = derivedStats(next, defender, content).maxHp;
@@ -2680,6 +2966,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       const subclass = content.defenderSubclasses[action.subclassId];
       next.message = `${defender.name} locked in ${subclass.name}.`;
       activateNextSubclassDraft(next, content);
+      if (next.overlayMode === 'none') {
+        scheduleAutoplay(next);
+      }
       return next;
     }
     case 'openHudPanel': {
@@ -2829,7 +3118,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.message = 'SISU activated.';
       return next;
     case 'startWave':
-      if (next.overlayMode !== 'none' || next.phase !== 'prep' || boardDefenders(next).length === 0) {
+      if (!canStartWaveNow(next)) {
         next.message = 'Place at least one defender first.';
         return next;
       }
@@ -2940,6 +3229,16 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.message = `${drop.name} auto-assigned to ${target.name}.`;
       return next;
     }
+    case 'toggleAutoAssign':
+      if (!hasLootAutoAssign(next)) return next;
+      next.autoAssignEnabled = !next.autoAssignEnabled;
+      next.message = next.autoAssignEnabled ? 'Loot auto assign enabled.' : 'Loot auto assign disabled.';
+      return next;
+    case 'toggleAutoUpgrade':
+      if (!hasLootAutoUpgrade(next)) return next;
+      next.autoUpgradeEnabled = !next.autoUpgradeEnabled;
+      next.message = next.autoUpgradeEnabled ? 'Loot auto upgrade enabled.' : 'Loot auto upgrade disabled.';
+      return next;
     case 'sellInventoryDrop': {
       const drop = getInventoryDrop(next, action.dropId);
       if (!drop) return next;
@@ -3033,6 +3332,13 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.message = 'The metashop shutters creak open for future runs.';
       return next;
     }
+    case 'toggleAutoplay':
+      next.autoplayEnabled = !next.autoplayEnabled;
+      if (next.autoplayEnabled) {
+        scheduleAutoplay(next);
+      }
+      next.message = next.autoplayEnabled ? 'Autoplay enabled.' : 'Autoplay disabled.';
+      return next;
     default:
       return next;
   }
@@ -3041,6 +3347,13 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
 export function stepState(state: RunState, deltaMs: number, content: GameContent): RunState {
   if (deltaMs <= 0) return state;
   if (state.introOpen) return state;
+  if (state.phase === 'prep' && state.overlayMode === 'none') {
+    const next = clone(state);
+    next.timeMs += deltaMs;
+    next.waveElapsedMs += deltaMs;
+    maybeStartAutoplayWave(next);
+    return next;
+  }
   if (state.overlayMode !== 'none' || state.phase !== 'wave') return state;
   const next = clone(state);
   ageFx(next, deltaMs);
@@ -3122,6 +3435,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     isPaused: state.overlayMode === 'paused',
     showIntermission: state.overlayMode === 'intermission',
     introOpen: state.introOpen,
+    autoplayEnabled: state.autoplayEnabled,
+    canAutoplay: canStartWaveNow(state) && state.activePanel === null && !state.introOpen,
     waveNumber: currentWave.index,
     enemiesRemaining: state.pendingSpawns.length + state.enemies.length,
     isBossWave: currentWave.isBoss,
@@ -3141,6 +3456,10 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     inventoryOpen: inventoryUnlocked(state) ? state.inventoryOpen : false,
     recruitmentOpen: state.recruitmentOpen,
     hasRecentLoot: state.recentDropId !== null,
+    autoAssignUnlocked: hasLootAutoAssign(state),
+    autoAssignEnabled: state.autoAssignEnabled && hasLootAutoAssign(state),
+    autoUpgradeUnlocked: hasLootAutoUpgrade(state),
+    autoUpgradeEnabled: state.autoUpgradeEnabled && hasLootAutoUpgrade(state),
     saunaOccupantName: saunaDefender?.name ?? null,
     saunaOccupancyLabel: `${saunaOccupancy(state)}/${content.config.saunaCap}`,
     saunaSelected: state.selectedMapTarget === 'sauna',

@@ -75,7 +75,7 @@ export type BossCategory = 'pressure' | 'breach';
 export type EnemyBehavior = 'standard' | 'pebble' | 'swarm' | 'electric' | 'summoner';
 export type CombatFxKind = 'hit' | 'defender_hit' | 'sauna_hit' | 'heal' | 'fireball' | 'spin' | 'blink' | 'boss_hit' | 'chain';
 export type MapTarget = 'defender' | 'sauna';
-export type HudPanelId = 'modifiers' | 'roster' | 'loot' | 'recruit' | 'beer_shop' | 'metashop';
+export type HudPanelId = 'modifiers' | 'loot' | 'recruit' | 'beer_shop' | 'metashop';
 export type WorldLandmarkId = 'metashop' | 'beer_shop';
 export type GlobalModifierCountScope = 'board' | 'living' | 'dead';
 export type GlobalModifierEffectStat = 'maxHp' | 'damage' | 'heal' | 'range' | 'attackCooldownMs' | 'defense' | 'regenHpPerSecond';
@@ -106,6 +106,8 @@ export type MetaUpgradeId =
   | 'inventory_slots'
   | 'loot_luck'
   | 'loot_rarity'
+  | 'loot_auto_assign'
+  | 'loot_auto_upgrade'
   | 'item_slots'
   | 'beer_shop_unlock'
   | 'beer_shop_level'
@@ -346,6 +348,12 @@ export interface MetaProgress {
   upgrades: Record<MetaUpgradeId, number>;
 }
 
+export interface RunPreferences {
+  autoAssignEnabled: boolean;
+  autoUpgradeEnabled: boolean;
+  autoplayEnabled: boolean;
+}
+
 export interface GameConfig {
   gridRadius: number;
   buildRadius: number;
@@ -460,6 +468,10 @@ export interface RunState {
   saunaHp: number;
   waveSwapUsed: boolean;
   nextRegenTickAtMs: number;
+  autoAssignEnabled: boolean;
+  autoUpgradeEnabled: boolean;
+  autoplayEnabled: boolean;
+  autoplayReadyAtMs: number;
   meta: MetaProgress;
   message: string;
   metaAwarded: boolean;
@@ -657,6 +669,8 @@ export interface HudViewModel {
   isPaused: boolean;
   showIntermission: boolean;
   introOpen: boolean;
+  autoplayEnabled: boolean;
+  canAutoplay: boolean;
   waveNumber: number;
   enemiesRemaining: number;
   isBossWave: boolean;
@@ -676,6 +690,10 @@ export interface HudViewModel {
   inventoryOpen: boolean;
   recruitmentOpen: boolean;
   hasRecentLoot: boolean;
+  autoAssignUnlocked: boolean;
+  autoAssignEnabled: boolean;
+  autoUpgradeUnlocked: boolean;
+  autoUpgradeEnabled: boolean;
   saunaOccupantName: string | null;
   saunaOccupancyLabel: string;
   saunaSelected: boolean;
@@ -783,6 +801,8 @@ export type InputAction =
   | { type: 'clearRecruitOffers' }
   | { type: 'equipInventoryDrop'; dropId: number; defenderId: string }
   | { type: 'autoAssignInventoryDrop'; dropId: number }
+  | { type: 'toggleAutoAssign' }
+  | { type: 'toggleAutoUpgrade' }
   | { type: 'sellInventoryDrop'; dropId: number }
   | { type: 'destroyEquippedItem'; defenderId: string; itemId: ItemId }
   | { type: 'destroyEquippedSkill'; defenderId: string; skillId: SkillId }
@@ -791,6 +811,7 @@ export type InputAction =
   | { type: 'buyBeerShopOffer'; offerId: number }
   | { type: 'removeActiveAlcohol'; alcoholId: AlcoholId }
   | { type: 'unlockMetaShop' }
+  | { type: 'toggleAutoplay' }
   | { type: 'startNextRun' }
   | { type: 'restartRun' };
 

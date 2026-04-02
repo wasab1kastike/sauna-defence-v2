@@ -1481,3 +1481,26 @@ export function pickTileAtCanvasPoint(
   }
   return tile;
 }
+
+export function pickDefenderAtCanvasPoint(
+  snapshot: GameSnapshot,
+  rect: DOMRect,
+  clientX: number,
+  clientY: number
+): string | null {
+  const layout = getBoardLayout(rect.width, rect.height, snapshot.config.gridRadius);
+  const pointer = { x: clientX - rect.left, y: clientY - rect.top };
+  const boardDefenders = snapshot.state.defenders
+    .filter((defender) => defender.location === 'board' && defender.tile)
+    .map((defender) => ({
+      id: defender.id,
+      center: axialToPixel(defender.tile as AxialCoord, layout),
+      radius: layout.hexSize * 0.62
+    }))
+    .sort((left, right) => right.radius - left.radius);
+
+  const hit = boardDefenders.find((defender) => (
+    Math.hypot(defender.center.x - pointer.x, defender.center.y - pointer.y) <= defender.radius
+  ));
+  return hit?.id ?? null;
+}

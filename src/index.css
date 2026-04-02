@@ -91,6 +91,7 @@ button {
 
 .hud-topbar,
 .hud-action-cluster,
+.bench-strip,
 .hud-utility-rail,
 .selection-card,
 .board-popup,
@@ -209,6 +210,35 @@ button {
   display: grid;
   gap: 8px;
   width: 118px;
+}
+
+.bench-strip {
+  top: 322px;
+  left: 18px;
+  width: min(340px, calc(100% - 240px));
+  max-height: min(42vh, 460px);
+  overflow: auto;
+}
+
+.bench-list {
+  display: grid;
+  gap: 8px;
+}
+
+.bench-card {
+  padding: 10px;
+  border-radius: 18px;
+  border: 1px solid rgba(125, 224, 209, 0.12);
+  background: rgba(20, 46, 49, 0.74);
+  color: var(--text);
+  display: grid;
+  gap: 6px;
+  text-align: left;
+}
+
+.bench-card.selected {
+  border-color: rgba(255, 205, 118, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(255, 205, 118, 0.16);
 }
 
 .utility-button,
@@ -541,13 +571,25 @@ em {
     top: 164px;
   }
 
+  .bench-strip {
+    left: 18px;
+    right: 18px;
+    top: 336px;
+    width: auto;
+    max-height: min(22vh, 220px);
+  }
+
+  .bench-list {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
   .hud-utility-rail {
     left: 18px;
     right: 18px;
     bottom: 18px;
     top: auto;
     width: auto;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .board-popup-utility,

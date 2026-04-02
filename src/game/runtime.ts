@@ -1,8 +1,9 @@
-import { applyAction, createDefaultMetaProgress, createInitialState, createSnapshot, stepState } from './logic';
+import { applyAction, createDefaultMetaProgress, createDefaultRunPreferences, createInitialState, createSnapshot, stepState } from './logic';
 import { paintSnapshot } from './render';
-import type { GameRuntime, GameRuntimeConfig, GameSnapshot, InputAction, MetaProgress, RunState } from './types';
+import type { GameRuntime, GameRuntimeConfig, GameSnapshot, InputAction, MetaProgress, RunPreferences, RunState } from './types';
 
 const META_STORAGE_KEY = 'sauna-defense-v2-meta';
+const PREFERENCES_STORAGE_KEY = 'sauna-defense-v2-preferences';
 const INTRO_STORAGE_KEY = 'sauna-defense-v2-intro-seen';
 
 function loadMeta(storage?: Storage | null): MetaProgress {
@@ -37,6 +38,34 @@ function saveMeta(storage: Storage | null | undefined, meta: MetaProgress) {
   storage.setItem(META_STORAGE_KEY, JSON.stringify(meta));
 }
 
+function loadPreferences(storage?: Storage | null): RunPreferences {
+  if (!storage) {
+    return createDefaultRunPreferences();
+  }
+
+  try {
+    const raw = storage.getItem(PREFERENCES_STORAGE_KEY);
+    if (!raw) {
+      return createDefaultRunPreferences();
+    }
+    const parsed = JSON.parse(raw) as Partial<RunPreferences>;
+    return {
+      autoAssignEnabled: parsed.autoAssignEnabled === true,
+      autoUpgradeEnabled: parsed.autoUpgradeEnabled === true,
+      autoplayEnabled: parsed.autoplayEnabled === true
+    };
+  } catch {
+    return createDefaultRunPreferences();
+  }
+}
+
+function savePreferences(storage: Storage | null | undefined, preferences: RunPreferences) {
+  if (!storage) {
+    return;
+  }
+  storage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
+}
+
 function loadIntroSeen(storage?: Storage | null): boolean {
   if (!storage) {
     return false;
@@ -61,7 +90,15 @@ function saveIntroSeen(storage?: Storage | null, value = true) {
 
 export function createGameRuntime(config: GameRuntimeConfig): GameRuntime {
   const storage = config.storage ?? (typeof window !== 'undefined' ? window.localStorage : null);
-  let state: RunState = createInitialState(config.content, loadMeta(storage), Date.now() >>> 0, false, !loadIntroSeen(storage));
+  let state: RunState = createInitialState(
+    config.content,
+    loadMeta(storage),
+    Date.now() >>> 0,
+    false,
+    !loadIntroSeen(storage),
+    [],
+    loadPreferences(storage)
+  );
   let snapshot: GameSnapshot = createSnapshot(state, config.content);
   let animationFrameId = 0;
   let lastFrameMs = 0;
@@ -75,6 +112,11 @@ export function createGameRuntime(config: GameRuntimeConfig): GameRuntime {
     snapshot = createSnapshot(state, config.content);
     lastEmitMs = state.timeMs;
     saveMeta(storage, state.meta);
+    savePreferences(storage, {
+      autoAssignEnabled: state.autoAssignEnabled,
+      autoUpgradeEnabled: state.autoUpgradeEnabled,
+      autoplayEnabled: state.autoplayEnabled
+    });
     for (const listener of listeners) {
       listener(snapshot);
     }
