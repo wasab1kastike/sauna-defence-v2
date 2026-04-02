@@ -1102,6 +1102,22 @@ function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, lay
         drawGlowDisc(ctx, center, layout.hexSize * (0.24 + progress * 0.2), 'rgba(214,248,255,0.68)', 'rgba(117,206,255,0)', 0.78);
         drawSparkBurst(ctx, center, layout.hexSize * 0.28, '#d4fbff', 0.78, 5, progress * Math.PI * 2.8);
         break;
+      case 'volley':
+        if (secondary) {
+          drawLightningArc(ctx, secondary, center, 'rgba(255, 225, 161, 0.86)', Math.max(1.8, layout.hexSize * 0.06), 0.92, event.id * 6.3);
+          drawAfterimageTrail(ctx, secondary, center, 'rgba(255, 176, 92, 0.8)', 0.72);
+        }
+        drawGlowDisc(ctx, center, layout.hexSize * (0.2 + progress * 0.16), 'rgba(255,240,198,0.76)', 'rgba(255,156,78,0)', 0.78);
+        drawSparkBurst(ctx, center, layout.hexSize * (0.18 + progress * 0.16), '#ffe9bf', 0.72, 4, progress * Math.PI * 2.1);
+        break;
+      case 'pulse':
+        if (secondary) {
+          drawLightningArc(ctx, secondary, center, 'rgba(191, 255, 212, 0.42)', Math.max(1.4, layout.hexSize * 0.04), 0.56, event.id * 4.1);
+        }
+        drawGlowDisc(ctx, center, layout.hexSize * (0.3 + progress * 0.3), 'rgba(210,255,221,0.74)', 'rgba(105,232,170,0)', 0.82);
+        drawShockRing(ctx, center, layout.hexSize * (0.16 + progress * 0.46), '#a4f3c3', Math.max(2, layout.hexSize * 0.05), 0.84);
+        drawEmberParticles(ctx, center, layout.hexSize * 0.75, progress, event.id * 5.8, '#deffe7', 7);
+        break;
       case 'defender_hit':
         if (secondary) {
           const impact = pointLerp(secondary, center, 0.84);

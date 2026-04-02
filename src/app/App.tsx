@@ -446,6 +446,20 @@ export function App() {
               <span className="mini-tag">Regen {selectedDefender.regenHpPerSecond}/s</span>
             </div>
             <p className="panel-copy small-copy">{selectedDefender.subclassDescription}</p>
+            {selectedDefender.subclasses.length > 0 ? (
+              <div className="popup-list">
+                {selectedDefender.subclasses.map((subclass) => (
+                  <div key={subclass.id} className="inventory-card subclass-card">
+                    <div className="unit-row-top">
+                      <strong>{subclass.name}</strong>
+                      <small>Lvl {subclass.unlockLevel}</small>
+                    </div>
+                    <small>{subclass.effectText}</small>
+                    <small>{subclass.statText}</small>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <div className="mini-tag-row">
               <span className="mini-tag">
                 XP {selectedDefender.xp}
@@ -1125,6 +1139,8 @@ export function App() {
                     <strong>{offer.name}</strong>
                     <small>Unlock level {offer.unlockLevel}</small>
                     <small>{offer.description}</small>
+                    <small>{offer.effectText}</small>
+                    <small>{offer.statText}</small>
                   </div>
                   <button className="mini-button" onClick={() => dispatch({ type: 'draftSubclassChoice', subclassId: offer.id })}>
                     Choose Branch

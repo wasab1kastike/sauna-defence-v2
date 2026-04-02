@@ -422,6 +422,42 @@ function livingDefenders(state: RunState): DefenderInstance[] {
   return state.defenders.filter((defender) => defender.location !== 'dead');
 }
 
+function hasSubclass(defender: DefenderInstance, subclassId: DefenderSubclassId): boolean {
+  return defender.subclassIds.includes(subclassId);
+}
+
+function enemyMaxHp(enemy: EnemyInstance, content: GameContent): number {
+  return content.enemyArchetypes[enemy.archetypeId].maxHp;
+}
+
+function boardAlliesWithin(
+  state: RunState,
+  origin: AxialCoord,
+  range: number,
+  excludeId: string | null = null
+): DefenderInstance[] {
+  return boardDefenders(state)
+    .filter((ally) => ally.id !== excludeId && ally.tile && hexDistance(origin, ally.tile) <= range)
+    .sort((left, right) => (left.hp - right.hp) || (hexDistance(origin, left.tile as AxialCoord) - hexDistance(origin, right.tile as AxialCoord)));
+}
+
+function nearestInjuredAllyWithin(
+  state: RunState,
+  healer: DefenderInstance,
+  origin: AxialCoord,
+  range: number,
+  content: GameContent,
+  excludeId: string | null = null
+): DefenderInstance | null {
+  return boardAlliesWithin(state, origin, range, excludeId)
+    .filter((ally) => ally.hp < derivedStats(state, ally, content).maxHp)
+    .sort((left, right) => {
+      const leftMissing = derivedStats(state, left, content).maxHp - left.hp;
+      const rightMissing = derivedStats(state, right, content).maxHp - right.hp;
+      return (rightMissing - leftMissing) || (left.hp - right.hp) || (left.id === healer.id ? -1 : 0);
+    })[0] ?? null;
+}
+
 function getDefender(state: RunState, defenderId: string | null): DefenderInstance | null {
   return defenderId ? state.defenders.find((defender) => defender.id === defenderId) ?? null : null;
 }
@@ -637,6 +673,22 @@ function globalModifierTotals(state: RunState, content: GameContent): UnitStats 
   }, emptyStats());
 }
 
+function subclassAuras(state: RunState, defender: DefenderInstance): UnitStats {
+  if (defender.location === 'dead' || !defender.tile) return emptyStats();
+  return boardDefenders(state).reduce((totals, ally) => {
+    if (ally.id === defender.id || !ally.tile || hexDistance(ally.tile, defender.tile as AxialCoord) > 1) {
+      return totals;
+    }
+    if (hasSubclass(ally, 'iron_bastion')) {
+      addModifiers(totals, { defense: 1, maxHp: 2 });
+    }
+    if (hasSubclass(ally, 'afterglow_warden')) {
+      addModifiers(totals, { defense: 1, regenHpPerSecond: 1 });
+    }
+    return totals;
+  }, emptyStats());
+}
+
 function derivedStats(
   state: RunState,
   defender: DefenderInstance,
@@ -648,14 +700,15 @@ function derivedStats(
 
   const globalBonus = globalModifierTotals(state, content);
   const alcoholBonus = alcoholTotals(state, content);
+  const auraBonus = subclassAuras(state, defender);
   return {
-    maxHp: Math.max(6, base.maxHp + globalBonus.maxHp + (alcoholBonus.maxHp ?? 0)),
-    damage: Math.max(1, base.damage + globalBonus.damage + (alcoholBonus.damage ?? 0)),
-    heal: Math.max(0, base.heal + globalBonus.heal + (alcoholBonus.heal ?? 0)),
-    range: Math.max(1, base.range + globalBonus.range + (alcoholBonus.range ?? 0)),
-    attackCooldownMs: Math.max(360, base.attackCooldownMs + globalBonus.attackCooldownMs + (alcoholBonus.attackCooldownMs ?? 0)),
-    defense: Math.max(0, base.defense + globalBonus.defense + (alcoholBonus.defense ?? 0)),
-    regenHpPerSecond: Math.max(0, base.regenHpPerSecond + globalBonus.regenHpPerSecond + (alcoholBonus.regenHpPerSecond ?? 0))
+    maxHp: Math.max(6, base.maxHp + globalBonus.maxHp + (alcoholBonus.maxHp ?? 0) + auraBonus.maxHp),
+    damage: Math.max(1, base.damage + globalBonus.damage + (alcoholBonus.damage ?? 0) + auraBonus.damage),
+    heal: Math.max(0, base.heal + globalBonus.heal + (alcoholBonus.heal ?? 0) + auraBonus.heal),
+    range: Math.max(1, base.range + globalBonus.range + (alcoholBonus.range ?? 0) + auraBonus.range),
+    attackCooldownMs: Math.max(360, base.attackCooldownMs + globalBonus.attackCooldownMs + (alcoholBonus.attackCooldownMs ?? 0) + auraBonus.attackCooldownMs),
+    defense: Math.max(0, base.defense + globalBonus.defense + (alcoholBonus.defense ?? 0) + auraBonus.defense),
+    regenHpPerSecond: Math.max(0, base.regenHpPerSecond + globalBonus.regenHpPerSecond + (alcoholBonus.regenHpPerSecond ?? 0) + auraBonus.regenHpPerSecond)
   };
 }
 
@@ -1443,12 +1496,6 @@ function addHitStop(state: RunState, durationMs: number): void {
   state.hitStopMs = Math.max(state.hitStopMs, durationMs);
 }
 
-function enemiesInRange(state: RunState, tile: AxialCoord, range: number): EnemyInstance[] {
-  return state.enemies
-    .filter((enemy) => hexDistance(tile, enemy.tile) <= range)
-    .sort((left, right) => (hexDistance(tile, left.tile) - hexDistance(tile, right.tile)) || (left.hp - right.hp));
-}
-
 function nearestEnemy(state: RunState, tile: AxialCoord): EnemyInstance | null {
   return [...state.enemies].sort((left, right) => (hexDistance(tile, left.tile) - hexDistance(tile, right.tile)) || (left.hp - right.hp))[0] ?? null;
 }
@@ -1741,6 +1788,251 @@ function applyDamageToEnemy(
   return finalDamage;
 }
 
+function applyEnemyHitWithFx(
+  state: RunState,
+  defender: DefenderInstance,
+  enemy: EnemyInstance,
+  baseDamage: number,
+  kind: CombatFxKind = 'hit',
+  secondaryTile: AxialCoord | null = defender.tile
+): { damage: number; killed: boolean } {
+  const finalDamage = applyDamageToEnemy(state, enemy, Math.max(1, Math.round(baseDamage)), defender.id);
+  pushFx(state, kind, enemy.tile, kind === 'fireball' ? 260 : kind === 'pulse' ? 280 : 220, secondaryTile);
+  return { damage: finalDamage, killed: enemy.hp <= 0 };
+}
+
+function applyHealToDefender(
+  state: RunState,
+  healer: DefenderInstance,
+  target: DefenderInstance,
+  amount: number,
+  content: GameContent,
+  kind: CombatFxKind = 'heal',
+  secondaryTile: AxialCoord | null = healer.tile
+): number {
+  const healAmount = Math.max(0, Math.round(amount));
+  if (healAmount <= 0) return 0;
+  const maxHp = derivedStats(state, target, content).maxHp;
+  const restored = Math.min(healAmount, Math.max(0, maxHp - target.hp));
+  if (restored <= 0) return 0;
+  target.hp = Math.min(maxHp, target.hp + restored);
+  if (target.tile) {
+    pushFx(state, kind, target.tile, kind === 'pulse' ? 280 : 320, secondaryTile);
+  }
+  return restored;
+}
+
+function preferredEnemiesInRange(
+  state: RunState,
+  defender: DefenderInstance,
+  tile: AxialCoord,
+  range: number
+): EnemyInstance[] {
+  const enemies = state.enemies.filter((enemy) => hexDistance(tile, enemy.tile) <= range);
+  if (hasSubclass(defender, 'bucket_sniper')) {
+    return enemies.sort((left, right) => {
+      const leftDistance = hexDistance(tile, left.tile);
+      const rightDistance = hexDistance(tile, right.tile);
+      return (rightDistance - leftDistance) || (left.hp - right.hp);
+    });
+  }
+  return enemies.sort((left, right) => (hexDistance(tile, left.tile) - hexDistance(tile, right.tile)) || (left.hp - right.hp));
+}
+
+function pickExtraEnemyTargets(
+  state: RunState,
+  defender: DefenderInstance,
+  originTile: AxialCoord,
+  range: number,
+  count: number,
+  primaryTarget: EnemyInstance
+): EnemyInstance[] {
+  const picks = preferredEnemiesInRange(state, defender, originTile, range)
+    .filter((enemy) => enemy.instanceId !== primaryTarget.instanceId)
+    .slice(0, count);
+  while (picks.length < count && primaryTarget.hp > 0) {
+    picks.push(primaryTarget);
+  }
+  return picks;
+}
+
+function findChainedTargets(state: RunState, sourceTarget: EnemyInstance, count: number): EnemyInstance[] {
+  return state.enemies
+    .filter((enemy) => enemy.instanceId !== sourceTarget.instanceId && hexDistance(enemy.tile, sourceTarget.tile) <= 2)
+    .sort((left, right) => (left.hp - right.hp) || (hexDistance(left.tile, sourceTarget.tile) - hexDistance(right.tile, sourceTarget.tile)))
+    .slice(0, count);
+}
+
+function subclassHealBonusAmount(
+  state: RunState,
+  healer: DefenderInstance,
+  target: DefenderInstance,
+  content: GameContent
+): number {
+  if (!hasSubclass(healer, 'cedar_surgeon')) return 0;
+  return target.hp / Math.max(1, derivedStats(state, target, content).maxHp) < 0.5 ? 3 : 0;
+}
+
+function applySubclassHealEffects(
+  state: RunState,
+  healer: DefenderInstance,
+  primaryTarget: DefenderInstance,
+  stats: UnitStats,
+  healTargets: DefenderInstance[],
+  content: GameContent
+): void {
+  const baseHeal = Math.max(1, Math.round(stats.heal));
+  const calmWhisperHeal = Math.max(1, Math.round(baseHeal * 0.8));
+
+  if (hasSubclass(healer, 'calm_whisper')) {
+    const extraTarget = healTargets[1];
+    if (extraTarget) {
+      applyHealToDefender(state, healer, extraTarget, calmWhisperHeal + subclassHealBonusAmount(state, healer, extraTarget, content), content, 'pulse', healer.tile);
+    }
+  }
+
+  if (hasSubclass(healer, 'steampriest') && primaryTarget.tile) {
+    const pulseHeal = Math.max(1, Math.round(baseHeal * 0.5));
+    for (const ally of boardAlliesWithin(state, primaryTarget.tile, 1, primaryTarget.id)) {
+      applyHealToDefender(state, healer, ally, pulseHeal + subclassHealBonusAmount(state, healer, ally, content), content, 'pulse', primaryTarget.tile);
+    }
+  }
+
+  if (hasSubclass(healer, 'pulse_keeper')) {
+    applyHealToDefender(state, healer, primaryTarget, 2, content, 'pulse', healer.tile);
+    applyHealToDefender(state, healer, healer, 2, content, 'pulse', healer.tile);
+  }
+
+  if (hasSubclass(healer, 'rescue_ritualist') && healer.tile) {
+    for (const ally of boardAlliesWithin(state, healer.tile, 1)) {
+      applyHealToDefender(state, healer, ally, 2, content, 'pulse', healer.tile);
+    }
+  }
+
+  if (hasSubclass(healer, 'saint_of_steam')) {
+    const benedictionHeal = Math.max(1, Math.round(baseHeal * 0.6));
+    for (const ally of healTargets.slice(1)) {
+      applyHealToDefender(state, healer, ally, benedictionHeal + subclassHealBonusAmount(state, healer, ally, content), content, 'pulse', healer.tile);
+    }
+  }
+
+  if (hasSubclass(healer, 'afterglow_warden') && healer.tile) {
+    for (const ally of boardDefenders(state)) {
+      applyHealToDefender(state, healer, ally, 1, content, 'pulse', healer.tile);
+    }
+  }
+}
+
+function applySubclassAttackEffects(
+  state: RunState,
+  defender: DefenderInstance,
+  primaryTarget: EnemyInstance,
+  primaryDamage: number,
+  stats: UnitStats,
+  content: GameContent
+): void {
+  const splashTargets = (radius: number) =>
+    state.enemies.filter((enemy) => enemy.instanceId !== primaryTarget.instanceId && hexDistance(enemy.tile, primaryTarget.tile) <= radius);
+
+  if (hasSubclass(defender, 'emberguard')) {
+    for (const enemy of splashTargets(1)) {
+      applyEnemyHitWithFx(state, defender, enemy, primaryDamage * 0.45, 'hit', primaryTarget.tile);
+    }
+  }
+
+  if (hasSubclass(defender, 'avalanche_oath')) {
+    for (const enemy of splashTargets(1)) {
+      applyEnemyHitWithFx(state, defender, enemy, primaryDamage * 0.6, 'hit', primaryTarget.tile);
+    }
+  }
+
+  if (hasSubclass(defender, 'coalflinger')) {
+    pushFx(state, 'fireball', primaryTarget.tile, 220, defender.tile);
+    for (const enemy of splashTargets(1)) {
+      applyEnemyHitWithFx(state, defender, enemy, primaryDamage * 0.35, 'hit', primaryTarget.tile);
+    }
+  }
+
+  if (hasSubclass(defender, 'ash_scope')) {
+    for (const chained of findChainedTargets(state, primaryTarget, 1)) {
+      applyEnemyHitWithFx(state, defender, chained, primaryDamage * 0.5, 'chain', primaryTarget.tile);
+    }
+  }
+
+  if (hasSubclass(defender, 'spark_juggler') && defender.tile) {
+    for (const extraTarget of pickExtraEnemyTargets(state, defender, defender.tile, stats.range, 2, primaryTarget)) {
+      if (extraTarget.hp <= 0) continue;
+      applyEnemyHitWithFx(state, defender, extraTarget, primaryDamage, 'volley', defender.tile);
+    }
+  }
+
+  if (hasSubclass(defender, 'volley_tender') && defender.tile) {
+    const fallbackTarget = primaryTarget.hp > 0
+      ? primaryTarget
+      : preferredEnemiesInRange(state, defender, defender.tile, stats.range)[0] ?? null;
+    if (fallbackTarget) {
+      applyEnemyHitWithFx(state, defender, fallbackTarget, primaryDamage * 0.7, 'volley', defender.tile);
+    }
+  }
+
+  if (hasSubclass(defender, 'shock_pitcher')) {
+    for (const chained of findChainedTargets(state, primaryTarget, 2)) {
+      applyEnemyHitWithFx(state, defender, chained, primaryDamage * 0.45, 'chain', primaryTarget.tile);
+    }
+  }
+
+  if (hasSubclass(defender, 'meteor_bucket')) {
+    pushFx(state, 'fireball', primaryTarget.tile, 260, defender.tile);
+    for (const enemy of splashTargets(1)) {
+      applyEnemyHitWithFx(state, defender, enemy, primaryDamage * 0.6, 'hit', primaryTarget.tile);
+    }
+  }
+
+  if (hasSubclass(defender, 'last_ladle') && primaryTarget.hp > 0 && primaryTarget.hp / Math.max(1, enemyMaxHp(primaryTarget, content)) < 0.5) {
+    applyEnemyHitWithFx(state, defender, primaryTarget, primaryDamage * 0.7, 'volley', defender.tile);
+  }
+
+  if (hasSubclass(defender, 'white_heat_gunner') && defender.tile && primaryTarget.hp <= 0) {
+    const retarget = preferredEnemiesInRange(state, defender, defender.tile, stats.range)[0] ?? null;
+    if (retarget) {
+      applyEnemyHitWithFx(state, defender, retarget, primaryDamage * 0.6, 'volley', defender.tile);
+    }
+  }
+
+  if (hasSubclass(defender, 'steam_bulwark') && defender.tile) {
+    applyHealToDefender(state, defender, defender, 3, content, 'pulse', defender.tile);
+    const nearbyAlly = nearestInjuredAllyWithin(state, defender, defender.tile, 1, content, defender.id);
+    if (nearbyAlly) {
+      applyHealToDefender(state, defender, nearbyAlly, 2, content, 'pulse', defender.tile);
+    }
+  }
+
+  if (hasSubclass(defender, 'towel_oracle') && defender.tile) {
+    const supportTarget = nearestInjuredAllyWithin(state, defender, defender.tile, stats.range, content, defender.id);
+    if (supportTarget) {
+      applyHealToDefender(state, defender, supportTarget, 2, content, 'pulse', defender.tile);
+    }
+  }
+}
+
+function applySubclassRetaliationEffects(
+  state: RunState,
+  enemy: EnemyInstance,
+  target: DefenderInstance,
+  _content: GameContent
+): void {
+  if (!target.tile) return;
+  if (hasSubclass(target, 'stonewall') && hexDistance(enemy.tile, target.tile) <= 1) {
+    applyEnemyHitWithFx(state, target, enemy, 2, 'pulse', target.tile);
+  }
+  if (hasSubclass(target, 'revenge_coals')) {
+    applyEnemyHitWithFx(state, target, enemy, 3, 'pulse', target.tile);
+    for (const nearby of state.enemies.filter((entry) => entry.instanceId !== enemy.instanceId && hexDistance(entry.tile, enemy.tile) <= 1)) {
+      applyEnemyHitWithFx(state, target, nearby, 1, 'pulse', enemy.tile);
+    }
+  }
+}
+
 function defenderAttack(state: RunState, defender: DefenderInstance, content: GameContent): void {
   if (!defender.tile || defender.location !== 'board' || state.timeMs < defender.attackReadyAtMs) return;
   const stats = derivedStats(state, defender, content);
@@ -1752,17 +2044,27 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
     defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
     return;
   }
-  const ally = stats.heal > 0 ? alliesToHeal(state, defender, stats, content)[0] : null;
+
+  const healTargets = stats.heal > 0 ? alliesToHeal(state, defender, stats, content) : [];
+  const ally = healTargets[0] ?? null;
   if (ally) {
-    ally.hp = Math.min(derivedStats(state, ally, content).maxHp, ally.hp + Math.round(stats.heal * dmgMult));
-    if (ally.tile) {
-      pushFx(state, 'heal', ally.tile, 320, defender.tile);
-    }
+    const calmWhisperMultiplier = hasSubclass(defender, 'calm_whisper') ? 0.8 : 1;
+    applyHealToDefender(
+      state,
+      defender,
+      ally,
+      Math.round(stats.heal * dmgMult * calmWhisperMultiplier) + subclassHealBonusAmount(state, defender, ally, content),
+      content,
+      'heal',
+      defender.tile
+    );
+    applySubclassHealEffects(state, defender, ally, stats, healTargets, content);
     grantCombatXp(state, defender, 1, content);
     defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
     return;
   }
-  let target = enemiesInRange(state, defender.tile, stats.range)[0] ?? null;
+
+  let target = preferredEnemiesInRange(state, defender, defender.tile, stats.range)[0] ?? null;
   if (!target && tryBlink(state, defender, content)) {
     const retreatedHome =
       defender.homeTile &&
@@ -1773,24 +2075,48 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
       defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
       return;
     }
-    target = enemiesInRange(state, defender.tile, stats.range)[0] ?? null;
+    target = preferredEnemiesInRange(state, defender, defender.tile, stats.range)[0] ?? null;
   }
+
   if (!target) {
     moveDefenderTowardSaunaThreat(state, defender, stats, content, cdMult);
     return;
   }
-  const hitDamage = Math.round(stats.damage * dmgMult);
+
+  const benchOakSpin = hasSubclass(defender, 'bench_oak')
+    ? state.enemies.filter((enemy) => hexDistance(enemy.tile, defender.tile as AxialCoord) <= 1)
+    : [];
+
+  let hitDamage = Math.round(stats.damage * dmgMult);
+  if (hasSubclass(defender, 'bucket_sniper') && hexDistance(defender.tile, target.tile) === stats.range) {
+    hitDamage += 2;
+  }
+  if (hasSubclass(defender, 'white_heat_gunner') && target.hp / Math.max(1, enemyMaxHp(target, content)) <= 0.4) {
+    hitDamage += 4;
+  }
+  if (hasSubclass(defender, 'spark_juggler')) {
+    hitDamage = Math.max(1, Math.round(hitDamage * 0.55));
+  }
+
   if (defender.skills.includes('spin2win')) {
     const spinTargets = state.enemies.filter((enemy) => hexDistance(enemy.tile, defender.tile as AxialCoord) <= 1);
     for (const enemy of spinTargets) {
-      applyDamageToEnemy(state, enemy, hitDamage, defender.id);
+      applyEnemyHitWithFx(state, defender, enemy, hitDamage, 'hit', defender.tile);
     }
     pushFx(state, 'spin', defender.tile, 320);
     addHitStop(state, 34);
+  } else if (benchOakSpin.length >= 2) {
+    for (const enemy of benchOakSpin) {
+      applyEnemyHitWithFx(state, defender, enemy, hitDamage, 'hit', defender.tile);
+    }
+    pushFx(state, 'spin', defender.tile, 320);
   } else {
-    applyDamageToEnemy(state, target, hitDamage, defender.id);
-    pushFx(state, 'hit', target.tile, 180, defender.tile);
+    applyEnemyHitWithFx(state, defender, target, hitDamage, hasSubclass(defender, 'spark_juggler') ? 'volley' : 'hit', defender.tile);
   }
+
+  grantCombatXp(state, defender, 1, content);
+  applySubclassAttackEffects(state, defender, target, hitDamage, stats, content);
+
   if (defender.skills.includes('fireball')) {
     pushFx(state, 'fireball', target.tile, 260, defender.tile);
     for (const enemy of state.enemies) {
@@ -1869,6 +2195,7 @@ function applyEnemyDamageToDefender(
   if (target.tile) {
     pushFx(state, enemyImpactFxKind(enemy), target.tile, isBossThreat(enemy) ? 240 : 190, enemy.tile);
   }
+  applySubclassRetaliationEffects(state, enemy, target, content);
   maybeSaunaSlapSwap(state, target, content);
   if (isBossThreat(enemy)) {
     addHitStop(state, 32);
@@ -2589,6 +2916,16 @@ function unlockedSubclassDefinitions(defender: DefenderInstance, content: GameCo
   return defender.subclassIds.map((subclassId) => content.defenderSubclasses[subclassId]);
 }
 
+function selectedSubclassEntries(defender: DefenderInstance, content: GameContent) {
+  return unlockedSubclassDefinitions(defender, content).map((definition) => ({
+    id: definition.id,
+    name: definition.name,
+    unlockLevel: definition.unlockLevel,
+    effectText: definition.effectText,
+    statText: definition.statText
+  }));
+}
+
 function nextSubclassMilestoneLevel(defender: DefenderInstance, content: GameContent): number | null {
   const unlockedLevels = new Set(unlockedSubclassDefinitions(defender, content).map((definition) => definition.unlockLevel));
   return SUBCLASS_MILESTONE_LEVELS.find((level) => defender.level >= level ? !unlockedLevels.has(level) : true) ?? null;
@@ -2618,10 +2955,9 @@ function subclassDescription(defender: DefenderInstance, content: GameContent): 
       ? `No branch chosen yet. Reach level ${next} to branch, ${xpToNext} XP away.`
       : 'This hero already unlocked every subclass milestone.';
   }
-  const active = unlocked.map((definition) => definition.name).join(', ');
   return next
-    ? `Active branches: ${active}. Next branch unlocks at level ${next}, ${xpToNext} XP away.`
-    : `Active branches: ${active}. Every subclass milestone is already unlocked.`;
+    ? `Next branch unlocks at level ${next}, ${xpToNext} XP away.`
+    : 'Every subclass milestone is already unlocked.';
 }
 
 function queuedSubclassDraftExists(state: RunState, defenderId: string, unlockLevel: number): boolean {
@@ -3667,6 +4003,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         regenHpPerSecond: stats.regenHpPerSecond,
         itemSlotCount: itemSlotCap(state, content),
         skillSlotCount: skillSlotCap(),
+        subclasses: selectedSubclassEntries(selected, content),
         items: selected.items.map((itemId) => ({
           id: itemId,
           name: content.itemDefinitions[itemId].name
@@ -3701,7 +4038,9 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         id: definition.id,
         name: definition.name,
         description: definition.description,
-        unlockLevel: definition.unlockLevel
+        unlockLevel: definition.unlockLevel,
+        effectText: definition.effectText,
+        statText: definition.statText
       };
     }),
     showSubclassDraft: state.overlayMode === 'subclass_draft',

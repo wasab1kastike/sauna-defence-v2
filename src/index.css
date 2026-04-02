@@ -374,6 +374,14 @@ button {
   background: rgba(20, 46, 49, 0.74);
 }
 
+.subclass-card {
+  gap: 4px;
+}
+
+.subclass-card small:last-child {
+  color: rgba(255, 225, 165, 0.92);
+}
+
 .popup-card.selected,
 .loot-chip.selected {
   border-color: rgba(255, 205, 118, 0.42);

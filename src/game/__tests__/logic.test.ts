@@ -257,7 +257,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(normal.enemies.find((enemy) => enemy.instanceId === 1)?.hp).toBe(gameContent.enemyArchetypes.escalation_manager.maxHp - 10);
   });
 
-  it('does not grant combat XP for normal damage hits anymore', () => {
+  it('grants combat XP for normal damage hits', () => {
     let state = prepState();
     const defender = state.defenders.find((entry) => entry.location === 'ready')!;
     defender.location = 'board';
@@ -279,7 +279,7 @@ describe('Sauna Defense V2 logic', () => {
 
     state = stepState(state, 16, gameContent);
 
-    expect(state.defenders.find((entry) => entry.id === defender.id)?.xp).toBe(0);
+    expect(state.defenders.find((entry) => entry.id === defender.id)?.xp).toBe(1);
   });
 
   it('still grants combat XP for healing actions', () => {
@@ -1549,7 +1549,7 @@ describe('Sauna Defense V2 logic', () => {
     const attackerAfter = state.defenders.find((defender) => defender.id === attacker!.id);
     expect(attackerAfter?.kills).toBe(1);
     expect(attackerAfter?.xp).toBeGreaterThan(0);
-    expect(attackerAfter?.xp).toBe(3);
+    expect(attackerAfter?.xp).toBe(4);
     expect(attackerAfter?.level).toBe(1);
   });
 
@@ -1581,6 +1581,9 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.overlayMode).toBe('subclass_draft');
     expect(state.subclassDraftDefenderId).toBe(attacker!.id);
     expect(state.subclassDraftOfferIds).toHaveLength(2);
+    const draftSnapshot = createSnapshot(state, gameContent);
+    expect(draftSnapshot.hud.subclassDraftOffers[0]?.effectText).toBeTruthy();
+    expect(draftSnapshot.hud.subclassDraftOffers[0]?.statText).toBeTruthy();
 
     const choice = state.subclassDraftOfferIds[0];
     state = applyAction(state, { type: 'draftSubclassChoice', subclassId: choice }, gameContent);
@@ -1618,6 +1621,234 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(state.overlayMode).toBe('subclass_draft');
     expect(state.subclassDraftOfferIds.every((subclassId) => gameContent.defenderSubclasses[subclassId].unlockLevel === 10)).toBe(true);
+  });
+
+  it('fires three bolts with spark juggler and can split them across enemies', () => {
+    let state = prepState();
+    const hurler = state.defenders.find((defender) => defender.templateId === 'hurler');
+    expect(hurler).toBeTruthy();
+    hurler!.location = 'board';
+    hurler!.tile = { q: 0, r: -1 };
+    hurler!.attackReadyAtMs = 0;
+    hurler!.stats.damage = 10;
+    hurler!.subclassIds = ['spark_juggler'];
+    state.phase = 'wave';
+    state.pendingSpawns = [{ atMs: 999999, enemyId: 'raider', laneIndex: 0 }];
+    state.enemies = [
+      { instanceId: 1, archetypeId: 'raider', tokenStyleId: 0, tile: { q: 0, r: -2 }, hp: 12, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 },
+      { instanceId: 2, archetypeId: 'raider', tokenStyleId: 0, tile: { q: 1, r: -2 }, hp: 12, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 },
+      { instanceId: 3, archetypeId: 'raider', tokenStyleId: 0, tile: { q: -1, r: -1 }, hp: 12, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 }
+    ];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies.every((enemy) => enemy.hp < 12)).toBe(true);
+    expect(state.fxEvents.filter((event) => event.kind === 'volley')).toHaveLength(3);
+  });
+
+  it('applies ranged splash subclasses without recursive explosions', () => {
+    let coalState = prepState();
+    const coalHurler = coalState.defenders.find((defender) => defender.templateId === 'hurler');
+    expect(coalHurler).toBeTruthy();
+    coalHurler!.location = 'board';
+    coalHurler!.tile = { q: 0, r: -1 };
+    coalHurler!.attackReadyAtMs = 0;
+    coalHurler!.stats.damage = 10;
+    coalHurler!.subclassIds = ['coalflinger'];
+    coalState.phase = 'wave';
+    coalState.pendingSpawns = [{ atMs: 999999, enemyId: 'raider', laneIndex: 0 }];
+    coalState.enemies = [
+      { instanceId: 1, archetypeId: 'raider', tokenStyleId: 0, tile: { q: 0, r: -2 }, hp: 20, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 },
+      { instanceId: 2, archetypeId: 'raider', tokenStyleId: 0, tile: { q: 1, r: -2 }, hp: 20, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 },
+      { instanceId: 3, archetypeId: 'raider', tokenStyleId: 0, tile: { q: 3, r: -2 }, hp: 20, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 }
+    ];
+
+    coalState = stepState(coalState, 16, gameContent);
+
+    expect(coalState.enemies.find((enemy) => enemy.instanceId === 1)?.hp).toBeLessThan(20);
+    expect(coalState.enemies.find((enemy) => enemy.instanceId === 2)?.hp).toBeLessThan(20);
+    expect(coalState.enemies.find((enemy) => enemy.instanceId === 3)?.hp).toBe(20);
+    expect(coalState.fxEvents.some((event) => event.kind === 'fireball')).toBe(true);
+
+    let meteorState = prepState();
+    const meteorHurler = meteorState.defenders.find((defender) => defender.templateId === 'hurler');
+    expect(meteorHurler).toBeTruthy();
+    meteorHurler!.location = 'board';
+    meteorHurler!.tile = { q: 0, r: -1 };
+    meteorHurler!.attackReadyAtMs = 0;
+    meteorHurler!.stats.damage = 10;
+    meteorHurler!.subclassIds = ['meteor_bucket'];
+    meteorState.phase = 'wave';
+    meteorState.pendingSpawns = [{ atMs: 999999, enemyId: 'raider', laneIndex: 0 }];
+    meteorState.enemies = [
+      { instanceId: 1, archetypeId: 'raider', tokenStyleId: 0, tile: { q: 0, r: -2 }, hp: 20, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 },
+      { instanceId: 2, archetypeId: 'raider', tokenStyleId: 0, tile: { q: 1, r: -2 }, hp: 20, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 }
+    ];
+
+    meteorState = stepState(meteorState, 16, gameContent);
+
+    expect(meteorState.enemies.every((enemy) => enemy.hp < 20)).toBe(true);
+    expect(meteorState.fxEvents.filter((event) => event.kind === 'fireball').length).toBe(1);
+  });
+
+  it('double taps low-health targets with last ladle', () => {
+    let state = prepState();
+    const guardian = state.defenders.find((defender) => defender.templateId === 'guardian');
+    expect(guardian).toBeTruthy();
+    guardian!.location = 'board';
+    guardian!.tile = { q: 0, r: -1 };
+    guardian!.attackReadyAtMs = 0;
+    guardian!.stats.damage = 10;
+    guardian!.subclassIds = ['last_ladle'];
+    state.phase = 'wave';
+    state.pendingSpawns = [{ atMs: 999999, enemyId: 'raider', laneIndex: 0 }];
+    state.enemies = [
+      { instanceId: 1, archetypeId: 'chieftain', tokenStyleId: 0, tile: { q: 0, r: 0 }, hp: 20, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 }
+    ];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies).toHaveLength(0);
+    expect(state.fxEvents.some((event) => event.kind === 'volley')).toBe(true);
+  });
+
+  it('retaliates with stonewall and revenge coals when hit', () => {
+    let stonewallState = prepState();
+    const stonewall = stonewallState.defenders.find((defender) => defender.templateId === 'guardian');
+    expect(stonewall).toBeTruthy();
+    stonewall!.location = 'board';
+    stonewall!.tile = { q: 0, r: -1 };
+    stonewall!.hp = 20;
+    stonewall!.attackReadyAtMs = 999999;
+    stonewall!.subclassIds = ['stonewall'];
+    stonewallState.phase = 'wave';
+    stonewallState.pendingSpawns = [{ atMs: 999999, enemyId: 'raider', laneIndex: 0 }];
+    stonewallState.enemies = [
+      { instanceId: 1, archetypeId: 'raider', tokenStyleId: 0, tile: { q: 0, r: 0 }, hp: 12, lastHitByDefenderId: null, attackReadyAtMs: 0, moveReadyAtMs: 999999 }
+    ];
+
+    stonewallState = stepState(stonewallState, 16, gameContent);
+
+    expect(stonewallState.enemies[0]?.hp).toBe(10);
+
+    let revengeState = prepState();
+    const revenge = revengeState.defenders.find((defender) => defender.templateId === 'guardian');
+    expect(revenge).toBeTruthy();
+    revenge!.location = 'board';
+    revenge!.tile = { q: 0, r: -1 };
+    revenge!.hp = 20;
+    revenge!.attackReadyAtMs = 999999;
+    revenge!.subclassIds = ['revenge_coals'];
+    revengeState.phase = 'wave';
+    revengeState.pendingSpawns = [{ atMs: 999999, enemyId: 'raider', laneIndex: 0 }];
+    revengeState.enemies = [
+      { instanceId: 1, archetypeId: 'raider', tokenStyleId: 0, tile: { q: 0, r: 0 }, hp: 12, lastHitByDefenderId: null, attackReadyAtMs: 0, moveReadyAtMs: 999999 },
+      { instanceId: 2, archetypeId: 'raider', tokenStyleId: 0, tile: { q: 1, r: 0 }, hp: 12, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 }
+    ];
+
+    revengeState = stepState(revengeState, 16, gameContent);
+
+    expect(revengeState.enemies.find((enemy) => enemy.instanceId === 1)?.hp).toBe(9);
+    expect(revengeState.enemies.find((enemy) => enemy.instanceId === 2)?.hp).toBe(11);
+  });
+
+  it('applies and removes nearby subclass auras correctly', () => {
+    const state = prepState();
+    const guardian = state.defenders.find((defender) => defender.templateId === 'guardian');
+    const hurler = state.defenders.find((defender) => defender.templateId === 'hurler');
+    const mender = state.defenders.find((defender) => defender.templateId === 'mender');
+    expect(guardian).toBeTruthy();
+    expect(hurler).toBeTruthy();
+    expect(mender).toBeTruthy();
+
+    guardian!.location = 'board';
+    guardian!.tile = { q: 0, r: -1 };
+    guardian!.subclassIds = ['iron_bastion'];
+    guardian!.attackReadyAtMs = 999999;
+    hurler!.location = 'board';
+    hurler!.tile = { q: 1, r: -1 };
+    hurler!.attackReadyAtMs = 999999;
+    mender!.location = 'board';
+    mender!.tile = { q: 1, r: -2 };
+    mender!.subclassIds = ['afterglow_warden'];
+    mender!.attackReadyAtMs = 999999;
+    state.selectedDefenderId = hurler!.id;
+
+    let snapshot = createSnapshot(state, gameContent);
+    const maxHpWithAura = snapshot.hud.selectedDefender?.maxHp ?? 0;
+    expect(snapshot.hud.selectedDefender?.defense).toBe(2);
+    expect(snapshot.hud.selectedDefender?.regenHpPerSecond).toBe(1);
+
+    mender!.location = 'ready';
+    mender!.tile = null;
+    snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.selectedDefender?.maxHp).toBe(maxHpWithAura);
+    expect(snapshot.hud.selectedDefender?.defense).toBe(1);
+    expect(snapshot.hud.selectedDefender?.regenHpPerSecond).toBe(0);
+  });
+
+  it('applies support-focused subclass heals and exposes subclass effect text in snapshot HUD', () => {
+    let state = prepState();
+    const mender = state.defenders.find((defender) => defender.templateId === 'mender');
+    const guardian = state.defenders.find((defender) => defender.templateId === 'guardian');
+    const hurler = state.defenders.find((defender) => defender.templateId === 'hurler');
+    expect(mender).toBeTruthy();
+    expect(guardian).toBeTruthy();
+    expect(hurler).toBeTruthy();
+
+    mender!.location = 'board';
+    mender!.tile = { q: 0, r: -1 };
+    mender!.attackReadyAtMs = 0;
+    mender!.subclassIds = ['steampriest', 'calm_whisper', 'rescue_ritualist', 'saint_of_steam'];
+    guardian!.location = 'board';
+    guardian!.tile = { q: 0, r: -2 };
+    guardian!.hp = Math.max(1, guardian!.hp - 4);
+    guardian!.attackReadyAtMs = 999999;
+    hurler!.location = 'board';
+    hurler!.tile = { q: 1, r: -2 };
+    hurler!.hp = Math.max(1, hurler!.hp - 3);
+    hurler!.attackReadyAtMs = 999999;
+    state.phase = 'wave';
+    state.pendingSpawns = [{ atMs: 999999, enemyId: 'raider', laneIndex: 0 }];
+    state.enemies = [
+      { instanceId: 1, archetypeId: 'raider', tokenStyleId: 0, tile: { q: 5, r: -5 }, hp: 12, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 }
+    ];
+    state.selectedDefenderId = mender!.id;
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.defenders.find((defender) => defender.id === guardian!.id)?.hp).toBeGreaterThan(guardian!.hp);
+    expect(state.defenders.find((defender) => defender.id === hurler!.id)?.hp).toBeGreaterThan(hurler!.hp);
+    expect(state.fxEvents.some((event) => event.kind === 'pulse')).toBe(true);
+
+    const snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.selectedDefender?.subclasses).toHaveLength(4);
+    expect(snapshot.hud.selectedDefender?.subclasses[0]?.effectText).toBeTruthy();
+    expect(snapshot.hud.subclassDraftOffers).toEqual([]);
+  });
+
+  it('keeps primary-only skill procs when subclass projectiles add extra hits', () => {
+    let state = prepState();
+    const hurler = state.defenders.find((defender) => defender.templateId === 'hurler');
+    expect(hurler).toBeTruthy();
+    hurler!.location = 'board';
+    hurler!.tile = { q: 0, r: -1 };
+    hurler!.attackReadyAtMs = 0;
+    hurler!.stats.damage = 10;
+    hurler!.subclassIds = ['spark_juggler'];
+    hurler!.skills.push('fireball');
+    state.phase = 'wave';
+    state.pendingSpawns = [{ atMs: 999999, enemyId: 'raider', laneIndex: 0 }];
+    state.enemies = [
+      { instanceId: 1, archetypeId: 'raider', tokenStyleId: 0, tile: { q: 0, r: -2 }, hp: 18, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 },
+      { instanceId: 2, archetypeId: 'raider', tokenStyleId: 0, tile: { q: 1, r: -2 }, hp: 18, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 },
+      { instanceId: 3, archetypeId: 'raider', tokenStyleId: 0, tile: { q: -1, r: -1 }, hp: 18, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 }
+    ];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.fxEvents.filter((event) => event.kind === 'fireball')).toHaveLength(1);
+    expect(state.fxEvents.filter((event) => event.kind === 'volley')).toHaveLength(3);
   });
 
   it('grants xp from successful healing actions even without a kill', () => {

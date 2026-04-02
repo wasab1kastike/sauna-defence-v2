@@ -32,6 +32,31 @@ export type DefenderSubclassId =
   | 'rescue_ritualist'
   | 'saint_of_steam'
   | 'afterglow_warden';
+export type DefenderSubclassSignatureId =
+  | 'retaliate_adjacent'
+  | 'melee_splash'
+  | 'defense_aura'
+  | 'retaliate_burst'
+  | 'adjacent_spin'
+  | 'attack_guard_pulse'
+  | 'heavy_impact_splash'
+  | 'finisher_double_tap'
+  | 'ranged_splash'
+  | 'max_range_focus'
+  | 'triple_bolt'
+  | 'single_chain'
+  | 'double_shot'
+  | 'double_chain'
+  | 'fireblast_throw'
+  | 'execute_and_retarget'
+  | 'heal_pulse_target'
+  | 'support_on_attack'
+  | 'emergency_bonus_heal'
+  | 'double_heal'
+  | 'rescue_pair_heal'
+  | 'self_centered_heal_wave'
+  | 'full_range_benediction'
+  | 'aftercare_aura';
 export type BossId = 'pebble' | 'end_user_horde' | 'electric_bather' | 'escalation_manager';
 export type EnemyUnitId =
   | 'raider'
@@ -73,7 +98,18 @@ export type DefenderLocation = 'ready' | 'board' | 'sauna' | 'dead';
 export type WavePattern = 'tutorial' | 'split' | 'staggered' | 'spearhead' | 'surge' | 'boss_pressure' | 'boss_breach';
 export type BossCategory = 'pressure' | 'breach';
 export type EnemyBehavior = 'standard' | 'pebble' | 'swarm' | 'electric' | 'summoner';
-export type CombatFxKind = 'hit' | 'defender_hit' | 'sauna_hit' | 'heal' | 'fireball' | 'spin' | 'blink' | 'boss_hit' | 'chain';
+export type CombatFxKind =
+  | 'hit'
+  | 'defender_hit'
+  | 'sauna_hit'
+  | 'heal'
+  | 'fireball'
+  | 'spin'
+  | 'blink'
+  | 'boss_hit'
+  | 'chain'
+  | 'volley'
+  | 'pulse';
 export type MapTarget = 'defender' | 'sauna';
 export type HudPanelId = 'modifiers' | 'loot' | 'recruit' | 'beer_shop' | 'metashop';
 export type WorldLandmarkId = 'metashop' | 'beer_shop';
@@ -163,6 +199,9 @@ export interface DefenderSubclassDefinition {
   unlockLevel: number;
   name: string;
   description: string;
+  signatureId: DefenderSubclassSignatureId;
+  effectText: string;
+  statText: string;
   modifiers: StatModifier;
 }
 
@@ -552,9 +591,18 @@ export interface HudSelectedDefender {
   regenHpPerSecond: number;
   itemSlotCount: number;
   skillSlotCount: number;
+  subclasses: HudSelectedSubclassEntry[];
   items: HudEquippedItemEntry[];
   skills: HudEquippedSkillEntry[];
   location: DefenderLocation;
+}
+
+export interface HudSelectedSubclassEntry {
+  id: DefenderSubclassId;
+  name: string;
+  unlockLevel: number;
+  effectText: string;
+  statText: string;
 }
 
 export interface HudSelectedSauna {
@@ -637,6 +685,8 @@ export interface HudSubclassDraftEntry {
   name: string;
   description: string;
   unlockLevel: number;
+  effectText: string;
+  statText: string;
 }
 
 export interface HudGlobalModifierEntry {
