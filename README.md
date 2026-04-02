@@ -19,11 +19,12 @@ npm run build
 
 ## Julkaisu
 
-GitHub Pages -julkaisu on tarkoitettu repolle `sauna-defence-v2`.
+GitHub Pages -julkaisu käyttää custom domainia `artobest.com`.
 
-- tuotantobase on `/sauna-defence-v2/`
+- tuotantobase on `/`
 - push `main`-branchiin julkaisee pelin GitHub Pagesiin GitHub Actionsin kautta
-- julkaisuosoite on muotoa `https://wasab1kastike.github.io/sauna-defence-v2/`
+- julkaisuosoite on `https://artobest.com/`
+- `public/CNAME` kertoo GitHub Pagesille käytettävän custom domainin
 
 ## Pelisilmukka
 
