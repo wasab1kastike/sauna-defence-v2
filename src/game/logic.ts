@@ -5,6 +5,7 @@ import type {
   AlcoholModifier,
   AxialCoord,
   BeerShopOffer,
+  BossId,
   BossCategory,
   CombatFxEvent,
   CombatFxKind,
@@ -51,7 +52,15 @@ const DIRS: AxialCoord[] = [
 const DEF_IDS: DefenderTemplateId[] = ['guardian', 'hurler', 'mender'];
 const MAX_DEFENDER_LEVEL = 20;
 const SUBCLASS_MILESTONE_LEVELS = [5, 10, 15, 20] as const;
-const ENEMY_IDS: EnemyUnitId[] = ['raider', 'brute', 'chieftain'];
+const ENEMY_IDS: EnemyUnitId[] = [
+  'raider',
+  'brute',
+  'chieftain',
+  'pebble',
+  'thirsty_user',
+  'electric_bather',
+  'escalation_manager'
+];
 const META_IDS: MetaUpgradeId[] = [
   'roster_capacity',
   'inventory_slots',
@@ -84,6 +93,53 @@ const EMPTY_STATS: UnitStats = {
   defense: 0,
   regenHpPerSecond: 0
 };
+const ELECTRIC_BATHER_ABILITY_COOLDOWN_MS = 5200;
+const ESCALATION_MANAGER_ABILITY_COOLDOWN_MS = 6000;
+const PEBBLE_PATH_BASE: AxialCoord[] = [
+  { q: 0, r: -6 },
+  { q: 1, r: -5 },
+  { q: 2, r: -5 },
+  { q: 3, r: -4 },
+  { q: 3, r: -3 },
+  { q: 2, r: -2 },
+  { q: 1, r: -2 },
+  { q: 1, r: -1 },
+  { q: 0, r: -1 }
+];
+
+interface BossRotationEntry {
+  bossId: BossId;
+  bossCategory: BossCategory;
+  name: string;
+  hint: string;
+}
+
+const BOSS_ROTATION: BossRotationEntry[] = [
+  {
+    bossId: 'pebble',
+    bossCategory: 'breach',
+    name: 'Pebble',
+    hint: 'Massive beer worm. Ignores heroes and tunnels straight for the sauna.'
+  },
+  {
+    bossId: 'end_user_horde',
+    bossCategory: 'pressure',
+    name: 'End-User Horde',
+    hint: 'Weak alone, lethal in a crowd. Kill the swarm fast to collapse the ramping damage.'
+  },
+  {
+    bossId: 'electric_bather',
+    bossCategory: 'pressure',
+    name: 'Electric Sauna User',
+    hint: 'Punishes clumped defenders with chain shocks every few seconds.'
+  },
+  {
+    bossId: 'escalation_manager',
+    bossCategory: 'pressure',
+    name: 'Escalation Manager',
+    hint: 'Opens new tickets mid-fight and shrugs off damage while its users are still alive.'
+  }
+];
 
 function subclassMilestoneIds(
   content: GameContent,
@@ -109,6 +165,26 @@ const DEATH_LINES: Record<EnemyUnitId, string[]> = {
     'was launched into the hot rafters by a steam hog headbutt',
     'took a royal steam blast straight to the dignity',
     'was trampled into legend under a hog-sized heat tantrum'
+  ],
+  pebble: [
+    'was swallowed by a beer worm the size of a bench wagon',
+    'got flattened under Pebble on the way to the sauna beers',
+    'learned too late that Pebble does not believe in personal space'
+  ],
+  thirsty_user: [
+    'was buried under a flood of thirsty support tickets with legs',
+    'tried to explain the outage and got overrun by end-user panic',
+    'was trampled by a crowd demanding one more sauna beer'
+  ],
+  electric_bather: [
+    'got chain-shocked across three wet floorboards at once',
+    'took an overloaded sauna slap straight through the eyebrows',
+    'was flash-fried by a deeply unsafe bathing routine'
+  ],
+  escalation_manager: [
+    'was talked over, ticketed, and escalated into oblivion',
+    'got buried under urgent follow-up requests from management',
+    'met a terrible fate in a meeting that somehow had adds'
   ]
 };
 
@@ -122,6 +198,42 @@ export function sameCoord(left: AxialCoord, right: AxialCoord): boolean {
 
 function add(left: AxialCoord, right: AxialCoord): AxialCoord {
   return { q: left.q + right.q, r: left.r + right.r };
+}
+
+function rotateClockwise(coord: AxialCoord): AxialCoord {
+  return { q: -coord.r, r: coord.q + coord.r };
+}
+
+function rotateCoord(coord: AxialCoord, times: number): AxialCoord {
+  let next = { ...coord };
+  for (let index = 0; index < times; index += 1) {
+    next = rotateClockwise(next);
+  }
+  return next;
+}
+
+function bossWaveOrdinal(index: number, content: GameContent): number {
+  return Math.max(0, Math.floor(index / content.config.bossEvery) - 1);
+}
+
+function bossRotationEntryForWave(index: number, content: GameContent): BossRotationEntry {
+  return BOSS_ROTATION[bossWaveOrdinal(index, content) % BOSS_ROTATION.length];
+}
+
+function bossDisplayName(bossId: BossId | null): string | null {
+  return BOSS_ROTATION.find((entry) => entry.bossId === bossId)?.name ?? null;
+}
+
+function bossHint(bossId: BossId | null): string | null {
+  return BOSS_ROTATION.find((entry) => entry.bossId === bossId)?.hint ?? null;
+}
+
+function isBossLootEnemy(enemyId: EnemyUnitId): boolean {
+  return enemyId === 'chieftain' || enemyId === 'pebble' || enemyId === 'electric_bather' || enemyId === 'escalation_manager';
+}
+
+function isBossThreat(enemy: EnemyInstance): boolean {
+  return enemy.archetypeId === 'chieftain' || enemy.archetypeId === 'pebble' || enemy.archetypeId === 'electric_bather' || enemy.archetypeId === 'escalation_manager';
 }
 
 export function hexDistance(left: AxialCoord, right: AxialCoord): number {
@@ -312,6 +424,9 @@ function xpForEnemy(enemyId: EnemyUnitId): number {
     case 'brute':
       return 2;
     case 'chieftain':
+    case 'pebble':
+    case 'electric_bather':
+    case 'escalation_manager':
       return 4;
     default:
       return 1;
@@ -710,48 +825,66 @@ function buildPatternSpawns(
   return spawns;
 }
 
-function buildBossSpawns(index: number, content: GameContent, pressure: number, bossCategory: BossCategory): WaveSpawn[] {
-  const laneCount = content.config.spawnLanes.length;
-  const baseLane = wrapLane(index + cycleNumber(index, content) * 2, laneCount);
-  const sideA = wrapLane(baseLane + 2, laneCount);
-  const sideB = wrapLane(baseLane + 4, laneCount);
-  const interval = spawnIntervalMs(index, content, bossCategory === 'breach' ? -110 : -40);
-  const cycle = cycleNumber(index, content);
-  const supportWave = compositionForPressure(Math.max(8, pressure - 8), cycle + 1, bossCategory === 'pressure' ? 1 : 0);
-  const spawns: WaveSpawn[] = [];
+function bossBaseLane(index: number, content: GameContent): number {
+  return wrapLane(index + bossWaveOrdinal(index, content) * 2, content.config.spawnLanes.length);
+}
 
-  if (bossCategory === 'pressure') {
-    pushSpawn(spawns, 0, 'chieftain', baseLane, laneCount);
-    supportWave.forEach((enemyId, spawnIndex) => {
-      const laneIndex = spawnIndex % 2 === 0 ? sideA : sideB;
-      pushSpawn(spawns, 650 + spawnIndex * interval, enemyId, laneIndex, laneCount);
-    });
-    pushSpawn(spawns, 900 + supportWave.length * interval, 'brute', baseLane, laneCount);
-  } else {
-    pushSpawn(spawns, 0, 'brute', baseLane, laneCount);
-    pushSpawn(spawns, interval * 0.7, 'raider', baseLane, laneCount);
-    pushSpawn(spawns, interval * 1.4, 'chieftain', baseLane, laneCount);
-    supportWave.forEach((enemyId, spawnIndex) => {
-      const laneIndex = spawnIndex % 2 === 0 ? wrapLane(baseLane + 1, laneCount) : baseLane;
-      pushSpawn(spawns, 1100 + spawnIndex * interval * 0.9, enemyId, laneIndex, laneCount);
-    });
-    pushSpawn(spawns, 1250 + supportWave.length * interval, 'brute', wrapLane(baseLane - 1, laneCount), laneCount);
+function buildPebbleSpawns(index: number, content: GameContent): WaveSpawn[] {
+  const laneCount = content.config.spawnLanes.length;
+  return [{ atMs: 0, enemyId: 'pebble', laneIndex: bossBaseLane(index, content) % laneCount }];
+}
+
+function buildEndUserHordeSpawns(index: number, content: GameContent): WaveSpawn[] {
+  const laneCount = content.config.spawnLanes.length;
+  const baseLane = bossBaseLane(index, content);
+  const lanes = [baseLane, wrapLane(baseLane + 2, laneCount), wrapLane(baseLane + 4, laneCount)];
+  const spawns: WaveSpawn[] = [];
+  let atMs = 0;
+
+  for (let spawnIndex = 0; spawnIndex < 16; spawnIndex += 1) {
+    pushSpawn(spawns, atMs, 'thirsty_user', lanes[spawnIndex % lanes.length], laneCount);
+    atMs += spawnIndex > 0 && spawnIndex % 4 === 3 ? 360 : 220;
   }
 
-  return spawns.sort((left, right) => left.atMs - right.atMs);
+  return spawns;
+}
+
+function buildElectricBatherSpawns(index: number, content: GameContent): WaveSpawn[] {
+  const laneCount = content.config.spawnLanes.length;
+  return [{ atMs: 0, enemyId: 'electric_bather', laneIndex: bossBaseLane(index, content) % laneCount }];
+}
+
+function buildEscalationManagerSpawns(index: number, content: GameContent): WaveSpawn[] {
+  const laneCount = content.config.spawnLanes.length;
+  return [{ atMs: 0, enemyId: 'escalation_manager', laneIndex: bossBaseLane(index, content) % laneCount }];
+}
+
+function buildBossSpawns(index: number, content: GameContent, bossId: BossId): WaveSpawn[] {
+  switch (bossId) {
+    case 'pebble':
+      return buildPebbleSpawns(index, content);
+    case 'end_user_horde':
+      return buildEndUserHordeSpawns(index, content);
+    case 'electric_bather':
+      return buildElectricBatherSpawns(index, content);
+    case 'escalation_manager':
+      return buildEscalationManagerSpawns(index, content);
+    default:
+      return [];
+  }
 }
 
 export function createWaveDefinition(index: number, content: GameContent): WaveDefinition {
   const isBoss = index % content.config.bossEvery === 0;
   if (index === 1) {
-    return { index, isBoss: false, rewardSisu: 3, pressure: 4, pattern: 'tutorial', bossCategory: null, spawns: [
+    return { index, isBoss: false, rewardSisu: 3, pressure: 4, pattern: 'tutorial', bossId: null, bossCategory: null, spawns: [
       { atMs: 0, enemyId: 'raider', laneIndex: 0 },
       { atMs: 1100, enemyId: 'raider', laneIndex: 2 },
       { atMs: 2300, enemyId: 'raider', laneIndex: 4 }
     ] };
   }
   if (index === 2) {
-    return { index, isBoss: false, rewardSisu: 3, pressure: 6, pattern: 'tutorial', bossCategory: null, spawns: [
+    return { index, isBoss: false, rewardSisu: 3, pressure: 6, pattern: 'tutorial', bossId: null, bossCategory: null, spawns: [
       { atMs: 0, enemyId: 'raider', laneIndex: 0 },
       { atMs: 800, enemyId: 'raider', laneIndex: 3 },
       { atMs: 1700, enemyId: 'brute', laneIndex: 1 },
@@ -759,7 +892,7 @@ export function createWaveDefinition(index: number, content: GameContent): WaveD
     ] };
   }
   if (index === 3) {
-    return { index, isBoss: false, rewardSisu: 3, pressure: 9, pattern: 'split', bossCategory: null, spawns: [
+    return { index, isBoss: false, rewardSisu: 3, pressure: 9, pattern: 'split', bossId: null, bossCategory: null, spawns: [
       { atMs: 0, enemyId: 'brute', laneIndex: 0 },
       { atMs: 900, enemyId: 'raider', laneIndex: 2 },
       { atMs: 1600, enemyId: 'raider', laneIndex: 4 },
@@ -767,7 +900,7 @@ export function createWaveDefinition(index: number, content: GameContent): WaveD
     ] };
   }
   if (index === 4) {
-    return { index, isBoss: false, rewardSisu: 3, pressure: 11, pattern: 'staggered', bossCategory: null, spawns: [
+    return { index, isBoss: false, rewardSisu: 3, pressure: 11, pattern: 'staggered', bossId: null, bossCategory: null, spawns: [
       { atMs: 0, enemyId: 'raider', laneIndex: 0 },
       { atMs: 700, enemyId: 'raider', laneIndex: 2 },
       { atMs: 1400, enemyId: 'brute', laneIndex: 4 },
@@ -778,15 +911,16 @@ export function createWaveDefinition(index: number, content: GameContent): WaveD
 
   const pressure = wavePressure(index, content, isBoss);
   if (isBoss) {
-    const bossCategory: BossCategory = cycleNumber(index, content) % 2 === 0 ? 'pressure' : 'breach';
+    const rotation = bossRotationEntryForWave(index, content);
     return {
       index,
       isBoss: true,
       rewardSisu: rewardSisuForWave(index, pressure, true, content),
       pressure,
-      pattern: bossCategory === 'pressure' ? 'boss_pressure' : 'boss_breach',
-      bossCategory,
-      spawns: buildBossSpawns(index, content, pressure, bossCategory)
+      pattern: rotation.bossCategory === 'pressure' ? 'boss_pressure' : 'boss_breach',
+      bossId: rotation.bossId,
+      bossCategory: rotation.bossCategory,
+      spawns: buildBossSpawns(index, content, rotation.bossId)
     };
   }
   const pattern = NON_BOSS_PATTERNS[(index - 5) % NON_BOSS_PATTERNS.length];
@@ -796,6 +930,7 @@ export function createWaveDefinition(index: number, content: GameContent): WaveD
     rewardSisu: rewardSisuForWave(index, pressure, false, content),
     pressure,
     pattern,
+    bossId: null,
     bossCategory: null,
     spawns: buildPatternSpawns(pattern, index, content, pressure)
   };
@@ -1422,7 +1557,7 @@ function storeLootDrop(state: RunState, drop: InventoryDrop, content: GameConten
 function maybeDrop(state: RunState, enemyId: EnemyUnitId, content: GameContent): void {
   const alcoholBonus = alcoholTotals(state, content);
   const chance =
-    enemyId === 'chieftain'
+    isBossLootEnemy(enemyId)
       ? content.config.bossLootChance
       : content.config.baseLootChance + state.meta.upgrades.loot_luck * 0.06 + (alcoholBonus.lootChance ?? 0);
   if (rng(state) > chance) return;
@@ -1560,6 +1695,27 @@ function resolveDefenderDeaths(state: RunState, content: GameContent): void {
   }
 }
 
+function managerMinionsAlive(state: RunState, managerInstanceId: number): boolean {
+  return state.enemies.some(
+    (enemy) => (enemy.spawnedByEnemyInstanceId ?? null) === managerInstanceId && enemy.archetypeId === 'thirsty_user'
+  );
+}
+
+function applyDamageToEnemy(
+  state: RunState,
+  enemy: EnemyInstance,
+  baseDamage: number,
+  attackerId: string
+): number {
+  let finalDamage = baseDamage;
+  if (enemy.archetypeId === 'escalation_manager' && managerMinionsAlive(state, enemy.instanceId)) {
+    finalDamage = Math.max(1, Math.round(baseDamage * 0.3));
+  }
+  enemy.hp -= finalDamage;
+  enemy.lastHitByDefenderId = attackerId;
+  return finalDamage;
+}
+
 function defenderAttack(state: RunState, defender: DefenderInstance, content: GameContent): void {
   if (!defender.tile || defender.location !== 'board' || state.timeMs < defender.attackReadyAtMs) return;
   const stats = derivedStats(state, defender, content);
@@ -1602,14 +1758,12 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
   if (defender.skills.includes('spin2win')) {
     const spinTargets = state.enemies.filter((enemy) => hexDistance(enemy.tile, defender.tile as AxialCoord) <= 1);
     for (const enemy of spinTargets) {
-      enemy.hp -= hitDamage;
-      enemy.lastHitByDefenderId = defender.id;
+      applyDamageToEnemy(state, enemy, hitDamage, defender.id);
     }
     pushFx(state, 'spin', defender.tile, 320);
     addHitStop(state, 34);
   } else {
-    target.hp -= hitDamage;
-    target.lastHitByDefenderId = defender.id;
+    applyDamageToEnemy(state, target, hitDamage, defender.id);
     pushFx(state, 'hit', target.tile, 180, defender.tile);
   }
   grantCombatXp(state, defender, 1, content);
@@ -1617,8 +1771,7 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
     pushFx(state, 'fireball', target.tile, 260, defender.tile);
     for (const enemy of state.enemies) {
       if (enemy.instanceId !== target.instanceId && hexDistance(enemy.tile, target.tile) <= 1) {
-        enemy.hp -= Math.max(1, Math.round(stats.damage * 0.35));
-        enemy.lastHitByDefenderId = defender.id;
+        applyDamageToEnemy(state, enemy, Math.max(1, Math.round(stats.damage * 0.35)), defender.id);
       }
     }
     addHitStop(state, 36);
@@ -1629,8 +1782,7 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
       .filter((enemy) => hexDistance(enemy.tile, target.tile) <= 2)
       .sort((left, right) => (left.hp - right.hp) || (hexDistance(left.tile, target.tile) - hexDistance(right.tile, target.tile)))[0];
     if (chainedTarget) {
-      chainedTarget.hp -= Math.max(1, Math.round(stats.damage * 0.42));
-      chainedTarget.lastHitByDefenderId = defender.id;
+      applyDamageToEnemy(state, chainedTarget, Math.max(1, Math.round(stats.damage * 0.42)), defender.id);
       pushFx(state, 'chain', chainedTarget.tile, 220, target.tile);
     }
   }
@@ -1648,6 +1800,57 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
   defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
 }
 
+function pebblePathForLane(laneIndex: number): AxialCoord[] {
+  return PEBBLE_PATH_BASE.map((coord) => rotateCoord(coord, laneIndex));
+}
+
+function swarmDamageBonus(state: RunState): number {
+  return Math.min(5, state.enemies.filter((enemy) => enemy.archetypeId === 'thirsty_user').length);
+}
+
+function enemyAttackDamage(state: RunState, enemy: EnemyInstance, content: GameContent): number {
+  const archetype = content.enemyArchetypes[enemy.archetypeId];
+  if (archetype.behavior === 'swarm') {
+    return archetype.damage + swarmDamageBonus(state);
+  }
+  return archetype.damage;
+}
+
+function enemyImpactFxKind(enemy: EnemyInstance): CombatFxKind {
+  return isBossThreat(enemy) ? 'boss_hit' : 'defender_hit';
+}
+
+function enemySaunaFxKind(enemy: EnemyInstance): CombatFxKind {
+  return isBossThreat(enemy) ? 'boss_hit' : 'sauna_hit';
+}
+
+function applyEnemyDamageToSauna(state: RunState, enemy: EnemyInstance, damage: number): void {
+  state.saunaHp = Math.max(0, state.saunaHp - damage);
+  pushFx(state, enemySaunaFxKind(enemy), CENTER, isBossThreat(enemy) ? 260 : 210, enemy.tile);
+  if (isBossThreat(enemy)) {
+    addHitStop(state, 36);
+  }
+}
+
+function applyEnemyDamageToDefender(
+  state: RunState,
+  enemy: EnemyInstance,
+  target: DefenderInstance,
+  baseDamage: number,
+  content: GameContent
+): void {
+  const defense = derivedStats(state, target, content).defense;
+  target.hp -= Math.max(1, baseDamage - defense);
+  target.lastHitByEnemyId = enemy.archetypeId;
+  if (target.tile) {
+    pushFx(state, enemyImpactFxKind(enemy), target.tile, isBossThreat(enemy) ? 240 : 190, enemy.tile);
+  }
+  maybeSaunaSlapSwap(state, target, content);
+  if (isBossThreat(enemy)) {
+    addHitStop(state, 32);
+  }
+}
+
 function enemyTarget(state: RunState, enemy: EnemyInstance, content: GameContent): DefenderInstance | 'sauna' | null {
   const archetype = content.enemyArchetypes[enemy.archetypeId];
   const defenders = boardDefenders(state)
@@ -1657,42 +1860,141 @@ function enemyTarget(state: RunState, enemy: EnemyInstance, content: GameContent
   return hexDistance(enemy.tile, CENTER) <= archetype.range ? 'sauna' : null;
 }
 
-function enemyStep(state: RunState, enemy: EnemyInstance, content: GameContent): void {
+function moveEnemyTowardCenter(state: RunState, enemy: EnemyInstance, content: GameContent): boolean {
+  const tile = DIRS.map((dir) => add(enemy.tile, dir))
+    .filter((next) => hexDistance(next, CENTER) <= content.config.gridRadius)
+    .filter((next) => !occupied(state, next))
+    .sort((left, right) => (hexDistance(left, CENTER) - hexDistance(right, CENTER)) || (left.r - right.r) || (left.q - right.q))[0];
+  if (!tile) return false;
+  enemy.tile = tile;
+  enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+  return true;
+}
+
+function stepStandardEnemy(state: RunState, enemy: EnemyInstance, content: GameContent): void {
   const archetype = content.enemyArchetypes[enemy.archetypeId];
   if (state.timeMs >= enemy.attackReadyAtMs) {
     const target = enemyTarget(state, enemy, content);
     if (target === 'sauna') {
-      state.saunaHp = Math.max(0, state.saunaHp - archetype.damage);
-      pushFx(state, enemy.archetypeId === 'chieftain' ? 'boss_hit' : 'sauna_hit', CENTER, enemy.archetypeId === 'chieftain' ? 260 : 210, enemy.tile);
-      if (enemy.archetypeId === 'chieftain') {
-        addHitStop(state, 42);
-      }
+      applyEnemyDamageToSauna(state, enemy, enemyAttackDamage(state, enemy, content));
       enemy.attackReadyAtMs = state.timeMs + archetype.attackCooldownMs;
       return;
     }
     if (target) {
-      const defense = derivedStats(state, target, content).defense;
-      target.hp -= Math.max(1, archetype.damage - defense);
-      target.lastHitByEnemyId = enemy.archetypeId;
-      if (target.tile) {
-        pushFx(state, enemy.archetypeId === 'chieftain' ? 'boss_hit' : 'defender_hit', target.tile, enemy.archetypeId === 'chieftain' ? 240 : 190, enemy.tile);
-      }
-      maybeSaunaSlapSwap(state, target, content);
-      if (enemy.archetypeId === 'chieftain') {
-        addHitStop(state, 36);
-      }
+      applyEnemyDamageToDefender(state, enemy, target, enemyAttackDamage(state, enemy, content), content);
       enemy.attackReadyAtMs = state.timeMs + archetype.attackCooldownMs;
       return;
     }
   }
   if (state.timeMs < enemy.moveReadyAtMs) return;
-  const tile = DIRS.map((dir) => add(enemy.tile, dir))
-    .filter((next) => hexDistance(next, CENTER) <= content.config.gridRadius)
-    .filter((next) => !occupied(state, next))
-    .sort((left, right) => (hexDistance(left, CENTER) - hexDistance(right, CENTER)) || (left.r - right.r) || (left.q - right.q))[0];
-  if (!tile) return;
-  enemy.tile = tile;
+  moveEnemyTowardCenter(state, enemy, content);
+}
+
+function stepSwarmUser(state: RunState, enemy: EnemyInstance, content: GameContent): void {
+  stepStandardEnemy(state, enemy, content);
+}
+
+function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent): void {
+  const archetype = content.enemyArchetypes[enemy.archetypeId];
+  if (state.timeMs >= enemy.attackReadyAtMs && hexDistance(enemy.tile, CENTER) <= archetype.range) {
+    applyEnemyDamageToSauna(state, enemy, archetype.damage);
+    enemy.attackReadyAtMs = state.timeMs + archetype.attackCooldownMs;
+    return;
+  }
+  if (state.timeMs < enemy.moveReadyAtMs) return;
+  const path = pebblePathForLane(enemy.spawnLaneIndex ?? 0);
+  const nextPathIndex = (enemy.pathIndex ?? 0) + 1;
+  const nextTile = path[nextPathIndex] ?? null;
+  if (!nextTile) return;
+  if (occupied(state, nextTile)) {
+    enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
+    return;
+  }
+  enemy.tile = { ...nextTile };
+  enemy.pathIndex = nextPathIndex;
   enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
+}
+
+function stepElectricBather(state: RunState, enemy: EnemyInstance, content: GameContent): void {
+  const archetype = content.enemyArchetypes[enemy.archetypeId];
+  if (state.timeMs >= (enemy.nextAbilityAtMs ?? Number.POSITIVE_INFINITY)) {
+    const targets = boardDefenders(state)
+      .filter((defender) => defender.tile && hexDistance(enemy.tile, defender.tile) <= archetype.range)
+      .sort((left, right) => (hexDistance(enemy.tile, left.tile as AxialCoord) - hexDistance(enemy.tile, right.tile as AxialCoord)) || (left.hp - right.hp));
+
+    if (targets.length === 0) {
+      applyEnemyDamageToSauna(state, enemy, Math.max(3, Math.round(archetype.damage * 0.6)));
+    } else {
+      const [primary, ...rest] = targets;
+      applyEnemyDamageToDefender(state, enemy, primary, archetype.damage + 2, content);
+      const chained = rest
+        .filter((candidate) => candidate.tile && primary.tile && hexDistance(candidate.tile, primary.tile) <= 2)
+        .slice(0, 2);
+      for (const chainedTarget of chained) {
+        applyEnemyDamageToDefender(state, enemy, chainedTarget, Math.max(2, Math.round(archetype.damage * 0.72)), content);
+        if (chainedTarget.tile && primary.tile) {
+          pushFx(state, 'chain', chainedTarget.tile, 260, primary.tile);
+        }
+      }
+    }
+
+    enemy.nextAbilityAtMs = state.timeMs + ELECTRIC_BATHER_ABILITY_COOLDOWN_MS;
+    enemy.attackReadyAtMs = Math.max(enemy.attackReadyAtMs, state.timeMs + 720);
+    return;
+  }
+
+  stepStandardEnemy(state, enemy, content);
+}
+
+function summonEscalationTickets(state: RunState, enemy: EnemyInstance, content: GameContent): void {
+  const laneCount = content.config.spawnLanes.length;
+  const preferredLanes = [
+    enemy.spawnLaneIndex ?? 0,
+    wrapLane((enemy.spawnLaneIndex ?? 0) + 1, laneCount),
+    wrapLane((enemy.spawnLaneIndex ?? 0) - 1, laneCount)
+  ];
+
+  for (let index = 0; index < 3; index += 1) {
+    const laneIndex = preferredLanes[randomInt(state, 0, preferredLanes.length - 1)];
+    state.pendingSpawns.push({
+      atMs: state.waveElapsedMs + 220 + index * 160,
+      enemyId: 'thirsty_user',
+      laneIndex,
+      spawnedByEnemyInstanceId: enemy.instanceId
+    });
+  }
+
+  state.pendingSpawns.sort((left, right) => left.atMs - right.atMs);
+}
+
+function stepEscalationManager(state: RunState, enemy: EnemyInstance, content: GameContent): void {
+  if (state.timeMs >= (enemy.nextAbilityAtMs ?? Number.POSITIVE_INFINITY)) {
+    summonEscalationTickets(state, enemy, content);
+    enemy.nextAbilityAtMs = state.timeMs + ESCALATION_MANAGER_ABILITY_COOLDOWN_MS;
+  }
+
+  stepStandardEnemy(state, enemy, content);
+}
+
+function enemyStep(state: RunState, enemy: EnemyInstance, content: GameContent): void {
+  const behavior = content.enemyArchetypes[enemy.archetypeId].behavior;
+  switch (behavior) {
+    case 'pebble':
+      stepPebble(state, enemy, content);
+      return;
+    case 'swarm':
+      stepSwarmUser(state, enemy, content);
+      return;
+    case 'electric':
+      stepElectricBather(state, enemy, content);
+      return;
+    case 'summoner':
+      stepEscalationManager(state, enemy, content);
+      return;
+    case 'standard':
+    default:
+      stepStandardEnemy(state, enemy, content);
+  }
 }
 
 function spawnEnemies(state: RunState, content: GameContent): void {
@@ -1716,7 +2018,16 @@ function spawnEnemies(state: RunState, content: GameContent): void {
       hp: archetype.maxHp,
       lastHitByDefenderId: null,
       attackReadyAtMs: state.timeMs + archetype.attackCooldownMs,
-      moveReadyAtMs: state.timeMs + archetype.moveCooldownMs
+      moveReadyAtMs: state.timeMs + archetype.moveCooldownMs,
+      nextAbilityAtMs:
+        archetype.behavior === 'electric'
+          ? state.timeMs + ELECTRIC_BATHER_ABILITY_COOLDOWN_MS
+          : archetype.behavior === 'summoner'
+            ? state.timeMs + ESCALATION_MANAGER_ABILITY_COOLDOWN_MS
+            : Number.POSITIVE_INFINITY,
+      pathIndex: archetype.behavior === 'pebble' ? 0 : null,
+      spawnLaneIndex: spawn.laneIndex,
+      spawnedByEnemyInstanceId: spawn.spawnedByEnemyInstanceId ?? null
     });
   }
   state.pendingSpawns = waiting;
@@ -1766,7 +2077,7 @@ function awardWave(state: RunState, content: GameContent): void {
     state.waveElapsedMs = 0;
     state.currentWave = upcomingWave;
     state.pendingSpawns = [];
-    state.message = `Boss wave ${upcomingWave.index} is coming. Reposition before it hits.`;
+    state.message = `${bossDisplayName(upcomingWave.bossId) ?? `Boss wave ${upcomingWave.index}`} is coming. Reposition before it hits.`;
     return;
   }
 
@@ -1878,6 +2189,9 @@ function pressureLabel(pressure: number): string {
 }
 
 function patternLabel(waveDef: WaveDefinition): string {
+  if (waveDef.isBoss && waveDef.bossId) {
+    return bossDisplayName(waveDef.bossId) ?? 'Boss encounter';
+  }
   switch (waveDef.pattern) {
     case 'tutorial':
       return 'Warm-up lanes';
@@ -2195,18 +2509,18 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
       };
     }
     return {
-      title: state.currentWave.isBoss ? 'Boss Prep' : 'Prep Window',
+      title: state.currentWave.isBoss ? `${bossDisplayName(state.currentWave.bossId) ?? 'Boss'} Prep` : 'Prep Window',
       body: state.currentWave.isBoss
-        ? 'This is the clean break before a boss. Set the board, spend SISU carefully, then start when ready.'
+        ? bossHint(state.currentWave.bossId) ?? 'This is the clean break before a boss. Set the board, spend SISU carefully, then start when ready.'
         : freeSlots > 0
           ? 'Set the board, reroll recruits if needed, and start when your lanes make sense.'
           : 'Set the board, sort loot, and start when your lanes make sense.'
     };
   }
   return {
-    title: state.currentWave.isBoss ? 'Boss Pressure' : 'Hold The Line',
+    title: state.currentWave.isBoss ? (bossDisplayName(state.currentWave.bossId) ?? 'Boss Pressure') : 'Hold The Line',
     body: state.currentWave.isBoss
-      ? 'Keep the center alive, use pause if you need to assign loot, and watch for direct sauna breaches.'
+      ? bossHint(state.currentWave.bossId) ?? 'Keep the center alive, use pause if you need to assign loot, and watch for direct sauna breaches.'
       : freeSlots > 0
         ? 'Non-boss waves keep chaining. You can still recruit and place bench heroes while the fight is live.'
         : 'Non-boss waves keep chaining, so stabilize attrition before the next spike arrives.'
@@ -2811,6 +3125,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     waveNumber: currentWave.index,
     enemiesRemaining: state.pendingSpawns.length + state.enemies.length,
     isBossWave: currentWave.isBoss,
+    bossName: bossDisplayName(currentWave.bossId),
+    bossHint: bossHint(currentWave.bossId),
     nextWaveThreat: `${pressureLabel(currentWave.pressure)} pressure`,
     nextWavePattern: patternLabel(currentWave),
     pressureSignals: pressureSignals(state, content),

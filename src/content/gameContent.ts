@@ -378,6 +378,7 @@ export const gameContent: GameContent = {
     raider: {
       id: 'raider',
       name: 'Goblin Raider',
+      behavior: 'standard',
       maxHp: 12,
       damage: 4,
       range: 1,
@@ -391,6 +392,7 @@ export const gameContent: GameContent = {
     brute: {
       id: 'brute',
       name: 'Stone Brute',
+      behavior: 'standard',
       maxHp: 22,
       damage: 7,
       range: 1,
@@ -404,6 +406,7 @@ export const gameContent: GameContent = {
     chieftain: {
       id: 'chieftain',
       name: 'Steam Hog Chieftain',
+      behavior: 'standard',
       maxHp: 52,
       damage: 10,
       range: 1,
@@ -413,6 +416,62 @@ export const gameContent: GameContent = {
       outline: '#2f0909',
       label: 'C',
       threat: 10
+    },
+    pebble: {
+      id: 'pebble',
+      name: 'Pebble',
+      behavior: 'pebble',
+      maxHp: 260,
+      damage: 18,
+      range: 1,
+      attackCooldownMs: 1550,
+      moveCooldownMs: 1280,
+      fill: '#8a5b3d',
+      outline: '#2d1408',
+      label: 'P',
+      threat: 24
+    },
+    thirsty_user: {
+      id: 'thirsty_user',
+      name: 'Thirsty End User',
+      behavior: 'swarm',
+      maxHp: 7,
+      damage: 1,
+      range: 1,
+      attackCooldownMs: 980,
+      moveCooldownMs: 620,
+      fill: '#cf7d62',
+      outline: '#5f271f',
+      label: 'U',
+      threat: 2
+    },
+    electric_bather: {
+      id: 'electric_bather',
+      name: 'Electric Sauna User',
+      behavior: 'electric',
+      maxHp: 104,
+      damage: 9,
+      range: 2,
+      attackCooldownMs: 1180,
+      moveCooldownMs: 900,
+      fill: '#5e7fb6',
+      outline: '#14243d',
+      label: 'E',
+      threat: 18
+    },
+    escalation_manager: {
+      id: 'escalation_manager',
+      name: 'Escalation Manager',
+      behavior: 'summoner',
+      maxHp: 126,
+      damage: 7,
+      range: 2,
+      attackCooldownMs: 1240,
+      moveCooldownMs: 920,
+      fill: '#7f4f5f',
+      outline: '#2b121b',
+      label: 'M',
+      threat: 20
     }
   },
   itemDefinitions: {

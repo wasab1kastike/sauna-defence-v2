@@ -32,7 +32,15 @@ export type DefenderSubclassId =
   | 'rescue_ritualist'
   | 'saint_of_steam'
   | 'afterglow_warden';
-export type EnemyUnitId = 'raider' | 'brute' | 'chieftain';
+export type BossId = 'pebble' | 'end_user_horde' | 'electric_bather' | 'escalation_manager';
+export type EnemyUnitId =
+  | 'raider'
+  | 'brute'
+  | 'chieftain'
+  | 'pebble'
+  | 'thirsty_user'
+  | 'electric_bather'
+  | 'escalation_manager';
 export type ItemId =
   | 'ladle'
   | 'coal_heart'
@@ -64,6 +72,7 @@ export type AlcoholId =
 export type DefenderLocation = 'ready' | 'board' | 'sauna' | 'dead';
 export type WavePattern = 'tutorial' | 'split' | 'staggered' | 'spearhead' | 'surge' | 'boss_pressure' | 'boss_breach';
 export type BossCategory = 'pressure' | 'breach';
+export type EnemyBehavior = 'standard' | 'pebble' | 'swarm' | 'electric' | 'summoner';
 export type CombatFxKind = 'hit' | 'defender_hit' | 'sauna_hit' | 'heal' | 'fireball' | 'spin' | 'blink' | 'boss_hit' | 'chain';
 export type MapTarget = 'defender' | 'sauna';
 export type HudPanelId = 'modifiers' | 'roster' | 'loot' | 'recruit' | 'beer_shop' | 'metashop';
@@ -163,6 +172,7 @@ export interface SubclassDraftRequest {
 export interface EnemyArchetype {
   id: EnemyUnitId;
   name: string;
+  behavior: EnemyBehavior;
   maxHp: number;
   damage: number;
   range: number;
@@ -285,12 +295,17 @@ export interface EnemyInstance {
   lastHitByDefenderId: string | null;
   attackReadyAtMs: number;
   moveReadyAtMs: number;
+  nextAbilityAtMs?: number;
+  pathIndex?: number | null;
+  spawnLaneIndex?: number;
+  spawnedByEnemyInstanceId?: number | null;
 }
 
 export interface WaveSpawn {
   atMs: number;
   enemyId: EnemyUnitId;
   laneIndex: number;
+  spawnedByEnemyInstanceId?: number | null;
 }
 
 export interface WaveDefinition {
@@ -299,6 +314,7 @@ export interface WaveDefinition {
   rewardSisu: number;
   pressure: number;
   pattern: WavePattern;
+  bossId: BossId | null;
   bossCategory: BossCategory | null;
   spawns: WaveSpawn[];
 }
@@ -644,6 +660,8 @@ export interface HudViewModel {
   waveNumber: number;
   enemiesRemaining: number;
   isBossWave: boolean;
+  bossName: string | null;
+  bossHint: string | null;
   nextWaveThreat: string;
   nextWavePattern: string;
   pressureSignals: string[];

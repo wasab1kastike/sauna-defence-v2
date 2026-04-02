@@ -59,7 +59,11 @@ const DEFENDER_ROLE_PORTRAITS: Record<DefenderTemplateId, number[]> = {
 const ENEMY_ROLE_PORTRAITS: Record<EnemyUnitId, number[]> = {
   raider: [0],
   brute: [1],
-  chieftain: [2]
+  chieftain: [2],
+  pebble: [1],
+  thirsty_user: [0, 3],
+  electric_bather: [3],
+  escalation_manager: [2, 3]
 };
 
 let defenderPortraits: Array<HTMLImageElement | null | undefined> | undefined;
@@ -1420,7 +1424,13 @@ export function paintSnapshot(
   for (const enemy of snapshot.state.enemies) {
     const center = axialToPixel(enemy.tile, layout);
     const archetype = snapshot.enemyArchetypes[enemy.archetypeId];
-    const radius = layout.hexSize * (enemy.archetypeId === 'chieftain' ? 0.54 : 0.47);
+    const radius = layout.hexSize * (
+      enemy.archetypeId === 'pebble'
+        ? 0.66
+        : enemy.archetypeId === 'chieftain' || enemy.archetypeId === 'electric_bather' || enemy.archetypeId === 'escalation_manager'
+          ? 0.54
+          : 0.45
+    );
     const style = getEnemyStyle(enemy.tokenStyleId);
     const hasPortrait = drawEnemyPortrait(ctx, center, radius, enemy.archetypeId, enemy.tokenStyleId);
     if (!hasPortrait) {
@@ -1459,7 +1469,13 @@ export function paintSnapshot(
   ctx.fillStyle = 'rgba(234, 247, 244, 0.96)';
   ctx.textAlign = 'left';
   ctx.font = '700 14px Trebuchet MS';
-  ctx.fillText(snapshot.hud.isBossWave ? `Boss Wave ${snapshot.hud.waveNumber}` : `Wave ${snapshot.hud.waveNumber}`, 18, 24);
+  ctx.fillText(
+    snapshot.hud.isBossWave
+      ? `${snapshot.hud.bossName ?? 'Boss'} · Wave ${snapshot.hud.waveNumber}`
+      : `Wave ${snapshot.hud.waveNumber}`,
+    18,
+    24
+  );
   ctx.fillText(snapshot.hud.placedBoardLabel, 18, 44);
 }
 

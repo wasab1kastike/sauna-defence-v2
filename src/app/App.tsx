@@ -892,9 +892,10 @@ export function App() {
               <div className="hud-status-card">
                 <div className="popup-head compact-popup-head">
                   <h2>{snapshot.hud.actionTitle}</h2>
-                  <span>{snapshot.hud.nextWavePattern}</span>
+                  <span>{snapshot.hud.bossName ?? snapshot.hud.nextWavePattern}</span>
                 </div>
                 <p className="panel-copy small-copy">{snapshot.hud.actionBody}</p>
+                {snapshot.hud.bossHint ? <p className="panel-copy small-copy">{snapshot.hud.bossHint}</p> : null}
                 <div className="mini-tag-row">
                   <span className="mini-tag">{snapshot.hud.nextWaveThreat}</span>
                   <span className="mini-tag">Bench {snapshot.hud.readyBenchCount}</span>

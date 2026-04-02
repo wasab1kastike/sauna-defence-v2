@@ -25,6 +25,248 @@ describe('Sauna Defense V2 logic', () => {
     expect(waves[4].pressure).toBeGreaterThan(waves[3].pressure);
   });
 
+  it('rotates unique bosses in a fixed order across boss waves', () => {
+    const waves = [5, 10, 15, 20, 25].map((index) => createWaveDefinition(index, gameContent));
+
+    expect(waves.map((wave) => wave.bossId)).toEqual([
+      'pebble',
+      'end_user_horde',
+      'electric_bather',
+      'escalation_manager',
+      'pebble'
+    ]);
+    expect(waves.map((wave) => wave.bossCategory)).toEqual([
+      'breach',
+      'pressure',
+      'pressure',
+      'pressure',
+      'breach'
+    ]);
+  });
+
+  it('makes Pebble ignore defenders and continue along its scripted path', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready');
+    expect(defender).toBeTruthy();
+    defender!.location = 'board';
+    defender!.tile = { q: 1, r: -6 };
+    defender!.homeTile = { q: 1, r: -6 };
+    defender!.hp = 20;
+    defender!.attackReadyAtMs = 999999;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: gameContent.enemyArchetypes.pebble.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 0,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.defenders.find((entry) => entry.id === defender!.id)?.hp).toBe(20);
+    expect(state.enemies[0]?.tile).toEqual({ q: 1, r: -5 });
+    expect(state.enemies[0]?.pathIndex).toBe(1);
+  });
+
+  it('ramps thirsty user damage based on how many are still alive', () => {
+    const buildState = (userCount: number) => {
+      const state = prepState();
+      const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+      defender.location = 'board';
+      defender.tile = { q: 0, r: -1 };
+      defender.homeTile = { q: 0, r: -1 };
+      defender.hp = 20;
+      defender.stats.defense = 0;
+      defender.attackReadyAtMs = 999999;
+      state.phase = 'wave';
+      state.pendingSpawns = [];
+      const fillerTiles = [
+        { q: 5, r: -5 },
+        { q: 5, r: -4 },
+        { q: 4, r: -4 },
+        { q: -5, r: 5 }
+      ];
+      state.enemies = Array.from({ length: userCount }, (_, index) => ({
+        instanceId: index + 1,
+        archetypeId: 'thirsty_user' as const,
+        tokenStyleId: 0,
+        tile: index === 0 ? { q: 0, r: 0 } : fillerTiles[index - 1] ?? fillerTiles[0],
+        hp: gameContent.enemyArchetypes.thirsty_user.maxHp,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: index === 0 ? 0 : 999999,
+        moveReadyAtMs: 999999,
+        nextAbilityAtMs: Number.POSITIVE_INFINITY,
+        pathIndex: null,
+        spawnLaneIndex: index,
+        spawnedByEnemyInstanceId: null
+      }));
+      return state;
+    };
+
+    const heavy = stepState(buildState(3), 16, gameContent);
+    const light = stepState(buildState(2), 16, gameContent);
+
+    expect(heavy.defenders.find((entry) => entry.location === 'board')?.hp).toBe(16);
+    expect(light.defenders.find((entry) => entry.location === 'board')?.hp).toBe(17);
+  });
+
+  it('lets the electric boss chain shock multiple defenders', () => {
+    let state = prepState();
+    const defenders = state.defenders.filter((entry) => entry.location === 'ready').slice(0, 3);
+    defenders.forEach((defender, index) => {
+      defender.location = 'board';
+      defender.tile = [{ q: 0, r: -1 }, { q: 1, r: -1 }, { q: -1, r: 0 }][index];
+      defender.homeTile = defender.tile;
+      defender.hp = 20;
+      defender.stats.defense = 0;
+      defender.attackReadyAtMs = 999999;
+    });
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'electric_bather',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 0 },
+      hp: gameContent.enemyArchetypes.electric_bather.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999,
+      nextAbilityAtMs: 0,
+      pathIndex: null,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(defenders.every((defender) => (state.defenders.find((entry) => entry.id === defender.id)?.hp ?? 20) < 20)).toBe(true);
+    expect(state.fxEvents.some((event) => event.kind === 'chain')).toBe(true);
+  });
+
+  it('makes the electric boss overload the sauna when no defender is in range', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    const saunaHpBefore = state.saunaHp;
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'electric_bather',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 1 },
+      hp: gameContent.enemyArchetypes.electric_bather.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999,
+      nextAbilityAtMs: 0,
+      pathIndex: null,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.saunaHp).toBeLessThan(saunaHpBefore);
+    expect(state.fxEvents.some((event) => event.kind === 'boss_hit')).toBe(true);
+  });
+
+  it('makes the escalation manager open new tickets mid-wave', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'escalation_manager',
+      tokenStyleId: 0,
+      tile: { q: 3, r: -3 },
+      hp: gameContent.enemyArchetypes.escalation_manager.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999,
+      nextAbilityAtMs: 0,
+      pathIndex: null,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.pendingSpawns).toHaveLength(3);
+    expect(state.pendingSpawns.every((spawn) => spawn.enemyId === 'thirsty_user')).toBe(true);
+    expect(state.pendingSpawns.every((spawn) => spawn.spawnedByEnemyInstanceId === 1)).toBe(true);
+  });
+
+  it('drops the escalation manager damage reduction when its minions are gone', () => {
+    const buildState = (withMinion: boolean) => {
+      const state = prepState();
+      const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+      defender.location = 'board';
+      defender.tile = { q: 0, r: -1 };
+      defender.homeTile = { q: 0, r: -1 };
+      defender.stats.damage = 10;
+      defender.attackReadyAtMs = 0;
+      state.phase = 'wave';
+      state.pendingSpawns = [];
+      state.enemies = [{
+        instanceId: 1,
+        archetypeId: 'escalation_manager',
+        tokenStyleId: 0,
+        tile: { q: 0, r: 0 },
+        hp: gameContent.enemyArchetypes.escalation_manager.maxHp,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999,
+        nextAbilityAtMs: 999999,
+        pathIndex: null,
+        spawnLaneIndex: 0,
+        spawnedByEnemyInstanceId: null
+      }];
+      if (withMinion) {
+        state.enemies.push({
+          instanceId: 2,
+          archetypeId: 'thirsty_user',
+          tokenStyleId: 0,
+          tile: { q: 5, r: -5 },
+          hp: gameContent.enemyArchetypes.thirsty_user.maxHp,
+          lastHitByDefenderId: null,
+          attackReadyAtMs: 999999,
+          moveReadyAtMs: 999999,
+          nextAbilityAtMs: Number.POSITIVE_INFINITY,
+          pathIndex: null,
+          spawnLaneIndex: 0,
+          spawnedByEnemyInstanceId: 1
+        });
+      }
+      return state;
+    };
+
+    const reduced = stepState(buildState(true), 16, gameContent);
+    const normal = stepState(buildState(false), 16, gameContent);
+
+    expect(reduced.enemies.find((enemy) => enemy.instanceId === 1)?.hp).toBe(gameContent.enemyArchetypes.escalation_manager.maxHp - 3);
+    expect(normal.enemies.find((enemy) => enemy.instanceId === 1)?.hp).toBe(gameContent.enemyArchetypes.escalation_manager.maxHp - 10);
+  });
+
+  it('surfaces the boss name and hint in the HUD for boss waves', () => {
+    const state = prepState();
+    state.currentWave = createWaveDefinition(5, gameContent);
+
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(snapshot.hud.bossName).toBe('Pebble');
+    expect(snapshot.hud.nextWavePattern).toBe('Pebble');
+    expect(snapshot.hud.bossHint).toContain('Ignores heroes');
+  });
+
   it('creates a named starter roster with one sauna defender', () => {
     const state = prepState();
 
@@ -150,7 +392,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(saunaDefender).toBeTruthy();
     saunaDefender!.hp = 1;
     state.phase = 'wave';
-    state.currentWave = { index: 1, isBoss: false, rewardSisu: 3, pressure: 4, pattern: 'tutorial', bossCategory: null, spawns: [] };
+    state.currentWave = { index: 1, isBoss: false, rewardSisu: 3, pressure: 4, pattern: 'tutorial', bossId: null, bossCategory: null, spawns: [] };
     state.pendingSpawns = [];
     state.enemies = [];
 
@@ -381,7 +623,7 @@ describe('Sauna Defense V2 logic', () => {
     let state = prepState();
     state.phase = 'wave';
     state.waveIndex = 4;
-    state.currentWave = { index: 4, isBoss: false, rewardSisu: 3, pressure: 11, pattern: 'staggered', bossCategory: null, spawns: [] };
+    state.currentWave = { index: 4, isBoss: false, rewardSisu: 3, pressure: 11, pattern: 'staggered', bossId: null, bossCategory: null, spawns: [] };
     state.pendingSpawns = [];
     state.enemies = [];
 
@@ -530,23 +772,25 @@ describe('Sauna Defense V2 logic', () => {
       isBoss: true,
       rewardSisu: 7,
       pressure: 18,
-      pattern: 'boss_pressure',
-      bossCategory: 'pressure',
-      spawns: [{ atMs: 0, enemyId: 'chieftain', laneIndex: 0 }]
+      pattern: 'boss_breach',
+      bossId: 'pebble',
+      bossCategory: 'breach',
+      spawns: [{ atMs: 0, enemyId: 'pebble', laneIndex: 0 }]
     };
 
     const snapshot = createSnapshot(state, gameContent);
     expect(snapshot.hud.isBossWave).toBe(true);
-    expect(snapshot.hud.wavePreview[0].id).toBe('chieftain');
+    expect(snapshot.hud.wavePreview[0].id).toBe('pebble');
   });
 
-  it('alternates boss identities and spawn shapes across cycles', () => {
+  it('uses different boss identities and spawn shapes across cycles', () => {
     const firstBoss = createWaveDefinition(5, gameContent);
     const secondBoss = createWaveDefinition(10, gameContent);
 
-    expect(firstBoss.bossCategory).toBe('pressure');
-    expect(secondBoss.bossCategory).toBe('breach');
-    expect(firstBoss.pattern).not.toBe(secondBoss.pattern);
+    expect(firstBoss.bossId).toBe('pebble');
+    expect(secondBoss.bossId).toBe('end_user_horde');
+    expect(firstBoss.pattern).toBe('boss_breach');
+    expect(secondBoss.pattern).toBe('boss_pressure');
     expect(firstBoss.spawns.map((spawn) => spawn.laneIndex)).not.toEqual(secondBoss.spawns.map((spawn) => spawn.laneIndex));
   });
 
@@ -1412,8 +1656,9 @@ describe('Sauna Defense V2 logic', () => {
       isBoss: true,
       rewardSisu: 7,
       pressure: 18,
-      pattern: 'boss_pressure',
-      bossCategory: 'pressure',
+      pattern: 'boss_breach',
+      bossId: 'pebble',
+      bossCategory: 'breach',
       spawns: []
     };
     state.pendingSpawns = [];
@@ -1442,8 +1687,9 @@ describe('Sauna Defense V2 logic', () => {
       isBoss: true,
       rewardSisu: 7,
       pressure: 18,
-      pattern: 'boss_pressure',
-      bossCategory: 'pressure',
+      pattern: 'boss_breach',
+      bossId: 'pebble',
+      bossCategory: 'breach',
       spawns: []
     };
     state.pendingSpawns = [];
