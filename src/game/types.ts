@@ -66,6 +66,8 @@ export type WavePattern = 'tutorial' | 'split' | 'staggered' | 'spearhead' | 'su
 export type BossCategory = 'pressure' | 'breach';
 export type CombatFxKind = 'hit' | 'defender_hit' | 'sauna_hit' | 'heal' | 'fireball' | 'spin' | 'blink' | 'boss_hit' | 'chain';
 export type MapTarget = 'defender' | 'sauna';
+export type HudPanelId = 'modifiers' | 'roster' | 'loot' | 'recruit' | 'beer_shop' | 'metashop';
+export type WorldLandmarkId = 'metashop' | 'beer_shop';
 export type GlobalModifierCountScope = 'board' | 'living' | 'dead';
 export type GlobalModifierEffectStat = 'maxHp' | 'damage' | 'heal' | 'range' | 'attackCooldownMs' | 'defense' | 'regenHpPerSecond';
 export type GlobalModifierId =
@@ -396,6 +398,8 @@ export interface RunState {
   overlayMode: OverlayMode;
   inventoryOpen: boolean;
   recruitmentOpen: boolean;
+  activePanel: HudPanelId | null;
+  selectedWorldLandmarkId: WorldLandmarkId | null;
   introOpen: boolean;
   timeMs: number;
   waveIndex: number;
@@ -617,10 +621,23 @@ export interface HudGlobalModifierEntry {
   resolvedEffectText: string;
 }
 
+export interface HudWorldLandmarkEntry {
+  id: WorldLandmarkId;
+  label: string;
+  tile: AxialCoord;
+  visible: boolean;
+  enabled: boolean;
+  locked: boolean;
+  selected: boolean;
+  badgeText: string;
+  statusText: string;
+}
+
 export interface HudViewModel {
   phaseLabel: string;
   statusText: string;
   overlayMode: OverlayMode;
+  activePanel: HudPanelId | null;
   isPaused: boolean;
   showIntermission: boolean;
   introOpen: boolean;
@@ -699,6 +716,7 @@ export interface HudViewModel {
   showSubclassDraft: boolean;
   wavePreview: WavePreviewEntry[];
   metaUpgrades: HudMetaUpgradeEntry[];
+  worldLandmarks: HudWorldLandmarkEntry[];
 }
 
 export interface GameSnapshot {
@@ -722,6 +740,10 @@ export type InputAction =
   | { type: 'selectSauna' }
   | { type: 'clearSelection' }
   | { type: 'closeSaunaPopup' }
+  | { type: 'openHudPanel'; panel: HudPanelId }
+  | { type: 'closeHudPanel' }
+  | { type: 'selectWorldLandmark'; landmarkId: WorldLandmarkId }
+  | { type: 'clearWorldLandmark' }
   | { type: 'selectInventoryDrop'; dropId: number }
   | { type: 'clearSelectedInventoryDrop' }
   | { type: 'openIntro' }

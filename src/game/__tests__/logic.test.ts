@@ -1699,4 +1699,83 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.phase).toBe('prep');
     expect(state.activeAlcohols).toEqual([{ alcoholId: offer.alcoholId, stacks: 1 }]);
   });
+
+  it('shows the metashop landmark only once between-run progression becomes relevant', () => {
+    let state = prepState();
+    let snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.worldLandmarks.some((entry) => entry.id === 'metashop')).toBe(false);
+
+    state.meta.completedRuns = 1;
+    snapshot = createSnapshot(state, gameContent);
+    const lockedShop = snapshot.hud.worldLandmarks.find((entry) => entry.id === 'metashop');
+    expect(lockedShop?.visible).toBe(true);
+    expect(lockedShop?.locked).toBe(true);
+    expect(lockedShop?.enabled).toBe(false);
+
+    state.overlayMode = 'intermission';
+    state.phase = 'lost';
+    snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.worldLandmarks.find((entry) => entry.id === 'metashop')?.enabled).toBe(true);
+
+    state.meta.shopUnlocked = true;
+    snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.worldLandmarks.find((entry) => entry.id === 'metashop')?.locked).toBe(false);
+  });
+
+  it('keeps beer shop landmark and purchases available in prep, wave, and intermission', () => {
+    const meta = createDefaultMetaProgress();
+    meta.shopUnlocked = true;
+    meta.steam = 30;
+    meta.upgrades.beer_shop_unlock = 1;
+
+    let state = createInitialState(gameContent, meta, 42, false, false);
+    let snapshot = createSnapshot(state, gameContent);
+    const prepLandmark = snapshot.hud.worldLandmarks.find((entry) => entry.id === 'beer_shop');
+    expect(prepLandmark?.visible).toBe(true);
+    expect(prepLandmark?.enabled).toBe(true);
+    expect(state.beerShopOffers.length).toBeGreaterThan(0);
+
+    const prepOffer = state.beerShopOffers[0];
+    state = applyAction(state, { type: 'buyBeerShopOffer', offerId: prepOffer.offerId }, gameContent);
+    expect(state.activeAlcohols).toHaveLength(1);
+
+    state.phase = 'wave';
+    state.overlayMode = 'none';
+    state.meta.steam = 30;
+    const waveOffer = state.beerShopOffers.find((offer) => offer.alcoholId !== prepOffer.alcoholId) ?? state.beerShopOffers[0];
+    state = applyAction(state, { type: 'buyBeerShopOffer', offerId: waveOffer.offerId }, gameContent);
+    expect(state.activeAlcohols.length).toBeGreaterThan(0);
+
+    state.overlayMode = 'intermission';
+    state.phase = 'lost';
+    snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.worldLandmarks.find((entry) => entry.id === 'beer_shop')?.enabled).toBe(true);
+  });
+
+  it('keeps only one non-blocking hud panel open at a time', () => {
+    let state = prepState();
+
+    state = applyAction(state, { type: 'openHudPanel', panel: 'roster' }, gameContent);
+    expect(state.activePanel).toBe('roster');
+
+    state = applyAction(state, { type: 'openHudPanel', panel: 'loot' }, gameContent);
+    expect(state.activePanel).toBe('loot');
+    expect(state.inventoryOpen).toBe(false);
+
+    state.meta.upgrades.inventory_slots = 1;
+    state = applyAction(state, { type: 'openHudPanel', panel: 'loot' }, gameContent);
+    expect(state.activePanel).toBeNull();
+
+    state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
+    expect(state.activePanel).toBe('recruit');
+    expect(state.recruitmentOpen).toBe(true);
+
+    state = applyAction(state, { type: 'selectWorldLandmark', landmarkId: 'metashop' }, gameContent);
+    expect(state.activePanel).toBe('recruit');
+
+    state.meta.completedRuns = 1;
+    state = applyAction(state, { type: 'selectWorldLandmark', landmarkId: 'metashop' }, gameContent);
+    expect(state.activePanel).toBe('metashop');
+    expect(state.selectedWorldLandmarkId).toBe('metashop');
+  });
 });

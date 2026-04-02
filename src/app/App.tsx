@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 
 import { gameContent } from '../content/gameContent';
-import { pickTileAtCanvasPoint } from '../game/render';
+import { getTileViewportPosition, pickTileAtCanvasPoint } from '../game/render';
 import { createGameRuntime } from '../game/runtime';
-import type { GameRuntime, GameSnapshot } from '../game/types';
+import type {
+  GameRuntime,
+  GameSnapshot,
+  HudPanelId,
+  HudWorldLandmarkEntry
+} from '../game/types';
 
 function formatRarity(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -29,6 +34,10 @@ function formatLocationLabel(location: 'ready' | 'board' | 'sauna' | 'dead') {
   }
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 const GUIDE_STORAGE_KEY = 'sauna-defense-v2-guide-seen';
 const GUIDE_STEPS = [
   {
@@ -45,7 +54,7 @@ const GUIDE_STEPS = [
   },
   {
     title: 'SISU Fuels Both Power And Recruitment',
-    body: 'Spend SISU on the combat burst when you need a spike, or use it to reroll the market and level up future recruits. The market works in prep, live waves, and pause.'
+    body: 'Spend SISU on the combat burst when you need a spike, or use it to scout and buy recruitment offers. The market works in prep, live waves, and pause.'
   },
   {
     title: 'Loot Starts In The Header',
@@ -53,10 +62,40 @@ const GUIDE_STEPS = [
   }
 ] as const;
 
+function getLandmarkStyle(
+  snapshot: GameSnapshot,
+  frameSize: { width: number; height: number },
+  landmark: HudWorldLandmarkEntry
+): CSSProperties {
+  const point = getTileViewportPosition(snapshot, frameSize.width, frameSize.height, landmark.tile);
+  return {
+    left: `${point.x}px`,
+    top: `${point.y}px`
+  };
+}
+
+function getLandmarkPopupStyle(
+  snapshot: GameSnapshot,
+  frameSize: { width: number; height: number },
+  landmark: HudWorldLandmarkEntry | null
+): CSSProperties | undefined {
+  if (!landmark || frameSize.width === 0 || frameSize.height === 0) {
+    return undefined;
+  }
+  const point = getTileViewportPosition(snapshot, frameSize.width, frameSize.height, landmark.tile);
+  const popupWidth = Math.min(360, Math.max(280, frameSize.width * 0.34));
+  return {
+    left: `${clamp(point.x - (point.x > frameSize.width * 0.55 ? popupWidth - 48 : 48), 18, frameSize.width - popupWidth - 18)}px`,
+    top: `${clamp(point.y - 72, 86, frameSize.height - 330)}px`
+  };
+}
+
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
   const runtimeRef = useRef<GameRuntime | null>(null);
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
+  const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
   const [guideSeen, setGuideSeen] = useState(() => {
     if (typeof window === 'undefined') {
       return false;
@@ -101,6 +140,29 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) {
+      return;
+    }
+
+    const update = () => {
+      const rect = frame.getBoundingClientRect();
+      setFrameSize({ width: rect.width, height: rect.height });
+    };
+
+    update();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', update);
+      return () => window.removeEventListener('resize', update);
+    }
+
+    const observer = new ResizeObserver(() => update());
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     if (!snapshot || snapshot.hud.introOpen || snapshot.hud.showIntermission || guideSeen || guideStep !== null) {
       return;
     }
@@ -129,6 +191,23 @@ export function App() {
     }
   };
 
+  const dispatch = (action: Parameters<GameRuntime['dispatch']>[0]) => {
+    runtimeRef.current?.dispatch(action);
+  };
+
+  const pickLandmarkAtPointer = (
+    nextSnapshot: GameSnapshot,
+    rect: DOMRect,
+    clientX: number,
+    clientY: number
+  ) => {
+    const radius = Math.max(24, Math.min(rect.width, rect.height) * 0.035);
+    return nextSnapshot.hud.worldLandmarks.find((landmark) => {
+      const point = getTileViewportPosition(nextSnapshot, rect.width, rect.height, landmark.tile);
+      return Math.hypot(point.x - (clientX - rect.left), point.y - (clientY - rect.top)) <= radius;
+    }) ?? null;
+  };
+
   const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const runtime = runtimeRef.current;
     const nextSnapshot = snapshot;
@@ -151,15 +230,18 @@ export function App() {
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const runtime = runtimeRef.current;
     const nextSnapshot = snapshot;
-    if (!runtime || !nextSnapshot || nextSnapshot.hud.introOpen || nextSnapshot.hud.showGlobalModifierDraft || guideStep !== null) {
+    if (!runtime || !nextSnapshot || nextSnapshot.hud.introOpen || nextSnapshot.hud.showGlobalModifierDraft || nextSnapshot.hud.showSubclassDraft || guideStep !== null) {
       return;
     }
-    const tile = pickTileAtCanvasPoint(
-      nextSnapshot,
-      event.currentTarget.getBoundingClientRect(),
-      event.clientX,
-      event.clientY
-    );
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const clickedLandmark = pickLandmarkAtPointer(nextSnapshot, rect, event.clientX, event.clientY);
+    if (clickedLandmark) {
+      runtime.dispatch({ type: 'selectWorldLandmark', landmarkId: clickedLandmark.id });
+      return;
+    }
+
+    const tile = pickTileAtCanvasPoint(nextSnapshot, rect, event.clientX, event.clientY);
     if (!tile) {
       runtime.dispatch({ type: 'clearSelection' });
       return;
@@ -174,861 +256,722 @@ export function App() {
   const selectedDefender = snapshot?.hud.selectedDefender ?? null;
   const selectedSauna = snapshot?.hud.selectedSauna ?? null;
   const selectedLoot = snapshot?.hud.selectedInventoryEntry ?? null;
-  const isIntermission = snapshot?.hud.showIntermission ?? false;
-  const isPaused = snapshot?.hud.isPaused ?? false;
-  const introOpen = snapshot?.hud.introOpen ?? false;
-  const inventoryUnlocked = snapshot?.hud.inventoryUnlocked ?? false;
-  const inventoryOpen = snapshot?.hud.inventoryOpen ?? false;
-  const recruitmentOpen = snapshot?.hud.recruitmentOpen ?? false;
-  const hasRecentLoot = snapshot?.hud.hasRecentLoot ?? false;
-  const anyDrawerOpen = inventoryOpen || recruitmentOpen;
+  const activePanel = snapshot?.hud.activePanel ?? null;
+  const activeLandmark = snapshot?.hud.worldLandmarks.find((entry) => entry.selected) ?? null;
   const currentGuide = guideStep !== null ? GUIDE_STEPS[guideStep] : null;
+  const introOpen = snapshot?.hud.introOpen ?? false;
+  const showModifierDraft = snapshot?.hud.showGlobalModifierDraft ?? false;
+  const showSubclassDraft = snapshot?.hud.showSubclassDraft ?? false;
+
   const rosterEntries = snapshot?.hud.rosterEntries ?? [];
   const boardEntries = rosterEntries.filter((entry) => entry.location === 'board');
   const readyEntries = rosterEntries.filter((entry) => entry.location === 'ready');
   const deathLogEntries = snapshot?.hud.deathLogEntries ?? [];
   const headerItemEntries = snapshot?.hud.headerItemEntries ?? [];
   const headerSkillEntries = snapshot?.hud.headerSkillEntries ?? [];
+  const inventoryEntries = snapshot?.hud.inventoryEntries ?? [];
   const globalModifiers = snapshot?.hud.globalModifiers ?? [];
-  const modifierDraftOffers = snapshot?.hud.globalModifierDraftOffers ?? [];
-  const showModifierDraft = snapshot?.hud.showGlobalModifierDraft ?? false;
-  const openRecruitSlots = snapshot ? Math.max(0, snapshot.hud.rosterCap - snapshot.hud.rosterCount) : 0;
-  const boardFullButBenchAvailable = snapshot?.hud.boardFullButBenchAvailable ?? false;
-  const rosterFullNeedsReplacement = snapshot?.hud.rosterFullNeedsReplacement ?? false;
-  const recruitReplacementName =
-    rosterFullNeedsReplacement
-      ? selectedSauna?.occupantName ?? selectedDefender?.name ?? null
-      : null;
-  const nextWavePreview = snapshot?.hud.wavePreview ?? [];
 
-  const renderRosterGroup = (
-    title: string,
-    entries: typeof rosterEntries,
-    emptyText: string
-  ) => (
-    <div className="roster-group">
-      <div className="group-head">
+  const renderRosterCards = (entries: typeof rosterEntries, emptyText: string) => (
+    entries.length > 0 ? (
+      <div className="popup-list">
+        {entries.map((entry) => (
+          <button
+            key={entry.id}
+            className={entry.selected ? 'popup-card unit-row selected' : 'popup-card unit-row'}
+            onClick={() => dispatch({ type: 'selectDefender', defenderId: entry.id })}
+          >
+            <div className="unit-row-top">
+              <strong>
+                {entry.name} <em>{entry.title}</em>
+              </strong>
+              <span className="mini-tag">{entry.templateName}</span>
+            </div>
+            <small>{entry.summary}</small>
+            <div className="mini-tag-row">
+              <span className="mini-tag">{entry.locationLabel}</span>
+              <span className="mini-tag">HP {entry.hp}/{entry.maxHp}</span>
+              <span className="mini-tag">ATK {entry.damage}</span>
+              {entry.defense > 0 ? <span className="mini-tag">DEF {entry.defense}</span> : null}
+              {entry.heal > 0 ? <span className="mini-tag">Heal {entry.heal}</span> : null}
+            </div>
+          </button>
+        ))}
+      </div>
+    ) : (
+      <p className="panel-copy small-copy">{emptyText}</p>
+    )
+  );
+
+  const renderLootRow = (title: string, entries: typeof headerItemEntries, emptyText: string) => (
+    <section className="popup-section">
+      <div className="section-head">
         <strong>{title}</strong>
         <span>{entries.length}</span>
       </div>
       {entries.length > 0 ? (
-        <div className="button-stack roster-stack">
+        <div className="loot-chip-grid">
           {entries.map((entry) => (
-            <div key={entry.id} className={entry.selected ? 'roster-card selected' : 'roster-card'}>
-              <button
-                className="unit-button"
-                onClick={() => runtimeRef.current?.dispatch({ type: 'selectDefender', defenderId: entry.id })}
-              >
-                <div className="roster-name-row">
-                  <span className="roster-name">
-                    {entry.name} <em>{entry.title}</em>
-                  </span>
-                  <span className="role-badge">{entry.templateName}</span>
-                </div>
-                <small className="roster-role-copy">Level {entry.level} · {entry.subclassName} · {entry.roleSummary}</small>
-                <div className="tag-row compact-tags">
-                  <span className="tag">{entry.locationLabel}</span>
-                  <span className="tag">Lvl {entry.level}</span>
-                  <span className="tag">HP {entry.hp}/{entry.maxHp}</span>
-                  <span className="tag">ATK {entry.damage}</span>
-                  {entry.defense > 0 ? <span className="tag">DEF {entry.defense}</span> : null}
-                  {entry.heal > 0 ? <span className="tag">Heal {entry.heal}</span> : null}
-                  {entry.regenHpPerSecond > 0 ? <span className="tag">Regen {entry.regenHpPerSecond}/s</span> : null}
-                  <span className="tag">Range {entry.range}</span>
-                </div>
-              </button>
-            </div>
+            <button
+              key={entry.id}
+              className={entry.selected ? 'loot-chip selected' : 'loot-chip'}
+              onClick={() =>
+                dispatch(
+                  entry.selected
+                    ? { type: 'clearSelectedInventoryDrop' }
+                    : { type: 'selectInventoryDrop', dropId: entry.id }
+                )
+              }
+            >
+              <img src={assetUrl(entry.artPath)} alt={entry.name} className="loot-chip-art" />
+              <div className="loot-chip-copy">
+                <strong>{entry.name}</strong>
+                <small>{entry.effectText}</small>
+              </div>
+              {entry.isRecent ? <span className="loot-pill">New</span> : null}
+            </button>
           ))}
         </div>
       ) : (
         <p className="panel-copy small-copy">{emptyText}</p>
       )}
-    </div>
+    </section>
   );
 
-  const renderHeaderLootRow = (
-    title: string,
-    entries: typeof headerItemEntries,
-    capacity: number
-  ) => (
-    <div className="header-loot-row">
-      <span className="header-loot-label">{title}</span>
-      <div className="header-loot-list">
-        {entries.map((entry) => (
-          <button
-            key={entry.id}
-            className={entry.selected ? 'header-loot-chip selected' : 'header-loot-chip'}
-            onClick={() =>
-              runtimeRef.current?.dispatch(
-                entry.selected
-                  ? { type: 'clearSelectedInventoryDrop' }
-                  : { type: 'selectInventoryDrop', dropId: entry.id }
-              )
-            }
-            title={`${entry.name}: ${entry.effectText}`}
-          >
-            <img src={assetUrl(entry.artPath)} alt={entry.name} className="header-loot-art" />
-            <div className="header-loot-copy">
-              <strong>{entry.name}</strong>
-              <small>{entry.effectText}</small>
-            </div>
-            {entry.isRecent ? <span className="loot-ping mini-ping">New</span> : null}
-          </button>
-        ))}
-        {Array.from({ length: Math.max(0, capacity - entries.length) }).map((_, index) => (
-          <div key={`${title}-${index}`} className="header-loot-slot-empty">
-            Empty
+  const renderSelectedLootDetail = () => {
+    if (!selectedLoot || !snapshot) {
+      return null;
+    }
+    return (
+      <section className="popup-section detail-shell">
+        <div className="detail-card compact-detail-card">
+          <img src={assetUrl(selectedLoot.artPath)} alt={selectedLoot.name} className="detail-art" />
+          <div className="detail-copy">
+            <strong>{selectedLoot.name} · {formatRarity(selectedLoot.rarity)}</strong>
+            <p className="panel-copy flavor-copy small-copy">{selectedLoot.flavorText}</p>
+            <p className="panel-copy small-copy">{selectedLoot.effectText}</p>
           </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  return (
-    <main className="shell">
-      <section className="hero compact-hero">
-        <div className="hero-copy">
-          <p className="eyebrow">Sauna Defense V2</p>
-          <h1>Hold the sauna.</h1>
-          <p className="hero-mini-copy">Bigger lanes, smaller UI, same weird heat.</p>
+        </div>
+        <div className="button-row tight">
+          <button
+            className="mini-button"
+            disabled={!snapshot.hud.canAutoAssignSelectedLoot}
+            onClick={() => dispatch({ type: 'autoAssignInventoryDrop', dropId: selectedLoot.id })}
+          >
+            Auto Assign
+          </button>
+          <button
+            className="mini-button"
+            disabled={!selectedDefender}
+            onClick={() =>
+              selectedDefender &&
+              dispatch({
+                type: 'equipInventoryDrop',
+                dropId: selectedLoot.id,
+                defenderId: selectedDefender.id
+              })
+            }
+          >
+            Equip To Selected
+          </button>
+          <button
+            className="ghost-button"
+            onClick={() => dispatch({ type: 'sellInventoryDrop', dropId: selectedLoot.id })}
+          >
+            Sell For {selectedLoot.sellPrice} Steam
+          </button>
+          <button className="ghost-button" onClick={() => dispatch({ type: 'clearSelectedInventoryDrop' })}>
+            Clear
+          </button>
         </div>
       </section>
+    );
+  };
 
-      <section className="playfield">
-        <div className="arena-column">
-          {snapshot ? (
-            <>
-              <section className="panel map-header-panel compact-header">
-                <div className="run-strip">
-                  <div className="run-stat-list">
-                    <div className="run-stat">
-                      <span>Wave</span>
-                      <strong>{snapshot.hud.waveNumber}</strong>
-                    </div>
-                    <div className="run-stat">
-                      <span>Board</span>
-                      <strong>{snapshot.hud.placedBoardLabel}</strong>
-                    </div>
-                    <div className="run-stat">
-                      <span>SISU</span>
-                      <strong>{snapshot.hud.sisu}</strong>
-                    </div>
-                    <div className="run-stat">
-                      <span>Steam</span>
-                      <strong>{snapshot.hud.steamEarned}</strong>
-                    </div>
-                    <div className="run-stat">
-                      <span>Sauna HP</span>
-                      <strong>{snapshot.hud.saunaHp}/{snapshot.hud.maxSaunaHp}</strong>
-                    </div>
-                    <div className="run-stat">
-                      <span>Sauna</span>
-                      <strong>{snapshot.hud.saunaOccupancyLabel}</strong>
-                    </div>
-                  </div>
-                  <div className="header-actions">
-                    <button
-                      className="ghost-button"
-                      onClick={() => {
-                        setGuideStep(null);
-                        runtimeRef.current?.dispatch({ type: 'openIntro' });
-                      }}
-                    >
-                      Help
-                    </button>
-                    <button
-                      className={inventoryOpen ? 'secondary-button' : 'ghost-button'}
-                      disabled={!inventoryUnlocked}
-                      onClick={() => runtimeRef.current?.dispatch({ type: 'toggleInventory' })}
-                    >
-                      {inventoryUnlocked
-                        ? `Stash ${snapshot.hud.inventoryCount}/${snapshot.hud.inventoryCap}`
-                        : 'Stash Locked'}
-                      {hasRecentLoot ? ' · New' : ''}
-                    </button>
-                    <button
-                      className={recruitmentOpen ? 'secondary-button' : 'ghost-button'}
-                      disabled={!snapshot.hud.canOpenRecruitment}
-                      onClick={() => runtimeRef.current?.dispatch({ type: 'toggleRecruitment' })}
-                    >
-                      Recruit
-                    </button>
-                    <button
-                      className={isPaused ? 'secondary-button' : 'ghost-button'}
-                      disabled={!snapshot.hud.canPause}
-                      onClick={() => runtimeRef.current?.dispatch({ type: 'togglePause' })}
-                    >
-                      {isPaused ? 'Resume' : 'Pause'}
-                    </button>
-                  </div>
+  const renderSelectionCard = () => {
+    if (!snapshot || (!selectedDefender && !selectedSauna)) {
+      return null;
+    }
+    return (
+      <section className="selection-card popup-card">
+        <div className="popup-head">
+          <h2>{selectedSauna ? 'Sauna Reserve' : 'Selected Hero'}</h2>
+          <button className="ghost-button small-ghost" onClick={() => dispatch({ type: 'clearSelection' })}>
+            Close
+          </button>
+        </div>
+        {selectedSauna ? (
+          <>
+            <strong>{selectedSauna.occupantName ? `${selectedSauna.occupantName} ${selectedSauna.occupantTitle}` : 'Sauna empty'}</strong>
+            <small>{selectedSauna.occupantRole ?? 'No reserve hero inside.'}</small>
+            {selectedSauna.occupantName ? (
+              <>
+                <div className="mini-tag-row">
+                  <span className="mini-tag">HP {selectedSauna.occupantHp}/{selectedSauna.occupantMaxHp}</span>
+                  <span className="mini-tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy ready' : 'Auto Deploy locked'}</span>
+                  <span className="mini-tag">{selectedSauna.slapSwapUnlocked ? 'Slap Swap ready' : 'Slap Swap locked'}</span>
                 </div>
-                <div className="tag-row compact-tags">
-                  <span className="tag">{snapshot.hud.nextWaveThreat}</span>
-                  <span className="tag">{snapshot.hud.nextWavePattern}</span>
-                  <span className="tag">{snapshot.hud.placedBoardLabel}</span>
-                  {snapshot.hud.pressureSignals.map((signal) => (
-                    <span key={signal} className="tag warning-tag">{signal}</span>
+                <p className="panel-copy small-copy">{selectedSauna.occupantLore}</p>
+              </>
+            ) : (
+              <p className="panel-copy small-copy">Send one board hero here during prep to create a reserve.</p>
+            )}
+          </>
+        ) : selectedDefender ? (
+          <>
+            <strong>
+              {selectedDefender.name} <em>{selectedDefender.title}</em>
+            </strong>
+            <small>{selectedDefender.templateName} · {selectedDefender.subclassName} · {formatLocationLabel(selectedDefender.location)}</small>
+            <p className="panel-copy small-copy">{selectedDefender.lore}</p>
+            <div className="mini-tag-row">
+              <span className="mini-tag">HP {selectedDefender.hp}/{selectedDefender.maxHp}</span>
+              <span className="mini-tag">ATK {selectedDefender.damage}</span>
+              <span className="mini-tag">Heal {selectedDefender.heal}</span>
+              <span className="mini-tag">Range {selectedDefender.range}</span>
+              <span className="mini-tag">DEF {selectedDefender.defense}</span>
+              <span className="mini-tag">Regen {selectedDefender.regenHpPerSecond}/s</span>
+            </div>
+            <p className="panel-copy small-copy">{selectedDefender.subclassDescription}</p>
+            <div className="mini-tag-row">
+              <span className="mini-tag">
+                XP {selectedDefender.xp}
+                {selectedDefender.nextLevelXp !== null ? ` / ${selectedDefender.nextLevelXp}` : ' · Max'}
+              </span>
+              <span className="mini-tag">Items {selectedDefender.items.length}/{selectedDefender.itemSlotCount}</span>
+              <span className="mini-tag">Skills {selectedDefender.skills.length}/{selectedDefender.skillSlotCount}</span>
+              {selectedDefender.blinkLabel ? <span className="mini-tag">{selectedDefender.blinkLabel}</span> : null}
+            </div>
+            {(selectedDefender.items.length > 0 || selectedDefender.skills.length > 0) ? (
+              <div className="popup-list">
+                {selectedDefender.items.map((item) => (
+                  <div key={item.id} className="popup-card loadout-row">
+                    <span>{item.name}</span>
+                    <button
+                      className="ghost-button small-ghost"
+                      onClick={() =>
+                        dispatch({
+                          type: 'destroyEquippedItem',
+                          defenderId: selectedDefender.id,
+                          itemId: item.id
+                        })
+                      }
+                    >
+                      Destroy
+                    </button>
+                  </div>
+                ))}
+                {selectedDefender.skills.map((skill) => (
+                  <div key={skill.id} className="popup-card loadout-row">
+                    <span>{skill.name}</span>
+                    <button
+                      className="ghost-button small-ghost"
+                      onClick={() =>
+                        dispatch({
+                          type: 'destroyEquippedSkill',
+                          defenderId: selectedDefender.id,
+                          skillId: skill.id
+                        })
+                      }
+                    >
+                      Forget
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {selectedDefender.location === 'board' && snapshot.state.phase === 'prep' && !snapshot.state.saunaDefenderId ? (
+              <button
+                className="mini-button"
+                onClick={() => dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })}
+              >
+                Send To Sauna
+              </button>
+            ) : null}
+          </>
+        ) : null}
+      </section>
+    );
+  };
+
+  const renderPanelPopup = () => {
+    if (!snapshot || !activePanel) {
+      return null;
+    }
+
+    const popupStyle = (activePanel === 'beer_shop' || activePanel === 'metashop')
+      ? getLandmarkPopupStyle(snapshot, frameSize, activeLandmark)
+      : undefined;
+    const popupClassName = (activePanel === 'beer_shop' || activePanel === 'metashop')
+      ? 'board-popup board-popup-landmark'
+      : 'board-popup board-popup-utility';
+
+    let title = '';
+    let subtitle = '';
+    let content: ReactNode = null;
+
+    if (activePanel === 'modifiers') {
+      title = 'Global Modifiers';
+      subtitle = globalModifiers.length > 0 ? `${globalModifiers.length} active` : 'No active modifiers';
+      content = globalModifiers.length > 0 ? (
+        <div className="popup-list">
+          {globalModifiers.map((modifier) => (
+            <div key={modifier.id} className="popup-card modifier-card">
+              <strong>{modifier.name}</strong>
+              <small>{modifier.description}</small>
+              <small>{modifier.formulaText}</small>
+              <div className="mini-tag-row">
+                <span className="mini-tag">{modifier.stackCount} stacks</span>
+                <span className="mini-tag">{modifier.resolvedEffectText}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : <p className="panel-copy small-copy">First boss kill opens a three-card modifier draft.</p>;
+    } else if (activePanel === 'roster') {
+      title = 'Roster And Bench';
+      subtitle = `${snapshot.hud.rosterCount}/${snapshot.hud.rosterCap} living heroes`;
+      content = (
+        <div className="popup-scroll-stack">
+          <section className="popup-section">
+            <div className="section-head">
+              <strong>Board</strong>
+              <span>{boardEntries.length}</span>
+            </div>
+            {renderRosterCards(boardEntries, 'No defenders on the board right now.')}
+          </section>
+          <section className="popup-section">
+            <div className="section-head">
+              <strong>Bench</strong>
+              <span>{readyEntries.length}</span>
+            </div>
+            {renderRosterCards(readyEntries, 'No bench defenders waiting.')}
+          </section>
+          <section className="popup-section">
+            <div className="section-head">
+              <strong>Death Log</strong>
+              <span>{deathLogEntries.length}</span>
+            </div>
+            {deathLogEntries.length > 0 ? (
+              <div className="popup-list">
+                {deathLogEntries.map((entry) => (
+                  <div key={entry.id} className="popup-card">
+                    <strong>Wave {entry.wave}</strong>
+                    <small>{entry.heroName}</small>
+                    <small>{entry.text}</small>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="panel-copy small-copy">No heroes have fallen this run.</p>}
+          </section>
+        </div>
+      );
+    } else if (activePanel === 'loot') {
+      title = 'Loot And Stash';
+      subtitle = snapshot.hud.inventoryUnlocked
+        ? `Stash ${snapshot.hud.inventoryCount}/${snapshot.hud.inventoryCap}`
+        : 'Overflow stash locked';
+      content = (
+        <div className="popup-scroll-stack">
+          {renderLootRow('Header Items', headerItemEntries, 'No item drops waiting in the header.')}
+          {renderLootRow('Header Skills', headerSkillEntries, 'No skill drops waiting in the header.')}
+          <section className="popup-section">
+            <div className="section-head">
+              <strong>Overflow Stash</strong>
+              <span>{snapshot.hud.inventoryCount}/{snapshot.hud.inventoryCap}</span>
+            </div>
+            {snapshot.hud.inventoryUnlocked ? (
+              inventoryEntries.length > 0 ? (
+                <div className="loot-chip-grid">
+                  {inventoryEntries.map((entry) => (
+                    <button
+                      key={entry.id}
+                      className={entry.selected ? 'loot-chip selected' : 'loot-chip'}
+                      onClick={() =>
+                        dispatch(
+                          entry.selected
+                            ? { type: 'clearSelectedInventoryDrop' }
+                            : { type: 'selectInventoryDrop', dropId: entry.id }
+                        )
+                      }
+                    >
+                      <img src={assetUrl(entry.artPath)} alt={entry.name} className="loot-chip-art" />
+                      <div className="loot-chip-copy">
+                        <strong>{entry.name}</strong>
+                        <small>{entry.effectText}</small>
+                      </div>
+                      {entry.isRecent ? <span className="loot-pill">New</span> : null}
+                    </button>
                   ))}
                 </div>
-                <div className="header-loot-stage">
-                  {renderHeaderLootRow('Items', headerItemEntries, snapshot.config.headerItemCap)}
-                  {renderHeaderLootRow('Skills', headerSkillEntries, snapshot.config.headerSkillCap)}
-                  {!inventoryUnlocked ? (
-                    <p className="panel-copy small-copy">
-                      Overflow Stash is still locked. Extra loot is lost until you buy the metashop upgrade.
-                    </p>
-                  ) : null}
-                  {selectedLoot ? (
-                    <div className="detail-card compact-header-loot-detail">
-                      <img src={assetUrl(selectedLoot.artPath)} alt={selectedLoot.name} className="detail-art compact-detail-art" />
-                      <div className="detail-copy">
-                        <strong>{selectedLoot.name} · {formatRarity(selectedLoot.rarity)}</strong>
-                        <p className="panel-copy flavor-copy small-copy">{selectedLoot.flavorText}</p>
-                        <p className="panel-copy small-copy">{selectedLoot.effectText}</p>
-                      </div>
-                      <div className="button-row tight compact-loot-actions">
-                        <button
-                          className="mini-button"
-                          disabled={!snapshot.hud.canAutoAssignSelectedLoot}
-                          onClick={() =>
-                            runtimeRef.current?.dispatch({
-                              type: 'autoAssignInventoryDrop',
-                              dropId: selectedLoot.id
-                            })
-                          }
-                        >
-                          Auto Assign
-                        </button>
-                        <button
-                          className="mini-button"
-                          disabled={!selectedDefender}
-                          onClick={() =>
-                            selectedDefender &&
-                            runtimeRef.current?.dispatch({
-                              type: 'equipInventoryDrop',
-                              dropId: selectedLoot.id,
-                              defenderId: selectedDefender.id
-                            })
-                          }
-                        >
-                          Equip To Selected
-                        </button>
-                        <button
-                          className="ghost-button"
-                          onClick={() =>
-                            runtimeRef.current?.dispatch({
-                              type: 'sellInventoryDrop',
-                              dropId: selectedLoot.id
-                            })
-                          }
-                        >
-                          Sell For {selectedLoot.sellPrice} Steam
-                        </button>
-                        <button
-                          className="ghost-button"
-                          onClick={() => runtimeRef.current?.dispatch({ type: 'clearSelectedInventoryDrop' })}
-                        >
-                          Clear
-                        </button>
-                      </div>
+              ) : <p className="panel-copy small-copy">No overflow loot stored.</p>
+            ) : <p className="panel-copy small-copy">Buy the Overflow Stash upgrade from the metashop to keep extra loot.</p>}
+          </section>
+          {renderSelectedLootDetail()}
+        </div>
+      );
+    } else if (activePanel === 'recruit') {
+      title = 'Recruitment Market';
+      subtitle = snapshot.hud.recruitmentStatusText;
+      content = (
+        <div className="popup-scroll-stack">
+          <section className="popup-section">
+            <div className="mini-tag-row">
+              <span className="mini-tag">Board {snapshot.hud.boardCount}/{snapshot.hud.boardCap}</span>
+              <span className="mini-tag">Bench {snapshot.hud.readyBenchCount}</span>
+              <span className="mini-tag">SISU {snapshot.hud.sisu}</span>
+              <span className="mini-tag">Recruit Lvl +{snapshot.hud.recruitLevelBonus}</span>
+            </div>
+            <div className="button-row tight">
+              <button
+                className="mini-button"
+                disabled={!snapshot.hud.canRollRecruitOffers}
+                onClick={() => dispatch({ type: 'rerollRecruitOffers' })}
+              >
+                {snapshot.hud.hasRecruitOffers ? 'Reroll 3 Offers' : 'Roll 3 Offers'} ({snapshot.hud.recruitRollCost} SISU)
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!snapshot.hud.canLevelUpRecruitment}
+                onClick={() => dispatch({ type: 'levelUpRecruitment' })}
+              >
+                Recruit Level Up ({snapshot.hud.recruitLevelUpCost} SISU)
+              </button>
+              {snapshot.hud.hasRecruitOffers ? (
+                <button className="ghost-button" onClick={() => dispatch({ type: 'clearRecruitOffers' })}>
+                  Clear Offers
+                </button>
+              ) : null}
+            </div>
+          </section>
+          <section className="popup-section">
+            <div className="section-head">
+              <strong>Current Offers</strong>
+              <span>{snapshot.hud.recruitOffers.length}</span>
+            </div>
+            {snapshot.hud.recruitOffers.length > 0 ? (
+              <div className="popup-list">
+                {snapshot.hud.recruitOffers.map((offer) => (
+                  <div key={offer.id} className={`popup-card offer-card offer-${offer.quality}`}>
+                    <div className="unit-row-top">
+                      <strong>
+                        {offer.name} <em>{offer.title}</em>
+                      </strong>
+                      <span className="mini-tag">{offer.quality}</span>
                     </div>
-                  ) : null}
-                </div>
-              </section>
-
-              {recruitmentOpen ? (
-                <section className="panel recruitment-drawer-panel">
-                  <div className="panel-head">
-                    <h2>Recruitment Market</h2>
-                    <div className="header-actions">
-                      <span>{openRecruitSlots > 0 ? `${openRecruitSlots} open slots` : 'Full roster'}</span>
-                      <button
-                        className="ghost-button"
-                        onClick={() => runtimeRef.current?.dispatch({ type: 'toggleRecruitment' })}
-                      >
-                        Close
-                      </button>
+                    <small>{offer.roleName} · {offer.subclassName}</small>
+                    <small>{offer.lore}</small>
+                    <div className="mini-tag-row">
+                      <span className="mini-tag">Lvl {offer.level}</span>
+                      <span className="mini-tag">HP {offer.hp}</span>
+                      <span className="mini-tag">ATK {offer.damage}</span>
+                      <span className="mini-tag">Heal {offer.heal}</span>
+                      <span className="mini-tag">Range {offer.range}</span>
                     </div>
-                  </div>
-                  <div className="run-stat-list recruit-summary-list">
-                    <div className="run-stat">
-                      <span>Board</span>
-                      <strong>{snapshot.hud.boardCount}</strong>
-                    </div>
-                    <div className="run-stat">
-                      <span>Bench</span>
-                      <strong>{snapshot.hud.readyBenchCount}</strong>
-                    </div>
-                    <div className="run-stat">
-                      <span>Sauna</span>
-                      <strong>{snapshot.hud.saunaOccupancyLabel}</strong>
-                    </div>
-                    <div className="run-stat">
-                      <span>Open Roster Slots</span>
-                      <strong>{snapshot.hud.freeRecruitSlots}</strong>
-                    </div>
-                    <div className="run-stat">
-                      <span>SISU</span>
-                      <strong>{snapshot.hud.sisu}</strong>
-                    </div>
-                    <div className="run-stat">
-                      <span>Recruit Level</span>
-                      <strong>+{snapshot.hud.recruitLevelBonus}</strong>
-                    </div>
-                  </div>
-                  <p className="panel-copy small-copy">{snapshot.hud.recruitmentStatusText}</p>
-                  <div className="tag-row compact-tags">
-                    {snapshot.hud.recruitLevelOdds.map((entry) => (
-                      <span key={entry.level} className="tag">
-                        Lv{entry.level} {Math.round(entry.chance * 100)}%
-                      </span>
-                    ))}
-                  </div>
-                  {rosterFullNeedsReplacement ? (
-                    <div className="tag-row compact-tags">
-                      <span className="tag">
-                        {recruitReplacementName
-                          ? `Replacing ${recruitReplacementName}`
-                          : 'Select a roster hero or sauna reserve to replace'}
-                      </span>
-                    </div>
-                  ) : boardFullButBenchAvailable ? (
-                    <div className="tag-row compact-tags">
-                      <span className="tag">Board full: new recruits still join Bench Reserves</span>
-                    </div>
-                  ) : null}
-                  {snapshot.hud.hasRecruitOffers ? (
-                    <div className="offer-list compact-offer-list">
-                      {snapshot.hud.recruitOffers.map((offer) => (
-                        <div key={offer.id} className={`offer-card offer-${offer.quality}`}>
-                          <div className="offer-head">
-                            <div>
-                              <strong>{offer.name} <em>{offer.title}</em></strong>
-                              <small>Level {offer.level} · {offer.subclassName} · {offer.roleName}</small>
-                            </div>
-                            <span className="tag">{offer.price} SISU</span>
-                          </div>
-                          <p className="panel-copy small-copy">{offer.roleSummary}</p>
-                          <p className="panel-copy flavor-copy small-copy">{offer.lore}</p>
-                          <div className="tag-row compact-tags">
-                            <span className="tag">HP {offer.hp}</span>
-                            <span className="tag">ATK {offer.damage}</span>
-                            <span className="tag">Heal {offer.heal}</span>
-                            <span className="tag">Range {offer.range}</span>
-                          </div>
-                          <button
-                            className="mini-button"
-                            disabled={snapshot.hud.sisu < offer.price || (rosterFullNeedsReplacement && !recruitReplacementName)}
-                            onClick={() => runtimeRef.current?.dispatch({ type: 'recruitOffer', offerId: offer.id })}
-                          >
-                            {!rosterFullNeedsReplacement
-                              ? `Recruit to Bench (${offer.price})`
-                              : recruitReplacementName
-                                ? `Replace ${recruitReplacementName} (${offer.price})`
-                                : `Pick Replacement (${offer.price})`}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="recruitment-empty">
-                      <p className="panel-copy small-copy">
-                        Reroll three named weirdos at a time, compare levels and vibes, then recruit exactly one.
-                      </p>
-                      <div className="open-slot-list compact-offer-list">
-                        {Array.from({ length: 3 }).map((_, index) => (
-                          <div key={index} className="open-slot-card">
-                            <strong>Offer Slot</strong>
-                            <small>Reroll candidates to fill this lane-holding vacancy.</small>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div className="button-row tight">
-                    <button
-                      className="secondary-button"
-                      disabled={!snapshot.hud.canRollRecruitOffers}
-                      onClick={() => runtimeRef.current?.dispatch({ type: 'rerollRecruitOffers' })}
-                    >
-                      Reroll ({snapshot.hud.recruitRollCost} SISU)
+                    <button className="mini-button" onClick={() => dispatch({ type: 'recruitOffer', offerId: offer.id })}>
+                      Recruit For {offer.price} SISU
                     </button>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="panel-copy small-copy">No candidates waiting. Roll the market to scout three new heroes.</p>}
+          </section>
+        </div>
+      );
+    } else if (activePanel === 'beer_shop') {
+      title = 'Beer Shop';
+      subtitle = activeLandmark?.statusText ?? 'Risky run-long booze with visible regret.';
+      content = (
+        <div className="popup-scroll-stack">
+          <section className="popup-section">
+            <div className="mini-tag-row">
+              <span className="mini-tag">Steam {snapshot.hud.bankedSteam}</span>
+              <span className="mini-tag">Shop Level {snapshot.hud.beerShopLevel}</span>
+              <span className="mini-tag">Active {snapshot.hud.beerActiveSlotCount}/{snapshot.hud.beerActiveSlotCap}</span>
+            </div>
+          </section>
+          <section className="popup-section">
+            <div className="section-head">
+              <strong>On Tap</strong>
+              <span>{snapshot.hud.beerShopOffers.length}</span>
+            </div>
+            {snapshot.hud.beerShopOffers.length > 0 ? (
+              <div className="popup-list">
+                {snapshot.hud.beerShopOffers.map((offer) => (
+                  <div key={offer.id} className="popup-card">
+                    <div className="detail-card compact-detail-card">
+                      <img src={assetUrl(offer.artPath)} alt={offer.name} className="detail-art small-detail-art" />
+                      <div className="detail-copy">
+                        <strong>{offer.name}</strong>
+                        <small>{offer.flavorText}</small>
+                        <small>{offer.positiveEffectText}</small>
+                        <small>{offer.negativeEffectText}</small>
+                      </div>
+                    </div>
+                    <button
+                      className="mini-button"
+                      disabled={!offer.canBuy}
+                      onClick={() => dispatch({ type: 'buyBeerShopOffer', offerId: offer.id })}
+                    >
+                      {offer.purchaseLabel}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="panel-copy small-copy">No drinks unlocked yet.</p>}
+          </section>
+          <section className="popup-section">
+            <div className="section-head">
+              <strong>Active Drinks</strong>
+              <span>{snapshot.hud.activeAlcohols.length}</span>
+            </div>
+            {snapshot.hud.activeAlcohols.length > 0 ? (
+              <div className="popup-list">
+                {snapshot.hud.activeAlcohols.map((drink) => (
+                  <div key={drink.alcoholId} className="popup-card">
+                    <div className="detail-card compact-detail-card">
+                      <img src={assetUrl(drink.artPath)} alt={drink.name} className="detail-art small-detail-art" />
+                      <div className="detail-copy">
+                        <strong>{drink.name}</strong>
+                        <small>Stacks {drink.stacks}</small>
+                        <small>{drink.positiveEffectText}</small>
+                        <small>{drink.negativeEffectText}</small>
+                      </div>
+                    </div>
                     <button
                       className="ghost-button"
-                      disabled={!snapshot.hud.canLevelUpRecruitment}
-                      onClick={() => runtimeRef.current?.dispatch({ type: 'levelUpRecruitment' })}
+                      onClick={() => dispatch({ type: 'removeActiveAlcohol', alcoholId: drink.alcoholId })}
                     >
-                      Level Up ({snapshot.hud.recruitLevelUpCost} SISU)
+                      Dump Out
                     </button>
                   </div>
-                </section>
-              ) : null}
-            </>
-          ) : null}
-
-          <div className="arena-stage">
-            <div className="arena-left-rail">
-              <section className="panel selected-panel selected-panel-compact">
-                <div className="panel-head">
-                  <h2>{selectedSauna ? 'Selected Sauna' : 'Selected Hero'}</h2>
-                  <span>{selectedSauna ? selectedSauna.occupancyLabel : selectedDefender ? formatLocationLabel(selectedDefender.location) : 'No selection'}</span>
-                </div>
-                {selectedSauna ? (
-                  <div className="detail-card hero-detail">
-                    <div className="detail-copy">
-                      <strong>Sauna Reserve</strong>
-                      <small>Occupancy {selectedSauna.occupancyLabel}</small>
-                      <p className="panel-copy flavor-copy small-copy">
-                        {selectedSauna.occupantName
-                          ? `${selectedSauna.occupantName} ${selectedSauna.occupantTitle} is warming up inside.`
-                          : 'Nobody is inside right now.'}
-                      </p>
-                    </div>
-                    {selectedSauna.occupantName ? (
-                      <>
-                        <div className="metric-grid compact compact-metrics">
-                          <div>
-                            <span>Hero</span>
-                            <strong>{selectedSauna.occupantName}</strong>
-                          </div>
-                          <div>
-                            <span>Role</span>
-                            <strong>{selectedSauna.occupantRole}</strong>
-                          </div>
-                          <div>
-                            <span>HP</span>
-                            <strong>{selectedSauna.occupantHp}/{selectedSauna.occupantMaxHp}</strong>
-                          </div>
-                        </div>
-                        <p className="panel-copy small-copy">{selectedSauna.occupantLore}</p>
-                      </>
-                    ) : null}
-                    <div className="tag-row compact-tags">
-                      <span className="tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy armed' : 'Auto Deploy locked'}</span>
-                      <span className="tag">{selectedSauna.slapSwapUnlocked ? 'Slap Swap armed' : 'Slap Swap locked'}</span>
-                    </div>
-                  </div>
-                ) : selectedDefender ? (
-                  <div className="detail-card hero-detail">
-                    <div className="detail-copy">
-                      <strong>
-                        {selectedDefender.name} <em>{selectedDefender.title}</em>
-                      </strong>
-                      <small>Level {selectedDefender.level} · {selectedDefender.subclassName} · {selectedDefender.templateName}</small>
-                      <p className="panel-copy flavor-copy small-copy">{selectedDefender.lore}</p>
-                      <p className="panel-copy small-copy">{selectedDefender.subclassDescription}</p>
-                    </div>
-                    <div className="metric-grid compact compact-metrics">
-                      <div>
-                        <span>HP</span>
-                        <strong>{selectedDefender.hp}/{selectedDefender.maxHp}</strong>
-                      </div>
-                      <div>
-                        <span>ATK</span>
-                        <strong>{selectedDefender.damage}</strong>
-                      </div>
-                      <div>
-                        <span>Heal</span>
-                        <strong>{selectedDefender.heal}</strong>
-                      </div>
-                      <div>
-                        <span>Range</span>
-                        <strong>{selectedDefender.range}</strong>
-                      </div>
-                      <div>
-                        <span>DEF</span>
-                        <strong>{selectedDefender.defense}</strong>
-                      </div>
-                      <div>
-                        <span>Regen</span>
-                        <strong>{selectedDefender.regenHpPerSecond}/s</strong>
-                      </div>
-                    </div>
-                    <p className="panel-copy small-copy">
-                      Attack cooldown: {selectedDefender.attackCooldownMs} ms
-                    </p>
-                    <div className="tag-row compact-tags">
-                      <span className="tag">
-                        XP {selectedDefender.xp}
-                        {selectedDefender.nextLevelXp !== null ? ` / ${selectedDefender.nextLevelXp}` : ' · Max'}
-                      </span>
-                      <span className="tag">Items {selectedDefender.items.length}/{selectedDefender.itemSlotCount}</span>
-                      <span className="tag">Skills {selectedDefender.skills.length}/{selectedDefender.skillSlotCount}</span>
-                      {selectedDefender.blinkLabel ? <span className="tag">{selectedDefender.blinkLabel}</span> : null}
-                      <span className="tag">
-                        {selectedDefender.nextSubclassUnlockLevel !== null
-                          ? `${selectedDefender.xpToNextBranch ?? 0} XP to branch at Lv ${selectedDefender.nextSubclassUnlockLevel}`
-                          : 'All branches unlocked'}
-                      </span>
-                      {selectedDefender.items.length === 0 && selectedDefender.skills.length === 0 ? (
-                        <span className="tag loadout-tag">Empty loadout</span>
-                      ) : null}
-                    </div>
-                    {(selectedDefender.items.length > 0 || selectedDefender.skills.length > 0) ? (
-                      <div className="equipped-loadout-list">
-                        {selectedDefender.items.map((item) => (
-                          <div key={item.id} className="equipped-loadout-row">
-                            <span className="tag loadout-tag">{item.name}</span>
-                            <button
-                              className="ghost-button loadout-action"
-                              onClick={() =>
-                                runtimeRef.current?.dispatch({
-                                  type: 'destroyEquippedItem',
-                                  defenderId: selectedDefender.id,
-                                  itemId: item.id
-                                })
-                              }
-                            >
-                              Destroy
-                            </button>
-                          </div>
-                        ))}
-                        {selectedDefender.skills.map((skill) => (
-                          <div key={skill.id} className="equipped-loadout-row">
-                            <span className="tag loadout-tag">{skill.name}</span>
-                            <button
-                              className="ghost-button loadout-action"
-                              onClick={() =>
-                                runtimeRef.current?.dispatch({
-                                  type: 'destroyEquippedSkill',
-                                  defenderId: selectedDefender.id,
-                                  skillId: skill.id
-                                })
-                              }
-                            >
-                              Forget
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                    {selectedDefender.location === 'board' && snapshot?.state.phase === 'prep' && !snapshot?.state.saunaDefenderId ? (
-                      <button
-                        className="mini-button"
-                        onClick={() =>
-                          runtimeRef.current?.dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })
-                        }
-                      >
-                        Send To Sauna
-                      </button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <p className="panel-copy small-copy">
-                    Pick a hero or click the sauna to inspect reserves, stats and upgrades.
-                  </p>
-                )}
-              </section>
-
-              <section className="panel bench-panel">
-                <div className="panel-head">
-                  <h2>Bench Reserves</h2>
-                  <span>{readyEntries.length}</span>
-                </div>
-                <p className="panel-copy small-copy">
-                  Ready heroes waiting beside the board. Select one, then place them on a green build hex.
-                </p>
-                {renderRosterGroup('Bench Reserves', readyEntries, 'No recruited defenders waiting on the bench.')}
-              </section>
-            </div>
-
-            <div className="canvas-frame">
-              <canvas
-                ref={canvasRef}
-                className="battle-canvas"
-                onPointerMove={handlePointerMove}
-                onPointerLeave={handlePointerLeave}
-                onPointerDown={handlePointerDown}
-              />
-              {selectedSauna ? (
-                <div className="sauna-popup">
-                  <div className="panel sauna-popup-card">
-                    <div className="panel-head">
-                      <h2>Sauna</h2>
-                      <div className="header-actions">
-                        <span>{selectedSauna.occupancyLabel}</span>
-                        <button
-                          className="ghost-button"
-                          onClick={() => runtimeRef.current?.dispatch({ type: 'closeSaunaPopup' })}
-                        >
-                          Close
-                        </button>
-                      </div>
-                    </div>
-                    {selectedSauna.occupantName ? (
-                      <>
-                        <strong>
-                          {selectedSauna.occupantName} <em>{selectedSauna.occupantTitle}</em>
-                        </strong>
-                        <small>{selectedSauna.occupantRole}</small>
-                        <small>HP {selectedSauna.occupantHp}/{selectedSauna.occupantMaxHp}</small>
-                        <p className="panel-copy small-copy">{selectedSauna.occupantLore}</p>
-                      </>
-                    ) : (
-                      <p className="panel-copy small-copy">Sauna is empty. Send one board hero here during prep to create a reserve.</p>
-                    )}
-                    <div className="tag-row compact-tags">
-                      <span className="tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy ready' : 'Auto Deploy locked'}</span>
-                      <span className="tag">{selectedSauna.slapSwapUnlocked ? 'Slap Swap ready' : 'Slap Swap locked'}</span>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
+                ))}
+              </div>
+            ) : <p className="panel-copy small-copy">No active drinks. Buy one now and it applies immediately.</p>}
+          </section>
         </div>
+      );
+    } else if (activePanel === 'metashop') {
+      title = 'Metashop';
+      subtitle = activeLandmark?.statusText ?? 'Permanent between-run upgrades.';
+      content = (
+        <div className="popup-scroll-stack">
+          {!snapshot.hud.metaShopUnlocked ? (
+            <section className="popup-section">
+              <div className="popup-card">
+                <strong>Grand Opening</strong>
+                <small>Unlock the metashop once and keep it available in future runs.</small>
+                <small>Cost {snapshot.hud.metaShopUnlockCost} Steam</small>
+                <button
+                  className="mini-button"
+                  disabled={!snapshot.hud.canUnlockMetaShop || !snapshot.hud.showIntermission}
+                  onClick={() => dispatch({ type: 'unlockMetaShop' })}
+                >
+                  {snapshot.hud.showIntermission ? 'Open The Shop' : 'Between Runs Only'}
+                </button>
+              </div>
+            </section>
+          ) : (
+            <section className="popup-section">
+              <div className="mini-tag-row">
+                <span className="mini-tag">Banked Steam {snapshot.hud.bankedSteam}</span>
+                <span className="mini-tag">{snapshot.hud.showIntermission ? 'Purchases enabled' : 'Between runs only'}</span>
+              </div>
+              <div className="popup-list">
+                {snapshot.hud.metaUpgrades.map((upgrade) => (
+                  <div key={upgrade.id} className="popup-card">
+                    <div className="unit-row-top">
+                      <strong>{upgrade.name}</strong>
+                      <span className="mini-tag">Lvl {upgrade.level}</span>
+                    </div>
+                    <small>{upgrade.description}</small>
+                    <button
+                      className="mini-button"
+                      disabled={!snapshot.hud.showIntermission || !upgrade.affordable || upgrade.maxed}
+                      onClick={() => dispatch({ type: 'buyMetaUpgrade', upgradeId: upgrade.id })}
+                    >
+                      {upgrade.maxed ? 'Maxed' : `Buy${upgrade.cost !== null ? ` (${upgrade.cost} Steam)` : ''}`}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      );
+    }
 
-        <aside className="sidebar action-rail">
-          {snapshot ? (
-            <>
-              <section className="panel action-panel">
-                <div className="panel-head">
+    return (
+      <section className={popupClassName} style={popupStyle}>
+        <div className="popup-head">
+          <div>
+            <h2>{title}</h2>
+            <p className="panel-copy small-copy">{subtitle}</p>
+          </div>
+          <button className="ghost-button small-ghost" onClick={() => dispatch({ type: 'closeHudPanel' })}>
+            Close
+          </button>
+        </div>
+        {content}
+      </section>
+    );
+  };
+
+  const utilityButtons: Array<{ id: HudPanelId; label: string; badge: string | null; disabled?: boolean }> = snapshot ? [
+    { id: 'modifiers', label: 'Modifiers', badge: globalModifiers.length > 0 ? `${globalModifiers.length}` : null },
+    { id: 'roster', label: 'Roster', badge: `${snapshot.hud.rosterCount}` },
+    {
+      id: 'loot',
+      label: snapshot.hud.inventoryUnlocked ? 'Loot / Stash' : 'Loot',
+      badge: snapshot.hud.hasRecentLoot ? 'New' : (snapshot.hud.inventoryUnlocked ? `${snapshot.hud.inventoryCount}` : null)
+    },
+    { id: 'recruit', label: 'Recruit', badge: snapshot.hud.hasRecruitOffers ? `${snapshot.hud.recruitOffers.length}` : null, disabled: !snapshot.hud.canOpenRecruitment }
+  ] : [];
+
+  return (
+    <main className="shell board-shell">
+      <section className="board-stage">
+        {snapshot ? (
+          <div className="canvas-frame board-canvas-frame" ref={frameRef}>
+            <canvas
+              ref={canvasRef}
+              className="battle-canvas"
+              onPointerMove={handlePointerMove}
+              onPointerLeave={handlePointerLeave}
+              onPointerDown={handlePointerDown}
+            />
+
+            <header className="hud-topbar">
+              <div className="hud-brand">
+                <p className="eyebrow">Sauna Defense V2</p>
+                <strong>{snapshot.hud.phaseLabel}</strong>
+              </div>
+              <div className="topbar-stats">
+                <div className="topbar-stat">
+                  <span>Wave</span>
+                  <strong>{snapshot.hud.waveNumber}</strong>
+                </div>
+                <div className="topbar-stat">
+                  <span>Board</span>
+                  <strong>{snapshot.hud.placedBoardLabel}</strong>
+                </div>
+                <div className="topbar-stat">
+                  <span>SISU</span>
+                  <strong>{snapshot.hud.sisu}</strong>
+                </div>
+                <div className="topbar-stat">
+                  <span>{snapshot.hud.showIntermission ? 'Steam Bank' : 'Steam'}</span>
+                  <strong>{snapshot.hud.showIntermission ? snapshot.hud.bankedSteam : snapshot.hud.steamEarned}</strong>
+                </div>
+                <div className="topbar-stat">
+                  <span>Sauna HP</span>
+                  <strong>{snapshot.hud.saunaHp}/{snapshot.hud.maxSaunaHp}</strong>
+                </div>
+              </div>
+              <div className="topbar-actions">
+                <button
+                  className="ghost-button small-ghost"
+                  onClick={() => {
+                    setGuideStep(null);
+                    dispatch({ type: 'openIntro' });
+                  }}
+                >
+                  Help
+                </button>
+                <button
+                  className={snapshot.hud.isPaused ? 'secondary-button small-button' : 'ghost-button small-ghost'}
+                  disabled={!snapshot.hud.canPause}
+                  onClick={() => dispatch({ type: 'togglePause' })}
+                >
+                  {snapshot.hud.isPaused ? 'Resume' : 'Pause'}
+                </button>
+              </div>
+            </header>
+
+            <div className="hud-action-cluster">
+              <div className="hud-status-card">
+                <div className="popup-head compact-popup-head">
                   <h2>{snapshot.hud.actionTitle}</h2>
-                  <span>{snapshot.hud.phaseLabel}</span>
+                  <span>{snapshot.hud.nextWavePattern}</span>
                 </div>
-                <p className="panel-copy">{snapshot.hud.actionBody}</p>
-                <div className="tag-row compact-tags">
-                  <span className="tag">{snapshot.hud.placedBoardLabel}</span>
-                  <span className="tag">Bench {snapshot.hud.readyBenchCount}</span>
-                  <span className="tag">Recruit Slots {snapshot.hud.freeRecruitSlots}</span>
+                <p className="panel-copy small-copy">{snapshot.hud.actionBody}</p>
+                <div className="mini-tag-row">
+                  <span className="mini-tag">{snapshot.hud.nextWaveThreat}</span>
+                  <span className="mini-tag">Bench {snapshot.hud.readyBenchCount}</span>
+                  <span className="mini-tag">Recruit Slots {snapshot.hud.freeRecruitSlots}</span>
                 </div>
-                <div className="button-stack">
+              </div>
+              <div className="hud-main-actions">
+                {snapshot.hud.showIntermission ? (
+                  <button className="primary-button" onClick={() => dispatch({ type: 'startNextRun' })}>
+                    {snapshot.state.phase === 'lost' ? 'Start Next Run' : 'Back To The Sauna'}
+                  </button>
+                ) : (
                   <button
                     className="primary-button"
-                    disabled={snapshot.state.phase !== 'prep' || snapshot.hud.boardCount === 0 || isIntermission}
-                    onClick={() => runtimeRef.current?.dispatch({ type: 'startWave' })}
+                    disabled={snapshot.state.phase !== 'prep' || snapshot.hud.boardCount === 0}
+                    onClick={() => dispatch({ type: 'startWave' })}
                   >
                     Start Wave
                   </button>
-                  <button
-                    className="secondary-button"
-                    disabled={!snapshot.hud.canUseSisu}
-                    onClick={() => runtimeRef.current?.dispatch({ type: 'activateSisu' })}
-                  >
-                    Activate SISU ({gameContent.config.sisuAbilityCost})
-                  </button>
-                </div>
-                <p className="panel-copy small-copy ability-helper">
-                  {Math.round((gameContent.config.sisuDamageMultiplier - 1) * 100)}% damage and {Math.round((gameContent.config.sisuAttackMultiplier - 1) * 100)}% attack speed for {Math.round(gameContent.config.sisuDurationMs / 1000)}s.
-                </p>
-                <div className="incoming-strip">
-                  {nextWavePreview.map((entry) => (
-                    <div key={entry.id} className="incoming-pill">
-                      <span>{entry.name}</span>
-                      <strong>{entry.count}</strong>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section className="panel modifier-panel">
-                <div className="panel-head">
-                  <h2>Global Modifiers</h2>
-                  <span>{globalModifiers.length} active</span>
-                </div>
-                <p className="panel-copy small-copy">
-                  Boss rewards affect the whole roster and keep scaling as your board, items, skills and casualties change.
-                </p>
-                {globalModifiers.length > 0 ? (
-                  <div className="button-stack modifier-stack">
-                    {globalModifiers.map((modifier) => (
-                      <div key={modifier.id} className="modifier-card">
-                        <strong>{modifier.name}</strong>
-                        <small>{modifier.description}</small>
-                        <small>{modifier.formulaText}</small>
-                        <div className="tag-row compact-tags">
-                          <span className="tag">{modifier.stackCount} stacks</span>
-                          <span className="tag">{modifier.resolvedEffectText}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="panel-copy small-copy">
-                    First boss kill opens a three-card draft here.
-                  </p>
                 )}
-              </section>
-
-              <section className="panel">
-                <div className="panel-head">
-                  <h2>Roster: Owned Heroes</h2>
-                  <span>{snapshot.hud.rosterCount} recruited</span>
-                </div>
-                <p className="panel-copy small-copy">
-                  Boarded heroes only. Sauna occupants and bench reserves are handled next to the map.
-                </p>
-                {renderRosterGroup('On Board', boardEntries, 'No defenders on the board right now.')}
-              </section>
-
-              <section className="panel">
-                <div className="panel-head">
-                  <h2>Death Log</h2>
-                  <span>{deathLogEntries.length}/5 shown</span>
-                </div>
-                {deathLogEntries.length > 0 ? (
-                  <div className="button-stack roster-stack">
-                    {deathLogEntries.map((entry) => (
-                      <div key={entry.id} className="roster-card death-log-card">
-                        <strong>Wave {entry.wave}</strong>
-                        <small>{entry.heroName}</small>
-                        <small>{entry.text}</small>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="panel-copy small-copy">No heroes have fallen this run.</p>
-                )}
-              </section>
-            </>
-          ) : (
-            <section className="panel">
-              <h2>Booting up the sauna...</h2>
-              <p className="panel-copy">Creating the first endless roster run.</p>
-            </section>
-          )}
-        </aside>
-      </section>
-
-      {snapshot && !isIntermission && inventoryUnlocked ? (
-        <>
-          <div
-            className={anyDrawerOpen ? 'drawer-backdrop visible' : 'drawer-backdrop'}
-            onClick={() =>
-              runtimeRef.current?.dispatch(
-                inventoryOpen
-                  ? { type: 'toggleInventory' }
-                  : recruitmentOpen
-                    ? { type: 'toggleRecruitment' }
-                    : { type: 'clearSelection' }
-              )
-            }
-          />
-          <aside className={inventoryOpen ? 'inventory-drawer open' : 'inventory-drawer'}>
-            <section className="panel drawer-panel">
-              <div className="panel-head">
-                <h2>Overflow Stash</h2>
-                <div className="header-actions">
-                  <span>{snapshot.hud.inventoryCount}/{snapshot.hud.inventoryCap}</span>
-                  <button
-                    className="ghost-button"
-                    onClick={() => runtimeRef.current?.dispatch({ type: 'toggleInventory' })}
-                  >
-                    Close
-                  </button>
-                </div>
+                <button
+                  className="secondary-button"
+                  disabled={!snapshot.hud.canUseSisu}
+                  onClick={() => dispatch({ type: 'activateSisu' })}
+                >
+                  {snapshot.hud.sisuLabel}
+                </button>
               </div>
-              {snapshot.hud.inventoryEntries.length > 0 ? (
-                <div className="drawer-body">
-                  <div className="loot-grid compact-loot-grid">
-                    {snapshot.hud.inventoryEntries.map((entry) => (
-                      <button
-                        key={entry.id}
-                        className={entry.selected ? 'loot-card compact selected' : 'loot-card compact'}
-                        onClick={() =>
-                          runtimeRef.current?.dispatch(
-                            entry.selected
-                              ? { type: 'clearSelectedInventoryDrop' }
-                              : { type: 'selectInventoryDrop', dropId: entry.id }
-                          )
-                        }
-                      >
-                        <img src={assetUrl(entry.artPath)} alt={entry.name} className="loot-art compact-art" />
-                        <div className="loot-copy">
-                          <span className="loot-name">{entry.name}</span>
-                          <small>{formatRarity(entry.rarity)}</small>
-                          <small>{entry.effectText}</small>
-                        </div>
-                        {entry.isRecent ? <span className="loot-ping">New</span> : null}
-                      </button>
-                    ))}
-                  </div>
+            </div>
 
-                  {selectedLoot ? (
-                    <div className="detail-card loot-detail compact-detail">
-                      <img src={assetUrl(selectedLoot.artPath)} alt={selectedLoot.name} className="detail-art compact-detail-art" />
-                      <div className="detail-copy">
-                        <strong>
-                          {selectedLoot.name} · {formatRarity(selectedLoot.rarity)}
-                        </strong>
-                        <p className="panel-copy flavor-copy">{selectedLoot.flavorText}</p>
-                        <p className="panel-copy small-copy">{selectedLoot.effectText}</p>
-                      </div>
-                        <div className="button-row tight">
-                          <button
-                            className="mini-button"
-                            disabled={!snapshot.hud.canAutoAssignSelectedLoot}
-                          onClick={() =>
-                            runtimeRef.current?.dispatch({
-                              type: 'autoAssignInventoryDrop',
-                              dropId: selectedLoot.id
-                            })
-                          }
-                        >
-                          Auto Assign
-                        </button>
-                        <button
-                          className="mini-button"
-                          disabled={!selectedDefender}
-                          onClick={() =>
-                            selectedDefender &&
-                            runtimeRef.current?.dispatch({
-                              type: 'equipInventoryDrop',
-                              dropId: selectedLoot.id,
-                              defenderId: selectedDefender.id
-                            })
-                          }
-                          >
-                            Equip To Selected
-                          </button>
-                          <button
-                            className="ghost-button"
-                            onClick={() =>
-                              runtimeRef.current?.dispatch({
-                                type: 'sellInventoryDrop',
-                                dropId: selectedLoot.id
-                              })
-                            }
-                          >
-                            Sell For {selectedLoot.sellPrice} Steam
-                          </button>
-                          <button
-                            className="ghost-button"
-                            onClick={() => runtimeRef.current?.dispatch({ type: 'clearSelectedInventoryDrop' })}
-                          >
-                          Close Loot
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="panel-copy small-copy">
-                      Pick an overflow drop to inspect it, auto-assign it, or equip it to the currently selected hero.
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p className="panel-copy">No overflow loot waiting. Fresh excess drops will appear here after the header fills up.</p>
-              )}
-            </section>
-          </aside>
-        </>
-      ) : null}
+            <nav className="hud-utility-rail">
+              {utilityButtons.map((button) => (
+                <button
+                  key={button.id}
+                  className={activePanel === button.id ? 'utility-button active' : 'utility-button'}
+                  disabled={button.disabled}
+                  onClick={() => dispatch({ type: 'openHudPanel', panel: button.id })}
+                >
+                  <span>{button.label}</span>
+                  {button.badge ? <small>{button.badge}</small> : null}
+                </button>
+              ))}
+            </nav>
+
+            {snapshot.hud.worldLandmarks.map((landmark) => (
+              <button
+                key={landmark.id}
+                className={landmark.selected ? 'landmark-chip selected' : 'landmark-chip'}
+                style={getLandmarkStyle(snapshot, frameSize, landmark)}
+                onClick={() => dispatch({ type: 'selectWorldLandmark', landmarkId: landmark.id })}
+              >
+                <strong>{landmark.label}</strong>
+                <small>{landmark.badgeText}</small>
+              </button>
+            ))}
+
+            {renderSelectionCard()}
+            {renderPanelPopup()}
+          </div>
+        ) : (
+          <section className="panel boot-panel">
+            <h2>Booting up the sauna...</h2>
+            <p className="panel-copy">Creating the first endless roster run.</p>
+          </section>
+        )}
+      </section>
 
       {snapshot && introOpen && guideStep === null ? (
         <div className="overlay-shell intro-shell">
           <section className="overlay-card intro-card">
             <div className="panel-head">
               <h2>Welcome To Sauna Defense</h2>
-              <button
-                className="ghost-button"
-                onClick={() => runtimeRef.current?.dispatch({ type: 'closeIntro' })}
-              >
+              <button className="ghost-button" onClick={() => dispatch({ type: 'closeIntro' })}>
                 Skip
               </button>
             </div>
-            <p className="panel-copy">
-              One quick briefing, then the weird heat-defense begins.
-            </p>
+            <p className="panel-copy">One quick briefing, then the weird heat-defense begins.</p>
             <div className="intermission-grid intro-grid">
               <div className="inventory-card">
                 <strong>Board, Bench, Sauna</strong>
@@ -1036,28 +979,22 @@ export function App() {
               </div>
               <div className="inventory-card">
                 <strong>SISU Does Two Jobs</strong>
-                <small>Spend SISU on combat bursts, reroll the market, or level up future recruits.</small>
+                <small>Spend SISU on combat bursts or scout recruitment offers between waves.</small>
               </div>
               <div className="inventory-card">
                 <strong>Loot Starts In The Header</strong>
                 <small>Fresh drops land in the header first. Overflow only goes into the stash after you unlock it in the metashop.</small>
               </div>
-                <div className="inventory-card">
-                  <strong>Runs Build In Cycles</strong>
-                  <small>Normal waves chain forward, bosses create a break, and both the metashop and beer shop only appear between runs.</small>
-                </div>
+              <div className="inventory-card">
+                <strong>Runs Build In Cycles</strong>
+                <small>Normal waves chain forward, bosses create a break, and both the metashop and beer shop now live on the board.</small>
               </div>
+            </div>
             <div className="button-row intermission-actions">
-              <button
-                className="secondary-button"
-                onClick={() => setGuideStep(0)}
-              >
+              <button className="secondary-button" onClick={() => setGuideStep(0)}>
                 Replay Guided Tips
               </button>
-              <button
-                className="primary-button"
-                onClick={() => runtimeRef.current?.dispatch({ type: 'closeIntro' })}
-              >
+              <button className="primary-button" onClick={() => dispatch({ type: 'closeIntro' })}>
                 Start The Shift
               </button>
             </div>
@@ -1074,23 +1011,17 @@ export function App() {
             </div>
             <strong>{currentGuide.title}</strong>
             <p className="panel-copy">{currentGuide.body}</p>
-            <div className="tag-row compact-tags">
-              <span className="tag">{snapshot.hud.placedBoardLabel}</span>
-              <span className="tag">SISU {snapshot.hud.sisu}</span>
-              <span className="tag">Sauna {snapshot.hud.saunaOccupancyLabel}</span>
+            <div className="mini-tag-row">
+              <span className="mini-tag">{snapshot.hud.placedBoardLabel}</span>
+              <span className="mini-tag">SISU {snapshot.hud.sisu}</span>
+              <span className="mini-tag">Sauna {snapshot.hud.saunaOccupancyLabel}</span>
             </div>
             <div className="button-row guide-actions">
-              <button
-                className="ghost-button"
-                onClick={() => closeGuide(true)}
-              >
+              <button className="ghost-button" onClick={() => closeGuide(true)}>
                 Skip Tips
               </button>
               {guideStep! > 0 ? (
-                <button
-                  className="secondary-button"
-                  onClick={() => setGuideStep((step) => (step === null ? 0 : Math.max(0, step - 1)))}
-                >
+                <button className="secondary-button" onClick={() => setGuideStep((step) => (step === null ? 0 : Math.max(0, step - 1)))}>
                   Back
                 </button>
               ) : null}
@@ -1111,137 +1042,6 @@ export function App() {
         </div>
       ) : null}
 
-      {snapshot && isIntermission ? (
-        <div className="overlay-shell">
-          <section className="overlay-card">
-            <div className="panel-head">
-              <h2>{snapshot.state.phase === 'lost' ? 'Steam Intermission' : 'Between Runs'}</h2>
-              <span>{snapshot.hud.bankedSteam} Steam banked</span>
-            </div>
-            <p className="panel-copy">
-              {snapshot.state.phase === 'lost'
-                ? snapshot.hud.metaShopUnlocked
-                  ? 'The last shift ended in steam and regret. Spend what you banked, then start the next run stronger.'
-                  : 'Your first run unlocked the lobby. Pay once to open the metashop for future runs.'
-                : snapshot.hud.metaShopUnlocked
-                  ? 'Metashop only appears between runs now. Buy what you need, then head back to the heat.'
-                  : 'No metashop before the first run. Once you survive a shift, you can pay to open it permanently.'}
-            </p>
-            {snapshot.hud.metaShopUnlocked ? (
-              <>
-                <div className="intermission-grid">
-                  {snapshot.hud.metaUpgrades.map((upgrade) => (
-                    <div key={upgrade.id} className="inventory-card">
-                      <div>
-                        <strong>{upgrade.name}</strong>
-                        <small>{upgrade.description}</small>
-                        <small>
-                          Level {upgrade.level}
-                          {upgrade.maxed ? ' · MAX' : ` · Cost ${upgrade.cost}`}
-                        </small>
-                      </div>
-                      <button
-                        className="mini-button"
-                        disabled={!upgrade.affordable || upgrade.maxed}
-                        onClick={() => runtimeRef.current?.dispatch({ type: 'buyMetaUpgrade', upgradeId: upgrade.id })}
-                      >
-                        Buy Upgrade
-                      </button>
-                    </div>
-                  ))}
-                </div>
-
-                {snapshot.hud.beerShopUnlocked ? (
-                  <section className="beer-shop-section">
-                    <div className="panel-head">
-                      <h2>Beer Shop</h2>
-                      <span>
-                        Level {snapshot.hud.beerShopLevel} · {snapshot.hud.beerActiveSlotCount}/{snapshot.hud.beerActiveSlotCap} active drinks
-                      </span>
-                    </div>
-                    <p className="panel-copy">
-                      The bartender sells risky run-long booze. Buying the same drink again stacks the upside and doubles the downside.
-                    </p>
-                    <div className="intermission-grid beer-grid">
-                      {snapshot.hud.beerShopOffers.map((offer) => (
-                        <div key={offer.id} className="inventory-card beer-card">
-                          <img src={assetUrl(offer.artPath)} alt={offer.name} className="detail-art compact-detail-art" />
-                          <div>
-                            <strong>{offer.name}</strong>
-                            <small>{offer.flavorText}</small>
-                            <small>{offer.positiveEffectText}</small>
-                            <small>{offer.negativeEffectText}</small>
-                          </div>
-                          <button
-                            className="mini-button"
-                            disabled={!offer.canBuy}
-                            onClick={() => runtimeRef.current?.dispatch({ type: 'buyBeerShopOffer', offerId: offer.id })}
-                          >
-                            {offer.purchaseLabel}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="intermission-grid beer-grid active-beer-grid">
-                      {snapshot.hud.activeAlcohols.length > 0 ? (
-                        snapshot.hud.activeAlcohols.map((drink) => (
-                          <div key={drink.alcoholId} className="inventory-card beer-card">
-                            <img src={assetUrl(drink.artPath)} alt={drink.name} className="detail-art compact-detail-art" />
-                            <div>
-                              <strong>{drink.name}</strong>
-                              <small>{drink.flavorText}</small>
-                              <small>Stacks {drink.stacks}</small>
-                              <small>{drink.positiveEffectText}</small>
-                              <small>{drink.negativeEffectText}</small>
-                            </div>
-                            <button
-                              className="ghost-button"
-                              onClick={() => runtimeRef.current?.dispatch({ type: 'removeActiveAlcohol', alcoholId: drink.alcoholId })}
-                            >
-                              Dump Out
-                            </button>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="inventory-card unlock-card">
-                          <div>
-                            <strong>No active drinks</strong>
-                            <small>Buy a round now if you want run-long buffs with a little regret mixed in.</small>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </section>
-                ) : null}
-              </>
-            ) : (
-              <div className="inventory-card unlock-card">
-                <div>
-                  <strong>Grand Opening</strong>
-                  <small>Unlock the metashop once and keep it available in future intermissions.</small>
-                  <small>Cost {snapshot.hud.metaShopUnlockCost} Steam</small>
-                </div>
-                <button
-                  className="mini-button"
-                  disabled={!snapshot.hud.canUnlockMetaShop}
-                  onClick={() => runtimeRef.current?.dispatch({ type: 'unlockMetaShop' })}
-                >
-                  Open The Shop
-                </button>
-              </div>
-            )}
-            <div className="button-row intermission-actions">
-              <button
-                className="primary-button"
-                onClick={() => runtimeRef.current?.dispatch({ type: 'startNextRun' })}
-              >
-                {snapshot.state.phase === 'lost' ? 'Start Next Run' : 'Back To The Sauna'}
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
-
       {snapshot && showModifierDraft ? (
         <div className="overlay-shell">
           <section className="overlay-card modifier-draft-card">
@@ -1253,19 +1053,16 @@ export function App() {
               Pick one run-long modifier. Its stacks update automatically from your board, roster, items, skills and casualties.
             </p>
             <div className="modifier-draft-grid">
-              {modifierDraftOffers.map((modifier) => (
+              {snapshot.hud.globalModifierDraftOffers.map((modifier) => (
                 <div key={modifier.id} className="modifier-card draft-card">
                   <strong>{modifier.name}</strong>
                   <small>{modifier.description}</small>
                   <small>{modifier.formulaText}</small>
-                  <div className="tag-row compact-tags">
-                    <span className="tag">{modifier.stackCount} stacks live</span>
-                    <span className="tag">{modifier.resolvedEffectText}</span>
+                  <div className="mini-tag-row">
+                    <span className="mini-tag">{modifier.stackCount} stacks live</span>
+                    <span className="mini-tag">{modifier.resolvedEffectText}</span>
                   </div>
-                  <button
-                    className="primary-button"
-                    onClick={() => runtimeRef.current?.dispatch({ type: 'draftGlobalModifier', modifierId: modifier.id })}
-                  >
+                  <button className="primary-button" onClick={() => dispatch({ type: 'draftGlobalModifier', modifierId: modifier.id })}>
                     Pick Modifier
                   </button>
                 </div>
@@ -1275,7 +1072,7 @@ export function App() {
         </div>
       ) : null}
 
-      {snapshot && snapshot.hud.showSubclassDraft ? (
+      {snapshot && showSubclassDraft ? (
         <div className="overlay-shell">
           <section className="overlay-card">
             <div className="panel-head">
@@ -1295,10 +1092,7 @@ export function App() {
                     <small>Unlock level {offer.unlockLevel}</small>
                     <small>{offer.description}</small>
                   </div>
-                  <button
-                    className="mini-button"
-                    onClick={() => runtimeRef.current?.dispatch({ type: 'draftSubclassChoice', subclassId: offer.id })}
-                  >
+                  <button className="mini-button" onClick={() => dispatch({ type: 'draftSubclassChoice', subclassId: offer.id })}>
                     Choose Branch
                   </button>
                 </div>

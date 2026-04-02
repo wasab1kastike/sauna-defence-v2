@@ -19,7 +19,9 @@ import type {
   GameSnapshot,
   GlobalModifierDefinition,
   GlobalModifierEffectStat,
+  HudPanelId,
   HudViewModel,
+  HudWorldLandmarkEntry,
   InputAction,
   InventoryDrop,
   ItemId,
@@ -34,7 +36,8 @@ import type {
   WaveDefinition,
   WavePattern,
   WavePreviewEntry,
-  WaveSpawn
+  WaveSpawn,
+  WorldLandmarkId
 } from './types';
 
 const DIRS: AxialCoord[] = [
@@ -67,6 +70,10 @@ const NON_BOSS_PATTERNS: Array<Exclude<WavePattern, 'tutorial' | 'boss_pressure'
   'surge'
 ];
 const CENTER: AxialCoord = { q: 0, r: 0 };
+const WORLD_LANDMARK_TILES: Record<WorldLandmarkId, AxialCoord> = {
+  metashop: { q: 3, r: -6 },
+  beer_shop: { q: -3, r: 6 }
+};
 const BLINK_STEP_COOLDOWN_MS = 12000;
 const EMPTY_STATS: UnitStats = {
   maxHp: 0,
@@ -256,6 +263,20 @@ function hasSaunaAutoDeploy(state: RunState): boolean {
 
 function hasSaunaSlapSwap(state: RunState): boolean {
   return state.meta.upgrades.sauna_slap_swap > 0;
+}
+
+function clearActiveHudPanel(state: RunState): void {
+  state.activePanel = null;
+  state.inventoryOpen = false;
+  state.recruitmentOpen = false;
+  state.selectedWorldLandmarkId = null;
+}
+
+function setActiveHudPanel(state: RunState, panel: HudPanelId | null, landmarkId: WorldLandmarkId | null = null): void {
+  state.activePanel = panel;
+  state.inventoryOpen = panel === 'loot';
+  state.recruitmentOpen = panel === 'recruit';
+  state.selectedWorldLandmarkId = landmarkId;
 }
 
 function boardDefenders(state: RunState): DefenderInstance[] {
@@ -891,6 +912,90 @@ function canAccessRecruitment(state: RunState): boolean {
   return !state.introOpen && state.phase !== 'lost' && state.overlayMode !== 'intermission' && state.overlayMode !== 'modifier_draft' && state.overlayMode !== 'subclass_draft';
 }
 
+function metashopVisible(state: RunState): boolean {
+  return state.meta.shopUnlocked || state.meta.completedRuns > 0 || state.overlayMode === 'intermission';
+}
+
+function metashopEnabled(state: RunState): boolean {
+  return state.overlayMode === 'intermission';
+}
+
+function landmarkEnabled(state: RunState, landmarkId: WorldLandmarkId): boolean {
+  switch (landmarkId) {
+    case 'metashop':
+      return metashopEnabled(state);
+    case 'beer_shop':
+      return beerShopUnlocked(state);
+    default:
+      return false;
+  }
+}
+
+function landmarkLocked(state: RunState, landmarkId: WorldLandmarkId): boolean {
+  switch (landmarkId) {
+    case 'metashop':
+      return !state.meta.shopUnlocked;
+    case 'beer_shop':
+      return !beerShopUnlocked(state);
+    default:
+      return true;
+  }
+}
+
+function landmarkVisible(state: RunState, landmarkId: WorldLandmarkId): boolean {
+  switch (landmarkId) {
+    case 'metashop':
+      return metashopVisible(state);
+    case 'beer_shop':
+      return beerShopUnlocked(state);
+    default:
+      return false;
+  }
+}
+
+function landmarkBadgeText(state: RunState, landmarkId: WorldLandmarkId, content: GameContent): string {
+  switch (landmarkId) {
+    case 'metashop':
+      return state.meta.shopUnlocked
+        ? metashopEnabled(state) ? 'Open Now' : 'Between Runs'
+        : `${content.config.metaShopUnlockCost} Steam`;
+    case 'beer_shop':
+      return `Level ${beerShopTier(state)}`;
+    default:
+      return '';
+  }
+}
+
+function landmarkStatusText(state: RunState, landmarkId: WorldLandmarkId, content: GameContent): string {
+  switch (landmarkId) {
+    case 'metashop':
+      if (!state.meta.shopUnlocked) {
+        return `Grand opening still costs ${content.config.metaShopUnlockCost} Steam.`;
+      }
+      return metashopEnabled(state)
+        ? 'Browse permanent upgrades between runs.'
+        : 'Metashop opens between runs only.';
+    case 'beer_shop':
+      return `Bartender live with ${state.activeAlcohols.length}/${beerActiveSlotCapForTier(beerShopTier(state))} active drink slots filled.`;
+    default:
+      return '';
+  }
+}
+
+function hudWorldLandmarkEntry(state: RunState, landmarkId: WorldLandmarkId, content: GameContent): HudWorldLandmarkEntry {
+  return {
+    id: landmarkId,
+    label: landmarkId === 'metashop' ? 'Metashop' : 'Beer Shop',
+    tile: { ...WORLD_LANDMARK_TILES[landmarkId] },
+    visible: landmarkVisible(state, landmarkId),
+    enabled: landmarkEnabled(state, landmarkId),
+    locked: landmarkLocked(state, landmarkId),
+    selected: state.selectedWorldLandmarkId === landmarkId,
+    badgeText: landmarkBadgeText(state, landmarkId, content),
+    statusText: landmarkStatusText(state, landmarkId, content)
+  };
+}
+
 function boardFullButBenchAvailable(state: RunState, content: GameContent): boolean {
   return boardDefenders(state).length >= boardCap(state, content) && livingDefenders(state).length < rosterCap(state, content);
 }
@@ -1112,7 +1217,7 @@ function rollBeerShopOffersIntoState(state: RunState, content: GameContent): voi
 }
 
 function canBuyBeerOffer(state: RunState, offer: BeerShopOffer, content: GameContent): boolean {
-  if (state.overlayMode !== 'intermission' || !state.meta.shopUnlocked || !beerShopUnlocked(state)) return false;
+  if (!state.meta.shopUnlocked || !beerShopUnlocked(state)) return false;
   const definition = content.alcoholDefinitions[offer.alcoholId];
   if (state.meta.steam < definition.price) return false;
   const active = activeAlcoholEntry(state, offer.alcoholId);
@@ -1651,8 +1756,7 @@ function awardWave(state: RunState, content: GameContent): void {
     state.waveElapsedMs = 0;
     state.currentWave = upcomingWave;
     state.pendingSpawns = [];
-    state.inventoryOpen = false;
-    state.recruitmentOpen = false;
+    clearActiveHudPanel(state);
     rollGlobalModifierDraftOffersIntoState(state, content);
     state.message = 'Boss down. Pick one global modifier before the next wave.';
     return;
@@ -1984,8 +2088,7 @@ function activateNextSubclassDraft(state: RunState, content: GameContent): boole
     state.subclassDraftDefenderId = defender.id;
     state.subclassDraftUnlockLevel = nextDraft.unlockLevel;
     state.subclassDraftOfferIds = options;
-    state.inventoryOpen = false;
-    state.recruitmentOpen = false;
+    clearActiveHudPanel(state);
     state.message = `${defender.name} reached level ${nextDraft.unlockLevel}. Pick a subclass branch.`;
     return true;
   }
@@ -2123,6 +2226,8 @@ export function createInitialState(
     overlayMode: showIntermission ? 'intermission' : 'none',
     inventoryOpen: false,
     recruitmentOpen: false,
+    activePanel: null,
+    selectedWorldLandmarkId: null,
     introOpen,
     timeMs: 0,
     waveIndex: 1,
@@ -2175,7 +2280,7 @@ export function createInitialState(
   };
   state.defenders = buildRoster(state, content);
   state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
-  if (showIntermission && beerShopUnlocked(state)) {
+  if (beerShopUnlocked(state)) {
     rollBeerShopOffersIntoState(state, content);
   }
   return state;
@@ -2229,8 +2334,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.globalModifierDraftOffers = [];
       next.overlayMode = 'none';
       next.phase = 'prep';
-      next.inventoryOpen = false;
-      next.recruitmentOpen = false;
+      clearActiveHudPanel(next);
       normalizeLivingDefenders(next, content);
       next.message = `${content.globalModifierDefinitions[action.modifierId].name} locked in for this run.`;
       activateNextSubclassDraft(next, content);
@@ -2258,9 +2362,47 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.subclassDraftDefenderId = null;
       next.subclassDraftUnlockLevel = null;
       next.subclassDraftOfferIds = [];
+      clearActiveHudPanel(next);
       const subclass = content.defenderSubclasses[action.subclassId];
       next.message = `${defender.name} locked in ${subclass.name}.`;
       activateNextSubclassDraft(next, content);
+      return next;
+    }
+    case 'openHudPanel': {
+      if (next.overlayMode === 'modifier_draft' || next.overlayMode === 'subclass_draft') return next;
+      if (action.panel === 'recruit' && !canAccessRecruitment(next)) return next;
+      if (action.panel === 'metashop' && !metashopVisible(next)) return next;
+      if (action.panel === 'beer_shop' && !beerShopUnlocked(next)) return next;
+      if (next.activePanel === action.panel) {
+        clearActiveHudPanel(next);
+        return next;
+      }
+      setActiveHudPanel(next, action.panel);
+      if (action.panel === 'loot') {
+        if (!inventoryUnlocked(next)) {
+          next.inventoryOpen = false;
+        }
+        next.message = inventoryUnlocked(next)
+          ? 'Loot and stash opened.'
+          : 'Fresh loot is visible here. Overflow stash unlocks from the metashop.';
+      } else if (action.panel === 'recruit') {
+        next.message = recruitmentStatusText(next, content);
+      }
+      return next;
+    }
+    case 'closeHudPanel':
+    case 'clearWorldLandmark':
+      clearActiveHudPanel(next);
+      return next;
+    case 'selectWorldLandmark': {
+      if (!landmarkVisible(next, action.landmarkId)) return next;
+      const panel = action.landmarkId === 'metashop' ? 'metashop' : 'beer_shop';
+      if (next.activePanel === panel && next.selectedWorldLandmarkId === action.landmarkId) {
+        clearActiveHudPanel(next);
+        return next;
+      }
+      setActiveHudPanel(next, panel, action.landmarkId);
+      next.message = landmarkStatusText(next, action.landmarkId, content);
       return next;
     }
     case 'selectSauna':
@@ -2284,7 +2426,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     case 'selectInventoryDrop': {
       const drop = getInventoryDrop(next, action.dropId);
       if (!drop) return next;
-      next.inventoryOpen = next.inventory.some((entry) => entry.instanceId === drop.instanceId) && inventoryUnlocked(next);
+      setActiveHudPanel(next, 'loot');
       next.selectedInventoryDropId = drop.instanceId;
       next.message = `${drop.name} ready to equip.`;
       return next;
@@ -2293,27 +2435,31 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.selectedInventoryDropId = null;
       return next;
     case 'toggleInventory':
-      if (next.overlayMode === 'intermission') return next;
+      if (next.activePanel === 'loot') {
+        if (inventoryUnlocked(next) && !next.inventoryOpen) {
+          next.inventoryOpen = true;
+          next.message = 'Loot and stash opened.';
+          return next;
+        }
+        clearActiveHudPanel(next);
+        next.selectedInventoryDropId = null;
+        return next;
+      }
+      setActiveHudPanel(next, 'loot');
       if (!inventoryUnlocked(next)) {
         next.inventoryOpen = false;
         next.message = 'Overflow Stash unlocks from the metashop.';
-        return next;
-      }
-      next.inventoryOpen = !next.inventoryOpen;
-      if (next.inventoryOpen) {
-        next.recruitmentOpen = false;
-      }
-      if (!next.inventoryOpen) {
-        next.selectedInventoryDropId = null;
       }
       return next;
     case 'toggleRecruitment':
       if (!canAccessRecruitment(next)) return next;
-      next.recruitmentOpen = !next.recruitmentOpen;
-      if (next.recruitmentOpen) {
-        next.inventoryOpen = false;
+      if (next.activePanel === 'recruit') {
+        clearActiveHudPanel(next);
         next.selectedInventoryDropId = null;
+        return next;
       }
+      setActiveHudPanel(next, 'recruit');
+      next.message = recruitmentStatusText(next, content);
       return next;
     case 'hoverTile':
       next.hoveredTile = action.tile ? { ...action.tile } : null;
@@ -2373,7 +2519,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         next.message = 'Place at least one defender first.';
         return next;
       }
-      next.recruitmentOpen = false;
+      if (next.activePanel === 'recruit') {
+        clearActiveHudPanel(next);
+      }
       startWaveState(
         next,
         next.currentWave,
@@ -2392,7 +2540,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       }
       next.sisu.current -= cost;
       rollRecruitOffersIntoState(next, content);
-      next.recruitmentOpen = true;
+      setActiveHudPanel(next, 'recruit');
       next.message =
         next.recruitOffers.length > 0
           ? `The market rerolled. Three new recruits are up for sale, starting at ${Math.min(...next.recruitOffers.map((offer) => offer.price))} SISU.`
@@ -2409,7 +2557,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.sisu.current -= cost;
       next.recruitLevelBonus += 1;
       next.recruitLevelUpCount += 1;
-      next.recruitmentOpen = true;
+      setActiveHudPanel(next, 'recruit');
       next.message = `Recruitment leveled up. Future rerolls now favor stronger starting levels.`;
       return next;
     }
@@ -2435,7 +2583,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         next.defenders.push(offer.candidate);
       }
       next.recruitOffers = [];
-      next.recruitmentOpen = false;
+      clearActiveHudPanel(next);
       next.message = replacement
         ? `${offer.candidate.name} ${offer.candidate.title} replaced ${replacement.name} for ${offer.price} SISU.`
         : `${offer.candidate.name} ${offer.candidate.title} joined your reserve bench for ${offer.price} SISU.`;
@@ -2444,7 +2592,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     case 'clearRecruitOffers':
       if (!canAccessRecruitment(next)) return next;
       next.recruitOffers = [];
-      next.recruitmentOpen = false;
+      clearActiveHudPanel(next);
       next.message = 'Recruit offers dismissed.';
       return next;
     case 'equipInventoryDrop': {
@@ -2529,7 +2677,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     }
     case 'buyBeerShopOffer': {
-      if (next.overlayMode !== 'intermission' || !next.meta.shopUnlocked || !beerShopUnlocked(next)) return next;
+      if (!next.meta.shopUnlocked || !beerShopUnlocked(next)) return next;
       const offer = next.beerShopOffers.find((entry) => entry.offerId === action.offerId);
       if (!offer) return next;
       const definition = content.alcoholDefinitions[offer.alcoholId];
@@ -2553,7 +2701,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     }
     case 'removeActiveAlcohol': {
-      if (next.overlayMode !== 'intermission') return next;
+      if (!next.meta.shopUnlocked || !beerShopUnlocked(next)) return next;
       const index = next.activeAlcohols.findIndex((entry) => entry.alcoholId === action.alcoholId);
       if (index < 0) return next;
       const [removed] = next.activeAlcohols.splice(index, 1);
@@ -2602,6 +2750,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     next.saunaHp = 0;
     next.phase = 'lost';
     next.overlayMode = 'intermission';
+    clearActiveHudPanel(next);
     next.activeAlcohols = [];
     awardMeta(next);
     rollBeerShopOffersIntoState(next, content);
@@ -2635,6 +2784,9 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     .map((modifierId) => globalModifierHudEntry(state, content.globalModifierDefinitions[modifierId], content));
   const draftGlobalModifiers = state.globalModifierDraftOffers
     .map((modifierId) => globalModifierHudEntry(state, content.globalModifierDefinitions[modifierId], content));
+  const worldLandmarks = (Object.keys(WORLD_LANDMARK_TILES) as WorldLandmarkId[])
+    .map((landmarkId) => hudWorldLandmarkEntry(state, landmarkId, content))
+    .filter((entry) => entry.visible);
   const hud: HudViewModel = {
     phaseLabel:
       state.overlayMode === 'intermission'
@@ -2652,6 +2804,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
               : 'Run Over',
     statusText: state.message,
     overlayMode: state.overlayMode,
+    activePanel: state.activePanel,
     isPaused: state.overlayMode === 'paused',
     showIntermission: state.overlayMode === 'intermission',
     introOpen: state.introOpen,
@@ -2930,7 +3083,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         affordable: !blocked && cost !== null && state.meta.steam >= cost,
         maxed: cost === null
       };
-    })
+    }),
+    worldLandmarks
   };
   return {
     state,

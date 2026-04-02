@@ -85,6 +85,15 @@ function axialToPixel(tile: AxialCoord, layout: BoardLayout) {
   };
 }
 
+export function getTileViewportPosition(
+  snapshot: GameSnapshot,
+  viewportWidth: number,
+  viewportHeight: number,
+  tile: AxialCoord
+) {
+  return axialToPixel(tile, getBoardLayout(viewportWidth, viewportHeight, snapshot.config.gridRadius));
+}
+
 function roundAxial(q: number, r: number): AxialCoord {
   let x = q;
   let z = r;
@@ -1133,6 +1142,124 @@ function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, lay
   }
 }
 
+function drawWorldLandmarkShadow(ctx: CanvasRenderingContext2D, center: { x: number; y: number }, width: number, height: number) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(8, 10, 12, 0.42)';
+  ctx.beginPath();
+  ctx.ellipse(center.x, center.y + height * 0.52, width * 0.58, height * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawMetashopLandmark(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  size: number,
+  selected: boolean,
+  enabled: boolean,
+  locked: boolean
+) {
+  const width = size * 1.08;
+  const height = size * 0.9;
+  drawWorldLandmarkShadow(ctx, center, width, height);
+  ctx.save();
+  ctx.translate(center.x, center.y);
+
+  ctx.fillStyle = locked ? 'rgba(74, 64, 52, 0.96)' : 'rgba(87, 64, 40, 0.96)';
+  ctx.strokeStyle = locked ? 'rgba(170, 150, 126, 0.36)' : 'rgba(255, 205, 118, 0.52)';
+  ctx.lineWidth = selected ? 3 : 2;
+  ctx.beginPath();
+  ctx.roundRect(-width * 0.42, -height * 0.2, width * 0.84, height * 0.48, 10);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = enabled ? 'rgba(255, 206, 122, 0.94)' : 'rgba(112, 118, 123, 0.84)';
+  ctx.beginPath();
+  ctx.moveTo(-width * 0.5, -height * 0.18);
+  ctx.lineTo(0, -height * 0.52);
+  ctx.lineTo(width * 0.5, -height * 0.18);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(30, 22, 18, 0.94)';
+  ctx.fillRect(-width * 0.12, -height * 0.02, width * 0.24, height * 0.3);
+  ctx.strokeStyle = 'rgba(255, 245, 222, 0.16)';
+  ctx.strokeRect(-width * 0.12, -height * 0.02, width * 0.24, height * 0.3);
+
+  ctx.fillStyle = selected ? '#fff4d6' : '#f2debf';
+  ctx.font = `800 ${Math.max(10, size * 0.18)}px Trebuchet MS`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('META', 0, -height * 0.06);
+  ctx.restore();
+}
+
+function drawBeerShopLandmark(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  size: number,
+  selected: boolean,
+  enabled: boolean
+) {
+  const width = size;
+  const height = size * 0.86;
+  drawWorldLandmarkShadow(ctx, center, width, height);
+  ctx.save();
+  ctx.translate(center.x, center.y);
+
+  ctx.fillStyle = enabled ? 'rgba(96, 57, 34, 0.96)' : 'rgba(73, 56, 44, 0.92)';
+  ctx.strokeStyle = selected ? 'rgba(255, 226, 169, 0.95)' : 'rgba(221, 174, 116, 0.54)';
+  ctx.lineWidth = selected ? 3 : 2;
+  ctx.beginPath();
+  ctx.roundRect(-width * 0.18, -height * 0.1, width * 0.36, height * 0.5, 12);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(208, 153, 88, 0.94)';
+  ctx.beginPath();
+  ctx.arc(-width * 0.26, height * 0.1, width * 0.14, 0, Math.PI * 2);
+  ctx.arc(width * 0.26, height * 0.1, width * 0.14, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = enabled ? 'rgba(255, 198, 104, 0.98)' : 'rgba(170, 170, 170, 0.78)';
+  ctx.beginPath();
+  ctx.moveTo(-width * 0.32, -height * 0.12);
+  ctx.lineTo(0, -height * 0.36);
+  ctx.lineTo(width * 0.32, -height * 0.12);
+  ctx.lineTo(0, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#fff2d2';
+  ctx.font = `800 ${Math.max(11, size * 0.22)}px Trebuchet MS`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('BEER', 0, -height * 0.26);
+  ctx.restore();
+}
+
+function drawWorldLandmarks(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, layout: BoardLayout) {
+  for (const landmark of snapshot.hud.worldLandmarks) {
+    const center = axialToPixel(landmark.tile, layout);
+    const size = layout.hexSize * 1.05;
+    if (landmark.id === 'metashop') {
+      drawMetashopLandmark(ctx, center, size, landmark.selected, landmark.enabled, landmark.locked);
+    } else {
+      drawBeerShopLandmark(ctx, center, size, landmark.selected, landmark.enabled);
+    }
+
+    if (landmark.selected) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 241, 214, 0.92)';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, layout.hexSize * 0.92, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
 export function paintSnapshot(
   ctx: CanvasRenderingContext2D,
   snapshot: GameSnapshot,
@@ -1210,6 +1337,8 @@ export function paintSnapshot(
       drawTileDecoration(ctx, tile, center, layout.hexSize - 1.5, isBuildable, isSpawn);
     }
   }
+
+  drawWorldLandmarks(ctx, snapshot, layout);
 
   const saunaCenter = axialToPixel({ q: 0, r: 0 }, layout);
   const saunaGlow = ctx.createRadialGradient(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.1, saunaCenter.x, saunaCenter.y, layout.hexSize * 1.4);
