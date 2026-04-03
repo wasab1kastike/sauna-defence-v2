@@ -1,0 +1,95 @@
+name: Changelog Check
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect behavior-changing files
+        id: diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          git diff --name-only "$BASE_SHA" "$HEAD_SHA" > changed_files.txt
+          echo "Changed files:"
+          cat changed_files.txt
+
+          BEHAVIOR_REGEX='^(src/|public/|index\.html$|package\.json$|package-lock\.json$|vite\.config\.ts$|tsconfig.*\.json$)'
+
+          if grep -Eq "$BEHAVIOR_REGEX" changed_files.txt; then
+            echo "behavior_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "behavior_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if grep -Fxq 'CHANGELOG.md' changed_files.txt; then
+            echo "changelog_touched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changelog_touched=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate PR declaration and changelog update
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BEHAVIOR_CHANGED: ${{ steps.diff.outputs.behavior_changed }}
+          CHANGELOG_TOUCHED: ${{ steps.diff.outputs.changelog_touched }}
+        run: |
+          set -euo pipefail
+
+          echo "behavior_changed=$BEHAVIOR_CHANGED"
+          echo "changelog_touched=$CHANGELOG_TOUCHED"
+
+          behavior_checked=false
+          no_behavior_checked=false
+
+          if printf '%s' "$PR_BODY" | grep -Eiq -- '- \[[xX]\] Tämä PR muuttaa käyttäytymistä'; then
+            behavior_checked=true
+          fi
+
+          if printf '%s' "$PR_BODY" | grep -Eiq -- '- \[[xX]\] Tämä PR ei muuta käyttäytymistä'; then
+            no_behavior_checked=true
+          fi
+
+          if [ "$behavior_checked" = true ] && [ "$no_behavior_checked" = true ]; then
+            echo "::error::Valitse vain yksi käyttäytymisvaikutuksen checkbox PR-templatesta."
+            exit 1
+          fi
+
+          if [ "$behavior_checked" = false ] && [ "$no_behavior_checked" = false ]; then
+            echo "::error::Valitse PR-templatesta käyttäytymisvaikutuksen checkbox."
+            exit 1
+          fi
+
+          if [ "$BEHAVIOR_CHANGED" = true ]; then
+            if [ "$behavior_checked" = false ]; then
+              echo "::error::Koodimuutokset näyttävät käyttäytymistä muuttavilta. Merkitse 'Tämä PR muuttaa käyttäytymistä'."
+              exit 1
+            fi
+
+            if [ "$CHANGELOG_TOUCHED" = false ]; then
+              echo "::error::Käyttäytymistä muuttava PR vaatii CHANGELOG.md-päivityksen."
+              exit 1
+            fi
+          fi
+
+          if [ "$BEHAVIOR_CHANGED" = false ] && [ "$behavior_checked" = true ] && [ "$CHANGELOG_TOUCHED" = false ]; then
+            echo "::error::Merkkasit käyttäytymismuutoksen, mutta CHANGELOG.md puuttuu. Päivitä changelog tai vaihda checkbox oikein."
+            exit 1
+          fi
+
+          echo "Changelog-check passed."
