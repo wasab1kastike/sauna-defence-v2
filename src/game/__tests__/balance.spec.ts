@@ -1,0 +1,190 @@
+import { gameContent } from '../../content/gameContent';
+import {
+  applyAction,
+  createDefaultMetaProgress,
+  createInitialState,
+  stepState
+} from '../logic';
+import type { DefenderTemplateId, RunState } from '../types';
+
+type Checkpoint = 5 | 10 | 15;
+
+interface ScenarioMetrics {
+  seed: number;
+  clearedWave5Boss: boolean;
+  clearTimeMs: Record<Checkpoint, number>;
+  saunaHpByWave: Record<number, number>;
+  survivalRatioByRole: Record<DefenderTemplateId, number>;
+}
+
+const CHECKPOINTS: Checkpoint[] = [5, 10, 15];
+const SEEDS = [1337, 4242, 9001];
+const STEP_MS = 100;
+const MAX_SIM_TIME_MS = 12 * 60 * 1000;
+const BOARD_TILES = [
+  { q: 0, r: -1 },
+  { q: 1, r: -1 },
+  { q: -1, r: 0 },
+  { q: 0, r: 1 }
+];
+
+function createBaselineState(seed: number): RunState {
+  let state = createInitialState(gameContent, createDefaultMetaProgress(), seed, false, false);
+  state.defenders.forEach((defender) => {
+    defender.level = 6;
+  });
+  const readyDefenders = state.defenders.filter((defender) => defender.location === 'ready').slice(0, BOARD_TILES.length);
+
+  readyDefenders.forEach((defender, index) => {
+    state = applyAction(state, { type: 'selectDefender', defenderId: defender.id }, gameContent);
+    state = applyAction(state, { type: 'placeSelectedDefender', tile: BOARD_TILES[index] }, gameContent);
+  });
+
+  return state;
+}
+
+function maybeResolveDraft(state: RunState): RunState {
+  if (state.overlayMode === 'modifier_draft' && state.globalModifierDraftOffers.length > 0) {
+    return applyAction(
+      state,
+      { type: 'draftGlobalModifier', modifierId: state.globalModifierDraftOffers[0] },
+      gameContent
+    );
+  }
+
+  if (state.overlayMode === 'subclass_draft' && state.subclassDraftOfferIds.length > 0) {
+    return applyAction(
+      state,
+      { type: 'draftSubclassChoice', subclassId: state.subclassDraftOfferIds[0] },
+      gameContent
+    );
+  }
+
+  return state;
+}
+
+function average(values: number[]): number {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function simulateBaselineScenario(seed: number): ScenarioMetrics {
+  let state = createBaselineState(seed);
+  const waveStartMs = new Map<number, number>();
+  const clearTimeMs: Record<Checkpoint, number> = { 5: -1, 10: -1, 15: -1 };
+  const saunaHpByWave: Record<number, number> = {};
+  const startingRoleCounts: Record<DefenderTemplateId, number> = {
+    guardian: state.defenders.filter((entry) => entry.templateId === 'guardian').length,
+    hurler: state.defenders.filter((entry) => entry.templateId === 'hurler').length,
+    mender: state.defenders.filter((entry) => entry.templateId === 'mender').length
+  };
+
+  let elapsedMs = 0;
+
+  while (elapsedMs <= MAX_SIM_TIME_MS) {
+    state = maybeResolveDraft(state);
+
+    if (
+      state.phase === 'wave' &&
+      state.overlayMode === 'none' &&
+      state.sisu.current >= gameContent.config.sisuAbilityCost &&
+      state.timeMs >= state.sisu.cooldownUntilMs
+    ) {
+      state = applyAction(state, { type: 'activateSisu' }, gameContent);
+    }
+
+    if (state.phase === 'prep' && state.overlayMode === 'none' && state.waveIndex <= 16) {
+      state = applyAction(state, { type: 'startWave' }, gameContent);
+      waveStartMs.set(state.currentWave.index, state.timeMs);
+    }
+
+    const prevWaveIndex = state.waveIndex;
+    const prevPhase = state.phase;
+
+    state = stepState(state, STEP_MS, gameContent);
+    elapsedMs += STEP_MS;
+
+    if (state.phase === 'lost') {
+      break;
+    }
+
+    if (state.waveIndex > prevWaveIndex) {
+      saunaHpByWave[prevWaveIndex] = state.saunaHp;
+      if (CHECKPOINTS.includes(prevWaveIndex as Checkpoint)) {
+        const startMs = waveStartMs.get(prevWaveIndex) ?? state.timeMs;
+        clearTimeMs[prevWaveIndex as Checkpoint] = state.timeMs - startMs;
+      }
+    }
+
+    if (prevPhase === 'wave' && prevWaveIndex === 5 && state.waveIndex >= 6) {
+      // boss wave 5 cleared, recorded by wave index jump
+    }
+
+    if (state.waveIndex >= 16 && state.phase !== 'wave') {
+      break;
+    }
+  }
+
+  const livingByRole: Record<DefenderTemplateId, number> = {
+    guardian: state.defenders.filter((entry) => entry.templateId === 'guardian' && entry.location !== 'dead').length,
+    hurler: state.defenders.filter((entry) => entry.templateId === 'hurler' && entry.location !== 'dead').length,
+    mender: state.defenders.filter((entry) => entry.templateId === 'mender' && entry.location !== 'dead').length
+  };
+
+  return {
+    seed,
+    clearedWave5Boss: state.waveIndex >= 6,
+    clearTimeMs,
+    saunaHpByWave,
+    survivalRatioByRole: {
+      guardian: livingByRole.guardian / startingRoleCounts.guardian,
+      hurler: livingByRole.hurler / startingRoleCounts.hurler,
+      mender: livingByRole.mender / startingRoleCounts.mender
+    }
+  };
+}
+
+function areaAverageSaunaHp(metrics: ScenarioMetrics, checkpoint: Checkpoint): number {
+  const values = [checkpoint - 2, checkpoint - 1, checkpoint]
+    .map((wave) => metrics.saunaHpByWave[wave])
+    .filter((value): value is number => typeof value === 'number');
+  return values.length === 3 ? average(values) : 0;
+}
+
+describe('balance baseline regression metrics', () => {
+  const scenarios = SEEDS.map((seed) => simulateBaselineScenario(seed));
+
+  it('keeps wave 5 boss clearable with baseline roster', () => {
+    expect(scenarios.every((scenario) => scenario.clearedWave5Boss)).toBe(true);
+  });
+
+  it('locks checkpoint clear-time envelopes for waves 5/10/15', () => {
+    const avgWave5 = Math.round(average(scenarios.map((scenario) => scenario.clearTimeMs[5])));
+    const avgWave10 = Math.round(average(scenarios.map((scenario) => scenario.clearTimeMs[10])));
+    const avgWave15 = Math.round(average(scenarios.map((scenario) => scenario.clearTimeMs[15])));
+
+    expect(avgWave5).toBeGreaterThanOrEqual(4500);
+    expect(avgWave5).toBeLessThanOrEqual(26000);
+    expect(avgWave10).toBeGreaterThanOrEqual(5000);
+    expect(avgWave10).toBeLessThanOrEqual(32000);
+    expect(avgWave15).toBeGreaterThanOrEqual(6000);
+    expect(avgWave15).toBeLessThanOrEqual(40000);
+  });
+
+  it('locks area-average sauna HP checkpoints and role survival ratios', () => {
+    const avgHpWave5 = average(scenarios.map((scenario) => areaAverageSaunaHp(scenario, 5)));
+    const avgHpWave10 = average(scenarios.map((scenario) => areaAverageSaunaHp(scenario, 10)));
+    const avgHpWave15 = average(scenarios.map((scenario) => areaAverageSaunaHp(scenario, 15)));
+
+    const avgGuardianSurvival = average(scenarios.map((scenario) => scenario.survivalRatioByRole.guardian));
+    const avgHurlerSurvival = average(scenarios.map((scenario) => scenario.survivalRatioByRole.hurler));
+    const avgMenderSurvival = average(scenarios.map((scenario) => scenario.survivalRatioByRole.mender));
+
+    expect(avgHpWave5).toBeGreaterThanOrEqual(45);
+    expect(avgHpWave10).toBeGreaterThanOrEqual(20);
+    expect(avgHpWave15).toBeGreaterThanOrEqual(5);
+
+    expect(avgGuardianSurvival).toBeGreaterThanOrEqual(0.3);
+    expect(avgHurlerSurvival).toBeGreaterThanOrEqual(0.2);
+    expect(avgMenderSurvival).toBeGreaterThanOrEqual(0.3);
+  });
+});

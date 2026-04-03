@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Added
+- New `docs/balance.md` baseline balance target document (wave clear time, area-average sauna HP at wave 5/10/15, role-based survival ratios).
+- New deterministic balance regression test helper at `src/game/__tests__/balance.spec.ts` with locked baseline metrics across fixed seeds.
+- Added `.github/pull_request_template.md` checklist requiring balance-impact PRs to update `docs/balance.md` and regression metrics.
 - New `lint` and `typecheck` npm scripts for CI quality gates.
 - Flat ESLint configuration for TypeScript + React source files under `src/`.
 - New content integrity test that validates ID uniqueness and cross-content references (subclass/template + item/skill modifier links).
