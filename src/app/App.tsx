@@ -1,10 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from 'react';
 
 import { gameContent } from '../content/gameContent';
-import { getTileViewportPosition, pickDefenderAtCanvasPoint, pickEnemyAtCanvasPoint, pickTileAtCanvasPoint } from '../game/render';
+import {
+  clampBoardCamera,
+  DEFAULT_BOARD_CAMERA,
+  getTileViewportPosition,
+  pickDefenderAtCanvasPoint,
+  pickEnemyAtCanvasPoint,
+  pickTileAtCanvasPoint,
+  zoomBoardCameraAtPoint
+} from '../game/render';
 import { createGameRuntime } from '../game/runtime';
 import type {
+  BoardCamera,
   GameRuntime,
   GameSnapshot,
   HudPanelId,
@@ -59,6 +68,10 @@ const BOARD_POPUP_MAX_HEIGHT = 720;
 const BOARD_POPUP_HEIGHT_RATIO = 0.68;
 const BOARD_POPUP_MARGIN = 18;
 const BOARD_POPUP_MIN_TOP = 86;
+const BOARD_CAMERA_DRAG_THRESHOLD_PX = 10;
+const BOARD_CAMERA_MIN_ZOOM = 0.75;
+const BOARD_CAMERA_MAX_ZOOM = 1.8;
+const BOARD_CAMERA_ZOOM_STEP = 0.14;
 
 const GUIDE_STORAGE_KEY = 'sauna-defense-v3-guide-seen';
 const GUIDE_STEPS = [
@@ -92,13 +105,22 @@ function compactHintBody(text: string) {
 function getLandmarkStyle(
   snapshot: GameSnapshot,
   frameSize: { width: number; height: number },
-  landmark: HudWorldLandmarkEntry
+  landmark: HudWorldLandmarkEntry,
+  camera: BoardCamera
 ): CSSProperties {
-  const point = getTileViewportPosition(snapshot, frameSize.width, frameSize.height, landmark.tile);
+  const point = getTileViewportPosition(snapshot, frameSize.width, frameSize.height, landmark.tile, camera);
   return {
     left: `${point.x}px`,
     top: `${point.y}px`
   };
+}
+
+export function didBoardPointerBecomeDrag(
+  start: { x: number; y: number },
+  next: { x: number; y: number },
+  threshold = BOARD_CAMERA_DRAG_THRESHOLD_PX
+) {
+  return Math.hypot(next.x - start.x, next.y - start.y) > threshold;
 }
 
 export function getLandmarkPopupPlacement(
@@ -124,12 +146,13 @@ export function getLandmarkPopupPlacement(
 function getLandmarkPopupStyle(
   snapshot: GameSnapshot,
   frameSize: { width: number; height: number },
-  landmark: HudWorldLandmarkEntry | null
+  landmark: HudWorldLandmarkEntry | null,
+  camera: BoardCamera
 ): CSSProperties | undefined {
   if (!landmark || frameSize.width === 0 || frameSize.height === 0) {
     return undefined;
   }
-  const point = getTileViewportPosition(snapshot, frameSize.width, frameSize.height, landmark.tile);
+  const point = getTileViewportPosition(snapshot, frameSize.width, frameSize.height, landmark.tile, camera);
   const placement = getLandmarkPopupPlacement(point, frameSize);
   return {
     left: `${placement.left}px`,
@@ -142,6 +165,7 @@ export function resolveBoardPointerAction(
   rect: DOMRect,
   clientX: number,
   clientY: number,
+  camera: BoardCamera,
   pickLandmark: (
     nextSnapshot: GameSnapshot,
     nextRect: DOMRect,
@@ -154,17 +178,17 @@ export function resolveBoardPointerAction(
     return { type: 'selectWorldLandmark', landmarkId: clickedLandmark.id };
   }
 
-  const clickedDefenderId = pickDefenderAtCanvasPoint(snapshot, rect, clientX, clientY);
+  const clickedDefenderId = pickDefenderAtCanvasPoint(snapshot, rect, clientX, clientY, camera);
   if (clickedDefenderId) {
     return { type: 'selectDefender', defenderId: clickedDefenderId };
   }
 
-  const clickedEnemyInstanceId = pickEnemyAtCanvasPoint(snapshot, rect, clientX, clientY);
+  const clickedEnemyInstanceId = pickEnemyAtCanvasPoint(snapshot, rect, clientX, clientY, camera);
   if (clickedEnemyInstanceId !== null) {
     return { type: 'selectEnemy', enemyInstanceId: clickedEnemyInstanceId };
   }
 
-  const tile = pickTileAtCanvasPoint(snapshot, rect, clientX, clientY);
+  const tile = pickTileAtCanvasPoint(snapshot, rect, clientX, clientY, camera);
   if (!tile) {
     return { type: 'clearSelection' };
   }
@@ -178,8 +202,17 @@ export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const runtimeRef = useRef<GameRuntime | null>(null);
+  const boardCameraRef = useRef<BoardCamera>({ ...DEFAULT_BOARD_CAMERA });
+  const dragStateRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    startCamera: BoardCamera;
+    dragging: boolean;
+  } | null>(null);
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
+  const [boardCamera, setBoardCamera] = useState<BoardCamera>({ ...DEFAULT_BOARD_CAMERA });
   const [guideSeen, setGuideSeen] = useState(() => {
     if (typeof window === 'undefined') {
       return false;
@@ -205,6 +238,7 @@ export function App() {
     });
 
     runtimeRef.current = runtime;
+    runtime.setCamera(boardCameraRef.current);
     const unsubscribe = runtime.subscribe(setSnapshot);
 
     const resize = () => {
@@ -253,6 +287,19 @@ export function App() {
     setGuideStep(0);
   }, [guideSeen, guideStep, snapshot]);
 
+  useEffect(() => {
+    if (!snapshot || frameSize.width === 0 || frameSize.height === 0) {
+      return;
+    }
+    const clamped = clampBoardCamera(snapshot, frameSize.width, frameSize.height, boardCameraRef.current);
+    const previous = boardCameraRef.current;
+    boardCameraRef.current = clamped;
+    runtimeRef.current?.setCamera(clamped);
+    if (previous.zoom !== clamped.zoom || previous.panX !== clamped.panX || previous.panY !== clamped.panY) {
+      setBoardCamera(clamped);
+    }
+  }, [frameSize.height, frameSize.width, snapshot]);
+
   const persistGuideSeen = (value: boolean) => {
     setGuideSeen(value);
     if (typeof window === 'undefined') {
@@ -279,6 +326,25 @@ export function App() {
     runtimeRef.current?.dispatch(action);
   };
 
+  const applyBoardCamera = (
+    nextCamera: BoardCamera,
+    nextSnapshot: GameSnapshot | null = snapshot,
+    nextFrameSize: { width: number; height: number } = frameSize
+  ) => {
+    const clamped =
+      nextSnapshot && nextFrameSize.width > 0 && nextFrameSize.height > 0
+        ? clampBoardCamera(nextSnapshot, nextFrameSize.width, nextFrameSize.height, nextCamera)
+        : nextCamera;
+    boardCameraRef.current = clamped;
+    runtimeRef.current?.setCamera(clamped);
+    setBoardCamera((previous) => (
+      previous.zoom === clamped.zoom && previous.panX === clamped.panX && previous.panY === clamped.panY
+        ? previous
+        : clamped
+    ));
+    return clamped;
+  };
+
   const pickLandmarkAtPointer = (
     nextSnapshot: GameSnapshot,
     rect: DOMRect,
@@ -287,7 +353,7 @@ export function App() {
   ) => {
     const radius = Math.max(24, Math.min(rect.width, rect.height) * 0.035);
     return nextSnapshot.hud.worldLandmarks.find((landmark) => {
-      const point = getTileViewportPosition(nextSnapshot, rect.width, rect.height, landmark.tile);
+      const point = getTileViewportPosition(nextSnapshot, rect.width, rect.height, landmark.tile, boardCameraRef.current);
       return Math.hypot(point.x - (clientX - rect.left), point.y - (clientY - rect.top)) <= radius;
     }) ?? null;
   };
@@ -298,28 +364,124 @@ export function App() {
     if (!runtime || !nextSnapshot) {
       return;
     }
+    const drag = dragStateRef.current;
+    if (drag && drag.pointerId === event.pointerId) {
+      const point = { x: event.clientX, y: event.clientY };
+      if (!drag.dragging && didBoardPointerBecomeDrag({ x: drag.startX, y: drag.startY }, point)) {
+        drag.dragging = true;
+      }
+      if (drag.dragging) {
+        const rect = event.currentTarget.getBoundingClientRect();
+        event.preventDefault();
+        applyBoardCamera(
+          {
+            ...drag.startCamera,
+            panX: drag.startCamera.panX + (event.clientX - drag.startX),
+            panY: drag.startCamera.panY + (event.clientY - drag.startY)
+          },
+          nextSnapshot,
+          { width: rect.width, height: rect.height }
+        );
+        runtime.dispatch({ type: 'hoverTile', tile: null });
+        return;
+      }
+    }
     const tile = pickTileAtCanvasPoint(
       nextSnapshot,
       event.currentTarget.getBoundingClientRect(),
       event.clientX,
-      event.clientY
+      event.clientY,
+      boardCameraRef.current
     );
     runtime.dispatch({ type: 'hoverTile', tile });
   };
 
   const handlePointerLeave = () => {
+    if (dragStateRef.current?.dragging) {
+      return;
+    }
     runtimeRef.current?.dispatch({ type: 'hoverTile', tile: null });
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const nextSnapshot = snapshot;
+    if (!nextSnapshot || nextSnapshot.hud.introOpen || nextSnapshot.hud.showGlobalModifierDraft || nextSnapshot.hud.showSubclassDraft || guideStep !== null) {
+      return;
+    }
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startCamera: boardCameraRef.current,
+      dragging: false
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const runtime = runtimeRef.current;
     const nextSnapshot = snapshot;
-    if (!runtime || !nextSnapshot || nextSnapshot.hud.introOpen || nextSnapshot.hud.showGlobalModifierDraft || nextSnapshot.hud.showSubclassDraft || guideStep !== null) {
+    const drag = dragStateRef.current;
+    if (!runtime || !nextSnapshot || !drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    dragStateRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (drag.dragging) {
+      runtime.dispatch({ type: 'hoverTile', tile: null });
       return;
     }
 
     const rect = event.currentTarget.getBoundingClientRect();
-    runtime.dispatch(resolveBoardPointerAction(nextSnapshot, rect, event.clientX, event.clientY, pickLandmarkAtPointer));
+    runtime.dispatch(resolveBoardPointerAction(
+      nextSnapshot,
+      rect,
+      event.clientX,
+      event.clientY,
+      boardCameraRef.current,
+      pickLandmarkAtPointer
+    ));
+  };
+
+  const handlePointerCancel = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const drag = dragStateRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    dragStateRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    runtimeRef.current?.dispatch({ type: 'hoverTile', tile: null });
+  };
+
+  const handleWheel = (event: ReactWheelEvent<HTMLCanvasElement>) => {
+    const nextSnapshot = snapshot;
+    if (!nextSnapshot) {
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    event.preventDefault();
+    const nextZoom = clamp(
+      boardCameraRef.current.zoom + (event.deltaY < 0 ? BOARD_CAMERA_ZOOM_STEP : -BOARD_CAMERA_ZOOM_STEP),
+      BOARD_CAMERA_MIN_ZOOM,
+      BOARD_CAMERA_MAX_ZOOM
+    );
+    applyBoardCamera(
+      zoomBoardCameraAtPoint(
+        nextSnapshot,
+        rect.width,
+        rect.height,
+        boardCameraRef.current,
+        { x: event.clientX - rect.left, y: event.clientY - rect.top },
+        nextZoom
+      ),
+      nextSnapshot,
+      { width: rect.width, height: rect.height }
+    );
   };
 
   const selectedDefender = snapshot?.hud.selectedDefender ?? null;
@@ -616,7 +778,7 @@ export function App() {
     }
 
     const popupStyle = (activePanel === 'beer_shop' || activePanel === 'metashop')
-      ? getLandmarkPopupStyle(snapshot, frameSize, activeLandmark)
+      ? getLandmarkPopupStyle(snapshot, frameSize, activeLandmark, boardCamera)
       : undefined;
     const popupClassName = (activePanel === 'beer_shop' || activePanel === 'metashop')
       ? 'board-popup board-popup-landmark'
@@ -974,6 +1136,9 @@ export function App() {
             onPointerMove={handlePointerMove}
             onPointerLeave={handlePointerLeave}
             onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            onWheel={handleWheel}
           />
 
           {snapshot ? (
@@ -1089,7 +1254,7 @@ export function App() {
               <button
                 key={landmark.id}
                 className={landmark.selected ? 'landmark-chip selected' : 'landmark-chip'}
-                style={getLandmarkStyle(snapshot, frameSize, landmark)}
+                style={getLandmarkStyle(snapshot, frameSize, landmark, boardCamera)}
                 onClick={() => dispatch({ type: 'selectWorldLandmark', landmarkId: landmark.id })}
               >
                 <strong>{landmark.label}</strong>

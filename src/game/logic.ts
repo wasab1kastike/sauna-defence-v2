@@ -86,10 +86,7 @@ const NON_BOSS_PATTERNS: Array<Exclude<WavePattern, 'tutorial' | 'boss_pressure'
   'surge'
 ];
 const CENTER: AxialCoord = { q: 0, r: 0 };
-const WORLD_LANDMARK_TILES: Record<WorldLandmarkId, AxialCoord> = {
-  metashop: { q: 3, r: -6 },
-  beer_shop: { q: -3, r: 6 }
-};
+const WORLD_LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'beer_shop'];
 const BLINK_STEP_COOLDOWN_MS = 12000;
 const AUTOPLAY_DELAY_MS = 650;
 const EMPTY_STATS: UnitStats = {
@@ -388,6 +385,81 @@ export function createHexGrid(radius: number): AxialCoord[] {
     }
   }
   return tiles.sort((left, right) => (left.r - right.r) || (left.q - right.q));
+}
+
+function bossesDefeatedByWave(index: number, content: GameContent): number {
+  return Math.max(0, Math.floor((Math.max(1, index) - 1) / content.config.bossEvery));
+}
+
+function gridRadiusForWave(index: number, content: GameContent): number {
+  return content.config.gridRadius + bossesDefeatedByWave(index, content);
+}
+
+function buildRadiusForWave(index: number, content: GameContent): number {
+  return content.config.buildRadius + bossesDefeatedByWave(index, content);
+}
+
+function currentGridRadius(state: RunState, content: GameContent): number {
+  return gridRadiusForWave(state.waveIndex, content);
+}
+
+function currentBuildRadius(state: RunState, content: GameContent): number {
+  return buildRadiusForWave(state.waveIndex, content);
+}
+
+function perimeterTiles(radius: number): AxialCoord[] {
+  if (radius <= 0) {
+    return [{ q: 0, r: 0 }];
+  }
+
+  const tiles: AxialCoord[] = [];
+  let tile = { q: 0, r: -radius };
+  const edges: AxialCoord[] = [
+    { q: 1, r: 0 },
+    { q: 0, r: 1 },
+    { q: -1, r: 1 },
+    { q: -1, r: 0 },
+    { q: 0, r: -1 },
+    { q: 1, r: -1 }
+  ];
+
+  tiles.push({ ...tile });
+  for (const edge of edges) {
+    for (let step = 0; step < radius; step += 1) {
+      tile = add(tile, edge);
+      if (tiles.length < radius * 6) {
+        tiles.push({ ...tile });
+      }
+    }
+  }
+
+  return tiles;
+}
+
+function spawnLanesForWave(index: number, content: GameContent): AxialCoord[] {
+  const radius = gridRadiusForWave(index, content);
+  const perimeter = perimeterTiles(radius);
+  const laneCount = Math.min(6 + bossesDefeatedByWave(index, content) * 2, 12);
+  const lanes: AxialCoord[] = [];
+
+  for (let laneIndex = 0; laneIndex < laneCount; laneIndex += 1) {
+    const sampleIndex = Math.floor((laneIndex * perimeter.length) / laneCount) % perimeter.length;
+    lanes.push({ ...perimeter[sampleIndex] });
+  }
+
+  return lanes;
+}
+
+function currentSpawnLanes(state: RunState, content: GameContent): AxialCoord[] {
+  return spawnLanesForWave(state.waveIndex, content);
+}
+
+function landmarkTileForWave(index: number, landmarkId: WorldLandmarkId, content: GameContent): AxialCoord {
+  const radius = gridRadiusForWave(index, content);
+  const offset = Math.ceil(radius / 2);
+  return landmarkId === 'metashop'
+    ? { q: offset, r: -radius }
+    : { q: -offset, r: radius };
 }
 
 export function createDefaultMetaProgress(): MetaProgress {
@@ -959,7 +1031,7 @@ function spawnIntervalMs(index: number, content: GameContent, modifier = 0): num
   const slot = slotInCycle(index, content);
   return Math.max(
     content.config.minSpawnIntervalMs,
-    920 - cycle * content.config.spawnIntervalStepMs - slot * 32 + modifier
+    860 - cycle * content.config.spawnIntervalStepMs - slot * 40 + modifier
   );
 }
 
@@ -1023,12 +1095,12 @@ function buildPatternSpawns(
   content: GameContent,
   pressure: number
 ): WaveSpawn[] {
-  const laneCount = content.config.spawnLanes.length;
+  const laneCount = spawnLanesForWave(index, content).length;
   const baseLane = wrapLane(index + cycleNumber(index, content), laneCount);
   const altLane = wrapLane(baseLane + 3, laneCount);
   const supportLane = wrapLane(baseLane + 2, laneCount);
   const flankLane = wrapLane(baseLane + 1, laneCount);
-  const interval = spawnIntervalMs(index, content, pattern === 'surge' ? -70 : pattern === 'staggered' ? 35 : 0);
+  const interval = spawnIntervalMs(index, content, pattern === 'surge' ? -80 : pattern === 'staggered' ? 20 : 0);
   const cycle = cycleNumber(index, content);
   const enemies =
     pattern === 'surge'
@@ -1036,6 +1108,10 @@ function buildPatternSpawns(
       : pattern === 'spearhead'
         ? compositionForPressure(pressure, cycle, 1)
         : compositionForPressure(pressure, cycle, 0);
+  const minimumEnemyCount = 4 + cycle + Math.floor(slotInCycle(index, content) / 2) + (pattern === 'surge' ? 1 : 0);
+  while (enemies.length < minimumEnemyCount) {
+    enemies.push('raider');
+  }
   const spawns: WaveSpawn[] = [];
   let atMs = 0;
 
@@ -1061,36 +1137,43 @@ function buildPatternSpawns(
 }
 
 function bossBaseLane(index: number, content: GameContent): number {
-  return wrapLane(index + bossWaveOrdinal(index, content) * 2, content.config.spawnLanes.length);
+  return wrapLane(index + bossWaveOrdinal(index, content) * 2, spawnLanesForWave(index, content).length);
 }
 
 function buildPebbleSpawns(index: number, content: GameContent): WaveSpawn[] {
-  const laneCount = content.config.spawnLanes.length;
-  return [{ atMs: 0, enemyId: 'pebble', laneIndex: bossBaseLane(index, content) % laneCount }];
+  const radius = gridRadiusForWave(index, content);
+  const laneIndex = bossWaveOrdinal(index, content) % 6;
+  return [{
+    atMs: 0,
+    enemyId: 'pebble',
+    laneIndex,
+    tile: rotateCoord({ q: 0, r: -radius }, laneIndex)
+  }];
 }
 
 function buildEndUserHordeSpawns(index: number, content: GameContent): WaveSpawn[] {
-  const laneCount = content.config.spawnLanes.length;
+  const laneCount = spawnLanesForWave(index, content).length;
   const baseLane = bossBaseLane(index, content);
   const lanes = [baseLane, wrapLane(baseLane + 2, laneCount), wrapLane(baseLane + 4, laneCount)];
   const spawns: WaveSpawn[] = [];
   let atMs = 0;
+  const spawnCount = 18 + bossWaveOrdinal(index, content) * 4;
 
-  for (let spawnIndex = 0; spawnIndex < 16; spawnIndex += 1) {
+  for (let spawnIndex = 0; spawnIndex < spawnCount; spawnIndex += 1) {
     pushSpawn(spawns, atMs, 'thirsty_user', lanes[spawnIndex % lanes.length], laneCount);
-    atMs += spawnIndex > 0 && spawnIndex % 4 === 3 ? 360 : 220;
+    atMs += spawnIndex > 0 && spawnIndex % 4 === 3 ? 280 : 180;
   }
 
   return spawns;
 }
 
 function buildElectricBatherSpawns(index: number, content: GameContent): WaveSpawn[] {
-  const laneCount = content.config.spawnLanes.length;
+  const laneCount = spawnLanesForWave(index, content).length;
   return [{ atMs: 0, enemyId: 'electric_bather', laneIndex: bossBaseLane(index, content) % laneCount }];
 }
 
 function buildEscalationManagerSpawns(index: number, content: GameContent): WaveSpawn[] {
-  const laneCount = content.config.spawnLanes.length;
+  const laneCount = spawnLanesForWave(index, content).length;
   return [{ atMs: 0, enemyId: 'escalation_manager', laneIndex: bossBaseLane(index, content) % laneCount }];
 }
 
@@ -1186,19 +1269,21 @@ function occupied(state: RunState, tile: AxialCoord): boolean {
     state.enemies.some((enemy) => sameCoord(enemy.tile, tile));
 }
 
-function isBuildable(tile: AxialCoord, content: GameContent): boolean {
+function isBuildable(tile: AxialCoord, buildRadius: number, spawnLanes: AxialCoord[]): boolean {
   const dist = hexDistance(tile, CENTER);
-  return dist > 0 && dist <= content.config.buildRadius &&
-    !content.config.spawnLanes.some((lane) => sameCoord(lane, tile));
+  return dist > 0 && dist <= buildRadius &&
+    !spawnLanes.some((lane) => sameCoord(lane, tile));
 }
 
 function nearestSaunaDeployTile(state: RunState, content: GameContent, preferredTile?: AxialCoord | null): AxialCoord | null {
-  if (preferredTile && isBuildable(preferredTile, content) && !occupied(state, preferredTile)) {
+  const buildRadius = currentBuildRadius(state, content);
+  const spawnLanes = currentSpawnLanes(state, content);
+  if (preferredTile && isBuildable(preferredTile, buildRadius, spawnLanes) && !occupied(state, preferredTile)) {
     return { ...preferredTile };
   }
 
-  const candidates = createHexGrid(content.config.gridRadius)
-    .filter((tile) => isBuildable(tile, content))
+  const candidates = createHexGrid(currentGridRadius(state, content))
+    .filter((tile) => isBuildable(tile, buildRadius, spawnLanes))
     .filter((tile) => !occupied(state, tile))
     .sort((left, right) =>
       (hexDistance(left, CENTER) - hexDistance(right, CENTER)) ||
@@ -1358,7 +1443,7 @@ function hudWorldLandmarkEntry(state: RunState, landmarkId: WorldLandmarkId, con
   return {
     id: landmarkId,
     label: landmarkId === 'metashop' ? 'Metashop' : 'Beer Shop',
-    tile: { ...WORLD_LANDMARK_TILES[landmarkId] },
+    tile: landmarkTileForWave(state.waveIndex, landmarkId, content),
     visible: landmarkVisible(state, landmarkId),
     enabled: landmarkEnabled(state, landmarkId),
     locked: landmarkLocked(state, landmarkId),
@@ -1689,10 +1774,12 @@ function alliesToHeal(state: RunState, defender: DefenderInstance, stats: UnitSt
 function tryBlink(state: RunState, defender: DefenderInstance, content: GameContent): boolean {
   if (!defender.tile || !defender.skills.includes('blink_step') || state.timeMs < defender.blinkReadyAtMs) return false;
   const from = { ...defender.tile };
+  const buildRadius = currentBuildRadius(state, content);
+  const spawnLanes = currentSpawnLanes(state, content);
   const hpRatio = defender.hp / Math.max(1, derivedStats(state, defender, content).maxHp);
   if (hpRatio <= 0.5 && defender.homeTile) {
     const canRetreat =
-      isBuildable(defender.homeTile, content) &&
+      isBuildable(defender.homeTile, buildRadius, spawnLanes) &&
       !occupied(state, defender.homeTile) &&
       (defender.homeTile.q !== defender.tile.q || defender.homeTile.r !== defender.tile.r);
     if (canRetreat) {
@@ -1706,7 +1793,7 @@ function tryBlink(state: RunState, defender: DefenderInstance, content: GameCont
   const enemy = nearestEnemy(state, defender.tile);
   if (!enemy) return false;
   const tile = DIRS.map((dir) => add(defender.tile as AxialCoord, dir))
-    .filter((next) => isBuildable(next, content) && !occupied(state, next))
+    .filter((next) => isBuildable(next, buildRadius, spawnLanes) && !occupied(state, next))
     .sort((left, right) => hexDistance(left, enemy.tile) - hexDistance(right, enemy.tile))[0];
   if (!tile) return false;
   moveDefenderToTile(state, defender, tile, 'blink', BLINK_MOTION_DURATION_MS, from);
@@ -1723,6 +1810,8 @@ function moveDefenderTowardSaunaThreat(
   cooldownMultiplier: number
 ): boolean {
   if (!defender.tile) return false;
+  const buildRadius = currentBuildRadius(state, content);
+  const spawnLanes = currentSpawnLanes(state, content);
 
   const threat = saunaThreats(state, content)
     .sort((left, right) => (hexDistance(defender.tile as AxialCoord, left.tile) - hexDistance(defender.tile as AxialCoord, right.tile)) || (left.hp - right.hp))[0];
@@ -1731,7 +1820,7 @@ function moveDefenderTowardSaunaThreat(
   const currentThreatDistance = hexDistance(defender.tile, threat.tile);
   const currentCenterDistance = hexDistance(defender.tile, CENTER);
   const nextTile = DIRS.map((dir) => add(defender.tile as AxialCoord, dir))
-    .filter((tile) => isBuildable(tile, content) && !occupied(state, tile))
+    .filter((tile) => isBuildable(tile, buildRadius, spawnLanes) && !occupied(state, tile))
     .sort((left, right) =>
       (hexDistance(left, threat.tile) - hexDistance(right, threat.tile)) ||
       (hexDistance(left, CENTER) - hexDistance(right, CENTER)) ||
@@ -2330,8 +2419,12 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
   defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
 }
 
-function pebblePathForLane(laneIndex: number): AxialCoord[] {
-  return PEBBLE_PATH_BASE.map((coord) => rotateCoord(coord, laneIndex));
+function pebblePathForLane(laneIndex: number, radius: number): AxialCoord[] {
+  const extension: AxialCoord[] = [];
+  for (let currentRadius = radius; currentRadius > 6; currentRadius -= 1) {
+    extension.push({ q: 0, r: -currentRadius });
+  }
+  return [...extension, ...PEBBLE_PATH_BASE].map((coord) => rotateCoord(coord, laneIndex));
 }
 
 function swarmDamageBonus(state: RunState): number {
@@ -2393,7 +2486,7 @@ function enemyTarget(state: RunState, enemy: EnemyInstance, content: GameContent
 
 function moveEnemyTowardCenter(state: RunState, enemy: EnemyInstance, content: GameContent): boolean {
   const tile = DIRS.map((dir) => add(enemy.tile, dir))
-    .filter((next) => hexDistance(next, CENTER) <= content.config.gridRadius)
+    .filter((next) => hexDistance(next, CENTER) <= currentGridRadius(state, content))
     .filter((next) => !occupied(state, next))
     .sort((left, right) => (hexDistance(left, CENTER) - hexDistance(right, CENTER)) || (left.r - right.r) || (left.q - right.q))[0];
   if (!tile) return false;
@@ -2433,7 +2526,7 @@ function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent)
     return;
   }
   if (state.timeMs < enemy.moveReadyAtMs) return;
-  const path = pebblePathForLane(enemy.spawnLaneIndex ?? 0);
+  const path = pebblePathForLane(enemy.spawnLaneIndex ?? 0, currentGridRadius(state, content));
   const nextPathIndex = (enemy.pathIndex ?? 0) + 1;
   const nextTile = path[nextPathIndex] ?? null;
   if (!nextTile) return;
@@ -2478,7 +2571,7 @@ function stepElectricBather(state: RunState, enemy: EnemyInstance, content: Game
 }
 
 function summonEscalationTickets(state: RunState, enemy: EnemyInstance, content: GameContent): void {
-  const laneCount = content.config.spawnLanes.length;
+  const laneCount = currentSpawnLanes(state, content).length;
   const preferredLanes = [
     enemy.spawnLaneIndex ?? 0,
     wrapLane((enemy.spawnLaneIndex ?? 0) + 1, laneCount),
@@ -2529,13 +2622,14 @@ function enemyStep(state: RunState, enemy: EnemyInstance, content: GameContent):
 }
 
 function spawnEnemies(state: RunState, content: GameContent): void {
+  const spawnLanes = currentSpawnLanes(state, content);
   const waiting: WaveSpawn[] = [];
   for (const spawn of state.pendingSpawns) {
     if (spawn.atMs > state.waveElapsedMs) {
       waiting.push(spawn);
       continue;
     }
-    const lane = content.config.spawnLanes[spawn.laneIndex % content.config.spawnLanes.length];
+    const lane = spawn.tile ? { ...spawn.tile } : spawnLanes[spawn.laneIndex % spawnLanes.length];
     if (occupied(state, lane)) {
       waiting.push(spawn);
       continue;
@@ -3656,7 +3750,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       if (next.overlayMode === 'intermission') return next;
       const defender = getDefender(next, next.selectedDefenderId);
       if (!defender || (defender.location !== 'ready' && defender.location !== 'sauna')) return next;
-      if (!isBuildable(action.tile, content) || occupied(next, action.tile)) {
+      const buildRadius = currentBuildRadius(next, content);
+      const spawnLanes = currentSpawnLanes(next, content);
+      if (!isBuildable(action.tile, buildRadius, spawnLanes) || occupied(next, action.tile)) {
         next.message = 'That hex is not available.';
         return next;
       }
@@ -3980,8 +4076,11 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
 }
 
 export function createSnapshot(state: RunState, content: GameContent): GameSnapshot {
-  const tiles = createHexGrid(content.config.gridRadius);
-  const buildableTiles = tiles.filter((tile) => isBuildable(tile, content));
+  const gridRadius = currentGridRadius(state, content);
+  const buildRadius = currentBuildRadius(state, content);
+  const spawnTiles = currentSpawnLanes(state, content);
+  const tiles = createHexGrid(gridRadius);
+  const buildableTiles = tiles.filter((tile) => isBuildable(tile, buildRadius, spawnTiles));
   const selected = getDefender(state, state.selectedDefenderId);
   const selectedEnemy = getEnemy(state, state.selectedEnemyInstanceId);
   const selectedLoot = getInventoryDrop(state, state.selectedInventoryDropId);
@@ -3999,7 +4098,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const globalModifierSummary = globalModifierSummaryEntries(state, content);
   const draftGlobalModifiers = state.globalModifierDraftOffers
     .map((modifierId) => globalModifierDraftHudEntry(state, content.globalModifierDefinitions[modifierId], content));
-  const worldLandmarks = (Object.keys(WORLD_LANDMARK_TILES) as WorldLandmarkId[])
+  const worldLandmarks = WORLD_LANDMARK_IDS
     .map((landmarkId) => hudWorldLandmarkEntry(state, landmarkId, content))
     .filter((entry) => entry.visible);
   const hud: HudViewModel = {
@@ -4337,7 +4436,12 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   };
   return {
     state,
-    config: content.config,
+    config: {
+      ...content.config,
+      gridRadius,
+      buildRadius,
+      spawnLanes: spawnTiles
+    },
     defenderTemplates: content.defenderTemplates,
     enemyArchetypes: content.enemyArchetypes,
     itemDefinitions: content.itemDefinitions,
@@ -4348,6 +4452,6 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     hud,
     tiles,
     buildableTiles,
-    spawnTiles: content.config.spawnLanes.map((lane) => ({ ...lane }))
+    spawnTiles
   };
 }

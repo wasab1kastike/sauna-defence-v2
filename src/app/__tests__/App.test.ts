@@ -1,7 +1,7 @@
-import { getLandmarkPopupPlacement, getSelectionCardTitle, resolveBoardPointerAction } from '../App';
+import { didBoardPointerBecomeDrag, getLandmarkPopupPlacement, getSelectionCardTitle, resolveBoardPointerAction } from '../App';
 import { gameContent } from '../../content/gameContent';
 import { createDefaultMetaProgress, createInitialState, createSnapshot } from '../../game/logic';
-import { getTileViewportPosition } from '../../game/render';
+import { DEFAULT_BOARD_CAMERA, getTileViewportPosition } from '../../game/render';
 
 describe('App popup helpers', () => {
   it('keeps landmark popups inside the frame near the top-left edge', () => {
@@ -57,8 +57,13 @@ describe('App popup helpers', () => {
     const snapshot = createSnapshot(state, gameContent);
     const rect = { left: 0, top: 0, width: 900, height: 700 } as DOMRect;
     const point = getTileViewportPosition(snapshot, rect.width, rect.height, defender.tile!);
-    const action = resolveBoardPointerAction(snapshot, rect, point.x, point.y, () => null);
+    const action = resolveBoardPointerAction(snapshot, rect, point.x, point.y, DEFAULT_BOARD_CAMERA, () => null);
 
     expect(action).toEqual({ type: 'selectDefender', defenderId: defender.id });
+  });
+
+  it('treats tiny pointer movement as a click and larger movement as a drag', () => {
+    expect(didBoardPointerBecomeDrag({ x: 100, y: 100 }, { x: 106, y: 107 })).toBe(false);
+    expect(didBoardPointerBecomeDrag({ x: 100, y: 100 }, { x: 108, y: 108 })).toBe(true);
   });
 });

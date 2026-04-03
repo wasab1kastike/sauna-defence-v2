@@ -1,6 +1,7 @@
 import { coordKey, hexDistance } from './logic';
 import type {
   AxialCoord,
+  BoardCamera,
   BossId,
   DefenderTemplateId,
   EnemyInstance,
@@ -11,6 +12,13 @@ import type {
 } from './types';
 
 const SQRT3 = Math.sqrt(3);
+const CAMERA_EDGE_MARGIN = 56;
+
+export const DEFAULT_BOARD_CAMERA: BoardCamera = {
+  zoom: 1,
+  panX: 0,
+  panY: 0
+};
 
 interface BoardLayout {
   hexSize: number;
@@ -136,13 +144,101 @@ function axialToPixel(tile: AxialCoord, layout: BoardLayout) {
   };
 }
 
+function applyCameraToPoint(
+  point: { x: number; y: number },
+  layout: BoardLayout,
+  camera: BoardCamera
+) {
+  return {
+    x: layout.centerX + (point.x - layout.centerX) * camera.zoom + camera.panX,
+    y: layout.centerY + (point.y - layout.centerY) * camera.zoom + camera.panY
+  };
+}
+
+function removeCameraFromPoint(
+  point: { x: number; y: number },
+  layout: BoardLayout,
+  camera: BoardCamera
+) {
+  return {
+    x: layout.centerX + (point.x - layout.centerX - camera.panX) / camera.zoom,
+    y: layout.centerY + (point.y - layout.centerY - camera.panY) / camera.zoom
+  };
+}
+
+function applyBoardCameraTransform(
+  ctx: CanvasRenderingContext2D,
+  layout: BoardLayout,
+  camera: BoardCamera
+) {
+  ctx.translate(layout.centerX + camera.panX, layout.centerY + camera.panY);
+  ctx.scale(camera.zoom, camera.zoom);
+  ctx.translate(-layout.centerX, -layout.centerY);
+}
+
+export function clampBoardCamera(
+  snapshot: GameSnapshot,
+  viewportWidth: number,
+  viewportHeight: number,
+  camera: BoardCamera
+): BoardCamera {
+  const layout = getBoardLayout(viewportWidth, viewportHeight, snapshot.config.gridRadius);
+  const tiles = snapshot.tiles.length > 0 ? snapshot.tiles : [{ q: 0, r: 0 }];
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  for (const tile of tiles) {
+    const point = axialToPixel(tile, layout);
+    minX = Math.min(minX, point.x - layout.hexSize);
+    maxX = Math.max(maxX, point.x + layout.hexSize);
+    minY = Math.min(minY, point.y - layout.hexSize);
+    maxY = Math.max(maxY, point.y + layout.hexSize);
+  }
+
+  const scaledMinX = layout.centerX + (minX - layout.centerX) * camera.zoom;
+  const scaledMaxX = layout.centerX + (maxX - layout.centerX) * camera.zoom;
+  const scaledMinY = layout.centerY + (minY - layout.centerY) * camera.zoom;
+  const scaledMaxY = layout.centerY + (maxY - layout.centerY) * camera.zoom;
+  const minPanX = CAMERA_EDGE_MARGIN - scaledMaxX;
+  const maxPanX = viewportWidth - CAMERA_EDGE_MARGIN - scaledMinX;
+  const minPanY = CAMERA_EDGE_MARGIN - scaledMaxY;
+  const maxPanY = viewportHeight - CAMERA_EDGE_MARGIN - scaledMinY;
+
+  return {
+    zoom: camera.zoom,
+    panX: clamp(camera.panX, minPanX, maxPanX),
+    panY: clamp(camera.panY, minPanY, maxPanY)
+  };
+}
+
+export function zoomBoardCameraAtPoint(
+  snapshot: GameSnapshot,
+  viewportWidth: number,
+  viewportHeight: number,
+  camera: BoardCamera,
+  anchor: { x: number; y: number },
+  zoom: number
+): BoardCamera {
+  const layout = getBoardLayout(viewportWidth, viewportHeight, snapshot.config.gridRadius);
+  const worldPoint = removeCameraFromPoint(anchor, layout, camera);
+  return clampBoardCamera(snapshot, viewportWidth, viewportHeight, {
+    zoom,
+    panX: anchor.x - layout.centerX - (worldPoint.x - layout.centerX) * zoom,
+    panY: anchor.y - layout.centerY - (worldPoint.y - layout.centerY) * zoom
+  });
+}
+
 export function getTileViewportPosition(
   snapshot: GameSnapshot,
   viewportWidth: number,
   viewportHeight: number,
-  tile: AxialCoord
+  tile: AxialCoord,
+  camera: BoardCamera = DEFAULT_BOARD_CAMERA
 ) {
-  return axialToPixel(tile, getBoardLayout(viewportWidth, viewportHeight, snapshot.config.gridRadius));
+  const layout = getBoardLayout(viewportWidth, viewportHeight, snapshot.config.gridRadius);
+  return applyCameraToPoint(axialToPixel(tile, layout), layout, camera);
 }
 
 function roundAxial(q: number, r: number): AxialCoord {
@@ -2044,7 +2140,8 @@ export function paintSnapshot(
   ctx: CanvasRenderingContext2D,
   snapshot: GameSnapshot,
   viewportWidth: number,
-  viewportHeight: number
+  viewportHeight: number,
+  camera: BoardCamera = DEFAULT_BOARD_CAMERA
 ) {
   const layout = getBoardLayout(viewportWidth, viewportHeight, snapshot.config.gridRadius);
   const buildableSet = new Set(snapshot.buildableTiles.map(coordKey));
@@ -2057,8 +2154,6 @@ export function paintSnapshot(
 
   ctx.clearRect(0, 0, viewportWidth, viewportHeight);
   const shake = getCombatShake(snapshot);
-  ctx.save();
-  ctx.translate(shake.x, shake.y);
 
   const background = ctx.createLinearGradient(0, 0, 0, viewportHeight);
   background.addColorStop(0, '#08161a');
@@ -2079,6 +2174,9 @@ export function paintSnapshot(
   smoke.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = smoke;
   ctx.fillRect(0, 0, viewportWidth, viewportHeight);
+  ctx.save();
+  ctx.translate(shake.x, shake.y);
+  applyBoardCameraTransform(ctx, layout, camera);
   drawBossWaveAtmosphere(ctx, snapshot, layout, viewportWidth, viewportHeight);
 
   for (const tile of snapshot.tiles) {
@@ -2237,7 +2335,7 @@ export function paintSnapshot(
       }
       drawEnemyBossNameplate(ctx, center, bossProfile.label ?? archetype.name, radius, bossProfile);
     } else if (bossProfile.presentation === 'boss_horde_member') {
-      drawHordeMemberBoss(ctx, center, radius, snapshot.state.timeMs, hordeCount, enemy.instanceId);
+        drawHordeMemberBoss(ctx, center, radius, snapshot.state.timeMs, hordeCount, enemy.instanceId);
     } else {
       const hasPortrait = drawEnemyPortrait(ctx, center, radius, enemy.archetypeId, enemy.tokenStyleId);
       if (!hasPortrait) {
@@ -2316,10 +2414,12 @@ export function pickTileAtCanvasPoint(
   snapshot: GameSnapshot,
   rect: DOMRect,
   clientX: number,
-  clientY: number
+  clientY: number,
+  camera: BoardCamera = DEFAULT_BOARD_CAMERA
 ): AxialCoord | null {
   const layout = getBoardLayout(rect.width, rect.height, snapshot.config.gridRadius);
-  const tile = pixelToAxial(clientX - rect.left, clientY - rect.top, layout);
+  const worldPoint = removeCameraFromPoint({ x: clientX - rect.left, y: clientY - rect.top }, layout, camera);
+  const tile = pixelToAxial(worldPoint.x, worldPoint.y, layout);
   if (hexDistance(tile, { q: 0, r: 0 }) > snapshot.config.gridRadius) {
     return null;
   }
@@ -2330,7 +2430,8 @@ export function pickDefenderAtCanvasPoint(
   snapshot: GameSnapshot,
   rect: DOMRect,
   clientX: number,
-  clientY: number
+  clientY: number,
+  camera: BoardCamera = DEFAULT_BOARD_CAMERA
 ): string | null {
   const layout = getBoardLayout(rect.width, rect.height, snapshot.config.gridRadius);
   const pointer = { x: clientX - rect.left, y: clientY - rect.top };
@@ -2338,11 +2439,15 @@ export function pickDefenderAtCanvasPoint(
     .filter((defender) => defender.location === 'board' && defender.tile)
     .map((defender) => ({
       id: defender.id,
-      center: axialFloatToPixel(
-        resolveAnimatedHexPosition(defender.tile as AxialCoord, defender.motion ?? null, snapshot.state.timeMs),
-        layout
+      center: applyCameraToPoint(
+        axialFloatToPixel(
+          resolveAnimatedHexPosition(defender.tile as AxialCoord, defender.motion ?? null, snapshot.state.timeMs),
+          layout
+        ),
+        layout,
+        camera
       ),
-      radius: layout.hexSize * 0.62
+      radius: layout.hexSize * 0.62 * camera.zoom
     }))
     .sort((left, right) => right.radius - left.radius);
 
@@ -2356,7 +2461,8 @@ export function pickEnemyAtCanvasPoint(
   snapshot: GameSnapshot,
   rect: DOMRect,
   clientX: number,
-  clientY: number
+  clientY: number,
+  camera: BoardCamera = DEFAULT_BOARD_CAMERA
 ): number | null {
   const layout = getBoardLayout(rect.width, rect.height, snapshot.config.gridRadius);
   const pointer = { x: clientX - rect.left, y: clientY - rect.top };
@@ -2365,8 +2471,8 @@ export function pickEnemyAtCanvasPoint(
       const resolved = resolveEnemyCanvasUnit(enemy, snapshot, layout);
       return {
         instanceId: enemy.instanceId,
-        center: resolved.center,
-        radius: resolved.bossProfile.presentation === 'boss_unit' ? resolved.radius * 1.18 : resolved.radius * 1.05
+        center: applyCameraToPoint(resolved.center, layout, camera),
+        radius: (resolved.bossProfile.presentation === 'boss_unit' ? resolved.radius * 1.18 : resolved.radius * 1.05) * camera.zoom
       };
     })
     .sort((left, right) => right.radius - left.radius);

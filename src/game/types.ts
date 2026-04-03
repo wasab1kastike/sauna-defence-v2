@@ -360,6 +360,7 @@ export interface WaveSpawn {
   atMs: number;
   enemyId: EnemyUnitId;
   laneIndex: number;
+  tile?: AxialCoord;
   spawnedByEnemyInstanceId?: number | null;
 }
 
@@ -875,6 +876,12 @@ export interface GameSnapshot {
   spawnTiles: AxialCoord[];
 }
 
+export interface BoardCamera {
+  zoom: number;
+  panX: number;
+  panY: number;
+}
+
 export type InputAction =
   | { type: 'selectDefender'; defenderId: string }
   | { type: 'selectEnemy'; enemyInstanceId: number }
@@ -930,6 +937,7 @@ export interface GameRuntime {
   start(): void;
   stop(): void;
   resize(): void;
+  setCamera(camera: BoardCamera): void;
   dispatch(action: InputAction): void;
   subscribe(listener: (snapshot: GameSnapshot) => void): () => void;
   getSnapshot(): GameSnapshot;

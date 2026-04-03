@@ -45,6 +45,22 @@ describe('Sauna Defense V2 logic', () => {
     ]);
   });
 
+  it('keeps tutorial waves unchanged while post-tutorial waves spawn more enemies faster', () => {
+    const tutorialTwo = createWaveDefinition(2, gameContent);
+    const tutorialFour = createWaveDefinition(4, gameContent);
+    const waveSix = createWaveDefinition(6, gameContent);
+
+    expect(tutorialTwo.spawns).toEqual([
+      { atMs: 0, enemyId: 'raider', laneIndex: 0 },
+      { atMs: 800, enemyId: 'raider', laneIndex: 3 },
+      { atMs: 1700, enemyId: 'brute', laneIndex: 1 },
+      { atMs: 3100, enemyId: 'raider', laneIndex: 5 }
+    ]);
+    expect(tutorialFour.spawns.length).toBe(5);
+    expect(waveSix.spawns.length).toBeGreaterThanOrEqual(5);
+    expect(waveSix.spawns.at(-1)?.atMs ?? 0).toBeLessThan(4500);
+  });
+
   it('makes Pebble ignore defenders and continue along its scripted path', () => {
     let state = prepState();
     const defender = state.defenders.find((entry) => entry.location === 'ready');
@@ -2209,6 +2225,35 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.globalModifierDraftOffers).toHaveLength(3);
     expect(snapshot.hud.globalModifierDraftOffers.every((entry) => entry.stackCount > 0)).toBe(true);
     expect(new Set(snapshot.hud.globalModifierDraftOffers.map((entry) => entry.id)).size).toBe(3);
+  });
+
+  it('grows the map, build radius, and spawn ring immediately after a boss clear', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.waveIndex = 5;
+    state.currentWave = {
+      index: 5,
+      isBoss: true,
+      rewardSisu: 7,
+      pressure: 18,
+      pattern: 'boss_breach',
+      bossId: 'pebble',
+      bossCategory: 'breach',
+      spawns: []
+    };
+    state.pendingSpawns = [];
+    state.enemies = [];
+
+    state = stepState(state, 16, gameContent);
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(state.currentWave.index).toBe(6);
+    expect(snapshot.config.gridRadius).toBe(7);
+    expect(snapshot.config.buildRadius).toBe(6);
+    expect(snapshot.tiles.length).toBe(169);
+    expect(snapshot.buildableTiles.some((tile) => Math.max(Math.abs(tile.q), Math.abs(tile.r), Math.abs(-tile.q - tile.r)) === 6)).toBe(true);
+    expect(snapshot.spawnTiles).toHaveLength(8);
+    expect(snapshot.spawnTiles.every((tile) => Math.max(Math.abs(tile.q), Math.abs(tile.r), Math.abs(-tile.q - tile.r)) === 7)).toBe(true);
   });
 
   it('stores the picked global modifier and closes the boss reward overlay', () => {

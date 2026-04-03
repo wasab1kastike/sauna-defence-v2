@@ -1,6 +1,6 @@
 import { applyAction, createDefaultMetaProgress, createDefaultRunPreferences, createInitialState, createSnapshot, stepState } from './logic';
-import { paintSnapshot } from './render';
-import type { GameRuntime, GameRuntimeConfig, GameSnapshot, InputAction, MetaProgress, RunPreferences, RunState } from './types';
+import { DEFAULT_BOARD_CAMERA, paintSnapshot } from './render';
+import type { BoardCamera, GameRuntime, GameRuntimeConfig, GameSnapshot, InputAction, MetaProgress, RunPreferences, RunState } from './types';
 
 const META_STORAGE_KEY = 'sauna-defense-v2-meta';
 const PREFERENCES_STORAGE_KEY = 'sauna-defense-v2-preferences';
@@ -100,6 +100,7 @@ export function createGameRuntime(config: GameRuntimeConfig): GameRuntime {
     loadPreferences(storage)
   );
   let snapshot: GameSnapshot = createSnapshot(state, config.content);
+  let camera: BoardCamera = { ...DEFAULT_BOARD_CAMERA };
   let animationFrameId = 0;
   let lastFrameMs = 0;
   let lastEmitMs = 0;
@@ -128,7 +129,7 @@ export function createGameRuntime(config: GameRuntimeConfig): GameRuntime {
       return;
     }
     const rect = config.canvas.getBoundingClientRect();
-    paintSnapshot(ctx, snapshot, rect.width, rect.height);
+    paintSnapshot(ctx, snapshot, rect.width, rect.height, camera);
   };
 
   const sync = (forceEmit = false) => {
@@ -182,6 +183,11 @@ export function createGameRuntime(config: GameRuntimeConfig): GameRuntime {
       }
       render();
       emit(true);
+    },
+
+    setCamera(nextCamera) {
+      camera = { ...nextCamera };
+      render();
     },
 
     dispatch(action: InputAction) {

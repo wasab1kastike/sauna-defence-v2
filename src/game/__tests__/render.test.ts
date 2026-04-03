@@ -1,4 +1,12 @@
-import { getTileViewportPosition, pickEnemyAtCanvasPoint, resolveAnimatedHexPosition, resolveBossVisualProfile } from '../render';
+import {
+  DEFAULT_BOARD_CAMERA,
+  getTileViewportPosition,
+  pickDefenderAtCanvasPoint,
+  pickEnemyAtCanvasPoint,
+  resolveAnimatedHexPosition,
+  resolveBossVisualProfile,
+  resolveHordeBossVariantIndex
+} from '../render';
 import { gameContent } from '../../content/gameContent';
 import { createDefaultMetaProgress, createInitialState, createSnapshot, createWaveDefinition } from '../logic';
 import type { UnitMotionState, WaveDefinition } from '../types';
@@ -66,6 +74,16 @@ describe('render helpers', () => {
     expect(resolveBossVisualProfile(hordeWave, 'brute').presentation).toBe('normal');
   });
 
+  it('selects horde boss sprite variants deterministically from instance ids', () => {
+    expect(resolveHordeBossVariantIndex(0, 3)).toBe(0);
+    expect(resolveHordeBossVariantIndex(1, 3)).toBe(1);
+    expect(resolveHordeBossVariantIndex(2, 3)).toBe(2);
+    expect(resolveHordeBossVariantIndex(3, 3)).toBe(0);
+    expect(resolveHordeBossVariantIndex(11, 3)).toBe(2);
+    expect(resolveHordeBossVariantIndex(-1, 3)).toBe(2);
+    expect(resolveHordeBossVariantIndex(7, 0)).toBe(0);
+  });
+
   it('hit-tests enemies at their rendered position, including bosses', () => {
     const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
     state.currentWave = createWaveDefinition(5, gameContent);
@@ -89,5 +107,20 @@ describe('render helpers', () => {
     const point = getTileViewportPosition(snapshot, rect.width, rect.height, state.enemies[0].tile);
 
     expect(pickEnemyAtCanvasPoint(snapshot, rect, point.x, point.y)).toBe(44);
+  });
+
+  it('projects and hit-tests defenders correctly through camera pan and zoom', () => {
+    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.location = 'board';
+    defender.tile = { q: 1, r: -1 };
+    defender.homeTile = { q: 1, r: -1 };
+
+    const snapshot = createSnapshot(state, gameContent);
+    const rect = { left: 0, top: 0, width: 900, height: 700 } as DOMRect;
+    const camera = { ...DEFAULT_BOARD_CAMERA, zoom: 1.35, panX: 52, panY: -34 };
+    const point = getTileViewportPosition(snapshot, rect.width, rect.height, defender.tile, camera);
+
+    expect(pickDefenderAtCanvasPoint(snapshot, rect, point.x, point.y, camera)).toBe(defender.id);
   });
 });
