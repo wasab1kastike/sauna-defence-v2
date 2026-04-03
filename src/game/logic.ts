@@ -397,18 +397,6 @@ export function createHexGrid(radius: number): AxialCoord[] {
   return tiles.sort((left, right) => (left.r - right.r) || (left.q - right.q));
 }
 
-function hexesInRadius(center: AxialCoord, radius: number): AxialCoord[] {
-  const tiles: AxialCoord[] = [];
-  for (let dq = -radius; dq <= radius; dq += 1) {
-    const rMin = Math.max(-radius, -dq - radius);
-    const rMax = Math.min(radius, -dq + radius);
-    for (let dr = rMin; dr <= rMax; dr += 1) {
-      tiles.push({ q: center.q + dq, r: center.r + dr });
-    }
-  }
-  return tiles;
-}
-
 function defeatedBossCountForWave(index: number, content: GameContent): number {
   return Math.max(0, Math.floor((Math.max(1, index) - 1) / content.config.bossEvery));
 }

@@ -31,8 +31,26 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Lint source (src/**/*.ts, src/**/*.tsx)
+        run: |
+          npm run lint || {
+            echo "::error::Lint failed for source TypeScript/TSX files (src/**/*.ts, src/**/*.tsx)."
+            exit 1
+          }
+
+      - name: Typecheck project references
+        run: |
+          npm run typecheck || {
+            echo "::error::Typecheck failed (tsc -b --pretty false)."
+            exit 1
+          }
+
       - name: Run Tests
-        run: npm test
+        run: |
+          npm test || {
+            echo "::error::Tests failed (vitest run)."
+            exit 1
+          }
 
       - name: Build
         run: npm run build
