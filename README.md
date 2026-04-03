@@ -64,4 +64,5 @@ GitHub Pages -julkaisu käyttää custom domainia `artobest.com`.
 
 - `src/app` React-kuori ja HUD
 - `src/game` pelitila, runtime, renderöinti ja testit
-- `src/content` tasapaino- ja aaltodata
+- `src/content` tasapaino- ja aaltodata (moduulit: `config`, `defenders`, `subclasses`, `enemies`, `waves`, `items`)
+- `docs/content-authoring.md` ohjeet uuden yksikön lisäämiseen ja content-viitteiden ylläpitoon

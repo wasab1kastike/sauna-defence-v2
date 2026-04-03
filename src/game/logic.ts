@@ -6,7 +6,6 @@ import type {
   AxialCoord,
   BeerShopOffer,
   BossId,
-  BossCategory,
   CombatFxEvent,
   CombatFxKind,
   DefenderInstance,
@@ -46,6 +45,7 @@ import type {
   WaveSpawn,
   WorldLandmarkId
 } from './types';
+import { bossRotation, nonBossPatterns, tutorialWaves, type BossRotationEntry } from '../content/waves';
 
 const DIRS: AxialCoord[] = [
   { q: 1, r: 0 },
@@ -79,12 +79,6 @@ const META_IDS: MetaUpgradeId[] = [
   'beer_shop_level',
   'sauna_auto_deploy',
   'sauna_slap_swap'
-];
-const NON_BOSS_PATTERNS: Array<Exclude<WavePattern, 'tutorial' | 'boss_pressure' | 'boss_breach'>> = [
-  'split',
-  'staggered',
-  'spearhead',
-  'surge'
 ];
 const CENTER: AxialCoord = { q: 0, r: 0 };
 const WORLD_LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'beer_shop'];
@@ -133,40 +127,6 @@ const PEBBLE_PATH_BASE: AxialCoord[] = [
   { q: 1, r: -2 },
   { q: 1, r: -1 },
   { q: 0, r: -1 }
-];
-
-interface BossRotationEntry {
-  bossId: BossId;
-  bossCategory: BossCategory;
-  name: string;
-  hint: string;
-}
-
-const BOSS_ROTATION: BossRotationEntry[] = [
-  {
-    bossId: 'pebble',
-    bossCategory: 'breach',
-    name: 'Pebble',
-    hint: 'Massive beer worm. Ignores heroes and tunnels straight for the sauna.'
-  },
-  {
-    bossId: 'end_user_horde',
-    bossCategory: 'pressure',
-    name: 'End-User Horde',
-    hint: 'Weak alone, lethal in a crowd. Kill the swarm fast to collapse the ramping damage.'
-  },
-  {
-    bossId: 'electric_bather',
-    bossCategory: 'pressure',
-    name: 'Electric Sauna User',
-    hint: 'Punishes clumped defenders with chain shocks every few seconds.'
-  },
-  {
-    bossId: 'escalation_manager',
-    bossCategory: 'pressure',
-    name: 'Escalation Manager',
-    hint: 'Opens new tickets mid-fight and shrugs off damage while its users are still alive.'
-  }
 ];
 
 function subclassMilestoneIds(
@@ -321,15 +281,15 @@ function bossWaveOrdinal(index: number, content: GameContent): number {
 }
 
 function bossRotationEntryForWave(index: number, content: GameContent): BossRotationEntry {
-  return BOSS_ROTATION[bossWaveOrdinal(index, content) % BOSS_ROTATION.length];
+  return bossRotation[bossWaveOrdinal(index, content) % bossRotation.length];
 }
 
 function bossDisplayName(bossId: BossId | null): string | null {
-  return BOSS_ROTATION.find((entry) => entry.bossId === bossId)?.name ?? null;
+  return bossRotation.find((entry) => entry.bossId === bossId)?.name ?? null;
 }
 
 function bossHint(bossId: BossId | null): string | null {
-  return BOSS_ROTATION.find((entry) => entry.bossId === bossId)?.hint ?? null;
+  return bossRotation.find((entry) => entry.bossId === bossId)?.hint ?? null;
 }
 
 function isWaveBossEnemy(currentWave: WaveDefinition, enemy: EnemyInstance): boolean {
@@ -1233,37 +1193,18 @@ function buildBossSpawns(index: number, content: GameContent, bossId: BossId): W
 
 export function createWaveDefinition(index: number, content: GameContent): WaveDefinition {
   const isBoss = index % content.config.bossEvery === 0;
-  if (index === 1) {
-    return { index, isBoss: false, rewardSisu: 3, pressure: 4, pattern: 'tutorial', bossId: null, bossCategory: null, spawns: [
-      { atMs: 0, enemyId: 'raider', laneIndex: 0 },
-      { atMs: 1100, enemyId: 'raider', laneIndex: 2 },
-      { atMs: 2300, enemyId: 'raider', laneIndex: 4 }
-    ] };
-  }
-  if (index === 2) {
-    return { index, isBoss: false, rewardSisu: 3, pressure: 6, pattern: 'tutorial', bossId: null, bossCategory: null, spawns: [
-      { atMs: 0, enemyId: 'raider', laneIndex: 0 },
-      { atMs: 800, enemyId: 'raider', laneIndex: 3 },
-      { atMs: 1700, enemyId: 'brute', laneIndex: 1 },
-      { atMs: 3100, enemyId: 'raider', laneIndex: 5 }
-    ] };
-  }
-  if (index === 3) {
-    return { index, isBoss: false, rewardSisu: 3, pressure: 9, pattern: 'split', bossId: null, bossCategory: null, spawns: [
-      { atMs: 0, enemyId: 'brute', laneIndex: 0 },
-      { atMs: 900, enemyId: 'raider', laneIndex: 2 },
-      { atMs: 1600, enemyId: 'raider', laneIndex: 4 },
-      { atMs: 2900, enemyId: 'brute', laneIndex: 1 }
-    ] };
-  }
-  if (index === 4) {
-    return { index, isBoss: false, rewardSisu: 3, pressure: 11, pattern: 'staggered', bossId: null, bossCategory: null, spawns: [
-      { atMs: 0, enemyId: 'raider', laneIndex: 0 },
-      { atMs: 700, enemyId: 'raider', laneIndex: 2 },
-      { atMs: 1400, enemyId: 'brute', laneIndex: 4 },
-      { atMs: 2300, enemyId: 'raider', laneIndex: 1 },
-      { atMs: 3200, enemyId: 'brute', laneIndex: 5 }
-    ] };
+  const tutorialWave = tutorialWaves.find((wave) => wave.index === index);
+  if (tutorialWave) {
+    return {
+      index,
+      isBoss: false,
+      rewardSisu: tutorialWave.rewardSisu,
+      pressure: tutorialWave.pressure,
+      pattern: tutorialWave.pattern,
+      bossId: null,
+      bossCategory: null,
+      spawns: tutorialWave.spawns
+    };
   }
 
   const pressure = wavePressure(index, content, isBoss);
@@ -1280,7 +1221,7 @@ export function createWaveDefinition(index: number, content: GameContent): WaveD
       spawns: buildBossSpawns(index, content, rotation.bossId)
     };
   }
-  const pattern = NON_BOSS_PATTERNS[(index - 5) % NON_BOSS_PATTERNS.length];
+  const pattern = nonBossPatterns[(index - 5) % nonBossPatterns.length];
   return {
     index,
     isBoss: false,
