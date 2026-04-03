@@ -3,7 +3,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from
 
 import { gameContent } from '../content/gameContent';
 import { getTileViewportPosition, pickDefenderAtCanvasPoint, pickEnemyAtCanvasPoint, pickTileAtCanvasPoint } from '../game/render';
-import { createGameRuntime } from '../game/runtime';
+import { createGameRuntime, STORAGE_KEY_PREFIX } from '../game/runtime';
 import type {
   GameRuntime,
   GameSnapshot,
@@ -60,7 +60,7 @@ const BOARD_POPUP_HEIGHT_RATIO = 0.68;
 const BOARD_POPUP_MARGIN = 18;
 const BOARD_POPUP_MIN_TOP = 86;
 
-const GUIDE_STORAGE_KEY = 'sauna-defense-v3-guide-seen';
+const GUIDE_STORAGE_KEY = `${STORAGE_KEY_PREFIX}-guide-seen`;
 const GUIDE_STEPS = [
   {
     title: 'Topbar At A Glance',
