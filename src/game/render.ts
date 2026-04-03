@@ -84,6 +84,13 @@ const ENEMY_PORTRAIT_URLS = [
 ];
 const PEBBLE_HEAD_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_head.png`;
 const PEBBLE_BODY_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_body.png`;
+const ELECTRIC_BATHER_BOSS_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/electric_bather_boss.png`;
+const ESCALATION_MANAGER_BOSS_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/escalation_manager_boss.png`;
+const HORDE_BOSS_SPRITE_URLS = [
+  `${import.meta.env.BASE_URL}enemies/thirsty_user_horde_1.png`,
+  `${import.meta.env.BASE_URL}enemies/thirsty_user_horde_2.png`,
+  `${import.meta.env.BASE_URL}enemies/thirsty_user_horde_3.png`
+];
 const DEFENDER_SPRITE_SHEET_URL = `${import.meta.env.BASE_URL}defenders/sauna-party-sheet.png`;
 const DEFENDER_ROLE_PORTRAITS: Record<DefenderTemplateId, number[]> = {
   guardian: [0],
@@ -107,6 +114,9 @@ let processedPortraits = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 let pebbleHeadSprite: HTMLImageElement | null | undefined;
 let pebbleBodySprite: HTMLImageElement | null | undefined;
 let processedPebbleSprites = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
+let electricBatherBossSprite: HTMLImageElement | null | undefined;
+let escalationManagerBossSprite: HTMLImageElement | null | undefined;
+let hordeBossSprites: Array<HTMLImageElement | null | undefined> | undefined;
 
 function getBoardLayout(width: number, height: number, radius: number): BoardLayout {
   const padding = Math.max(14, Math.min(width, height) * 0.04);
@@ -634,6 +644,48 @@ function getPebbleBodySprite(): HTMLImageElement | null {
   return pebbleBodySprite;
 }
 
+function getElectricBatherBossSprite(): HTMLImageElement | null {
+  if (typeof Image === 'undefined') {
+    return null;
+  }
+  if (!electricBatherBossSprite) {
+    electricBatherBossSprite = new Image();
+    electricBatherBossSprite.src = ELECTRIC_BATHER_BOSS_SPRITE_URL;
+  }
+  return electricBatherBossSprite;
+}
+
+function getEscalationManagerBossSprite(): HTMLImageElement | null {
+  if (typeof Image === 'undefined') {
+    return null;
+  }
+  if (!escalationManagerBossSprite) {
+    escalationManagerBossSprite = new Image();
+    escalationManagerBossSprite.src = ESCALATION_MANAGER_BOSS_SPRITE_URL;
+  }
+  return escalationManagerBossSprite;
+}
+
+export function resolveHordeBossVariantIndex(instanceId: number, variantCount = HORDE_BOSS_SPRITE_URLS.length) {
+  if (variantCount <= 0) return 0;
+  return ((instanceId % variantCount) + variantCount) % variantCount;
+}
+
+function getHordeBossSprite(instanceId: number): HTMLImageElement | null {
+  if (typeof Image === 'undefined') {
+    return null;
+  }
+  if (!hordeBossSprites) {
+    hordeBossSprites = HORDE_BOSS_SPRITE_URLS.map((url) => {
+      const image = new Image();
+      image.src = url;
+      return image;
+    });
+  }
+  const variantIndex = resolveHordeBossVariantIndex(instanceId, hordeBossSprites.length);
+  return hordeBossSprites[variantIndex] ?? null;
+}
+
 function fitSpriteDimensions(sourceWidth: number, sourceHeight: number, maxWidth: number, maxHeight: number) {
   const scale = Math.min(maxWidth / sourceWidth, maxHeight / sourceHeight);
   return {
@@ -662,7 +714,8 @@ function drawSprite(
   source: { x: number; y: number; width: number; height: number } | null,
   center: { x: number; y: number },
   maxWidth: number,
-  maxHeight: number
+  maxHeight: number,
+  drawShadow = true
 ) {
   const sourceWidth = source?.width ?? (image instanceof HTMLImageElement ? image.naturalWidth : image.width);
   const sourceHeight = source?.height ?? (image instanceof HTMLImageElement ? image.naturalHeight : image.height);
@@ -671,7 +724,9 @@ function drawSprite(
   const destX = center.x - dims.width / 2;
   const destY = footY - dims.height;
 
-  drawUnitShadow(ctx, center, dims.width, dims.height);
+  if (drawShadow) {
+    drawUnitShadow(ctx, center, dims.width, dims.height);
+  }
 
   ctx.save();
   const previousSmoothing = ctx.imageSmoothingEnabled;
@@ -876,6 +931,30 @@ function getProcessedPebbleSprite(image: HTMLImageElement | null): HTMLCanvasEle
   ctx.putImageData(imageData, 0, 0);
   processedPebbleSprites.set(image, canvas);
   return canvas;
+}
+
+function isDrawableImage(image: HTMLImageElement | null | undefined): image is HTMLImageElement {
+  return Boolean(image && image.complete && image.naturalWidth > 0);
+}
+
+function drawBossSpriteAsset(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement | null,
+  center: { x: number; y: number },
+  maxWidth: number,
+  maxHeight: number
+): boolean {
+  if (!isDrawableImage(image)) {
+    return false;
+  }
+
+  const processed = getProcessedPortrait(image);
+  if (!processed) {
+    return false;
+  }
+
+  drawSprite(ctx, processed, null, center, maxWidth, maxHeight, false);
+  return true;
 }
 
 function drawDefenderPortrait(
@@ -1493,6 +1572,9 @@ function drawElectricBoss(
   drawGlowDisc(ctx, center, radius * (2.1 + chargeProgress * 0.45), 'rgba(208, 245, 255, 0.42)', 'rgba(94, 190, 255, 0)', 0.9);
   drawShockRing(ctx, center, radius * (0.9 + chargeProgress * 0.26), 'rgba(167, 237, 255, 0.95)', Math.max(2, radius * 0.08), 0.72);
   drawSparkBurst(ctx, center, radius * (1.15 + chargeProgress * 0.35), '#def7ff', 0.62 + chargeProgress * 0.2, 10, timeMs * 0.01);
+  if (drawBossSpriteAsset(ctx, getElectricBatherBossSprite(), { x: center.x, y: center.y + radius * 0.08 }, radius * 2.7, radius * 3.45)) {
+    return;
+  }
   ctx.save();
   ctx.translate(center.x, center.y);
   const bodyGradient = ctx.createLinearGradient(0, -radius * 1.1, 0, radius * 1.2);
@@ -1525,6 +1607,9 @@ function drawEscalationManagerBoss(
   drawGlowDisc(ctx, center, radius * 1.9, shielded ? 'rgba(255, 178, 240, 0.4)' : 'rgba(222, 133, 195, 0.28)', 'rgba(132, 32, 98, 0)', 0.86);
   if (shielded) {
     drawShockRing(ctx, center, radius * 1.08, 'rgba(255, 216, 252, 0.84)', Math.max(2, radius * 0.07), 0.8);
+  }
+  if (drawBossSpriteAsset(ctx, getEscalationManagerBossSprite(), { x: center.x, y: center.y + radius * 0.06 }, radius * 2.7, radius * 3.5)) {
+    return;
   }
   ctx.save();
   ctx.translate(center.x, center.y);
@@ -1567,11 +1652,15 @@ function drawHordeMemberBoss(
   center: { x: number; y: number },
   radius: number,
   timeMs: number,
-  hordeCount: number
+  hordeCount: number,
+  instanceId: number
 ) {
   const intensity = clamp(hordeCount / 10, 0.35, 1);
   drawGroundShadow(ctx, { x: center.x, y: center.y + radius * 0.85 }, radius * 0.9, radius * 0.28, 'rgba(11, 8, 6, 0.35)');
   drawGlowDisc(ctx, center, radius * (1.5 + intensity * 0.4), 'rgba(255, 182, 126, 0.28)', 'rgba(183, 48, 24, 0)', 0.76);
+  if (drawBossSpriteAsset(ctx, getHordeBossSprite(instanceId), { x: center.x, y: center.y + radius * 0.06 }, radius * 2.3, radius * 3.1)) {
+    return;
+  }
   for (let index = 0; index < 3; index += 1) {
     const angle = timeMs * 0.002 + index * 2.1;
     const offset = index === 0 ? 0 : radius * 0.26;
@@ -2148,7 +2237,7 @@ export function paintSnapshot(
       }
       drawEnemyBossNameplate(ctx, center, bossProfile.label ?? archetype.name, radius, bossProfile);
     } else if (bossProfile.presentation === 'boss_horde_member') {
-      drawHordeMemberBoss(ctx, center, radius, snapshot.state.timeMs, hordeCount);
+      drawHordeMemberBoss(ctx, center, radius, snapshot.state.timeMs, hordeCount, enemy.instanceId);
     } else {
       const hasPortrait = drawEnemyPortrait(ctx, center, radius, enemy.archetypeId, enemy.tokenStyleId);
       if (!hasPortrait) {
