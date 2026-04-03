@@ -2114,6 +2114,66 @@ function drawBeerShopLandmark(
   ctx.restore();
 }
 
+function drawPebbleBeerBottle(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  size: number,
+  timeMs: number,
+  spawnedAtMs: number
+) {
+  const bob = Math.sin((timeMs - spawnedAtMs) * 0.006) * size * 0.08;
+  const y = center.y + bob;
+  drawGroundShadow(ctx, { x: center.x, y: y + size * 0.82 }, size * 0.38, size * 0.16, 'rgba(12, 8, 6, 0.28)');
+
+  ctx.save();
+  ctx.translate(center.x, y);
+
+  const glow = ctx.createRadialGradient(0, size * 0.06, size * 0.1, 0, size * 0.06, size * 0.85);
+  glow.addColorStop(0, 'rgba(255, 216, 120, 0.65)');
+  glow.addColorStop(1, 'rgba(255, 216, 120, 0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, size * 0.1, size * 0.82, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.14, -size * 0.6);
+  ctx.lineTo(size * 0.14, -size * 0.6);
+  ctx.lineTo(size * 0.11, -size * 0.38);
+  ctx.lineTo(-size * 0.11, -size * 0.38);
+  ctx.closePath();
+  ctx.fillStyle = '#efe2be';
+  ctx.fill();
+  ctx.strokeStyle = '#6a4d25';
+  ctx.lineWidth = Math.max(1, size * 0.05);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.22, -size * 0.34);
+  ctx.quadraticCurveTo(-size * 0.28, size * 0.1, -size * 0.18, size * 0.5);
+  ctx.quadraticCurveTo(0, size * 0.74, size * 0.18, size * 0.5);
+  ctx.quadraticCurveTo(size * 0.28, size * 0.1, size * 0.22, -size * 0.34);
+  ctx.closePath();
+  const liquid = ctx.createLinearGradient(0, -size * 0.34, 0, size * 0.56);
+  liquid.addColorStop(0, '#ffd37b');
+  liquid.addColorStop(0.45, '#d98f33');
+  liquid.addColorStop(1, '#8a4a1b');
+  ctx.fillStyle = liquid;
+  ctx.fill();
+  ctx.strokeStyle = '#4b2310';
+  ctx.lineWidth = Math.max(1, size * 0.07);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(size * 0.16, -size * 0.2);
+  ctx.quadraticCurveTo(size * 0.34, -size * 0.08, size * 0.3, size * 0.16);
+  ctx.quadraticCurveTo(size * 0.26, size * 0.34, size * 0.12, size * 0.22);
+  ctx.strokeStyle = '#f5dec1';
+  ctx.lineWidth = Math.max(1, size * 0.08);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawWorldLandmarks(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, layout: BoardLayout) {
   for (const landmark of snapshot.hud.worldLandmarks) {
     const center = axialToPixel(landmark.tile, layout);
@@ -2133,6 +2193,12 @@ function drawWorldLandmarks(ctx: CanvasRenderingContext2D, snapshot: GameSnapsho
       ctx.stroke();
       ctx.restore();
     }
+  }
+}
+
+function drawPebbleBeerBottles(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, layout: BoardLayout) {
+  for (const bottle of snapshot.state.pebbleBeerBottles) {
+    drawPebbleBeerBottle(ctx, axialToPixel(bottle.tile, layout), layout.hexSize * 0.42, snapshot.state.timeMs, bottle.spawnedAtMs);
   }
 }
 
@@ -2218,6 +2284,7 @@ export function paintSnapshot(
   }
 
   drawWorldLandmarks(ctx, snapshot, layout);
+  drawPebbleBeerBottles(ctx, snapshot, layout);
 
   const saunaCenter = axialToPixel({ q: 0, r: 0 }, layout);
   const saunaGlow = ctx.createRadialGradient(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.1, saunaCenter.x, saunaCenter.y, layout.hexSize * 1.4);
@@ -2363,7 +2430,7 @@ export function paintSnapshot(
       ctx,
       center,
       layout.hexSize * (bossProfile.presentation === 'boss_unit' ? 1.56 : bossProfile.presentation === 'boss_horde_member' ? 1.2 : 1.04),
-      enemy.hp / archetype.maxHp,
+      enemy.hp / Math.max(1, enemy.maxHp ?? archetype.maxHp),
       bossProfile.presentation === 'boss_unit' ? '#ff9f85' : bossProfile.presentation === 'boss_horde_member' ? '#ffb189' : '#ff8772',
       bossProfile.presentation === 'boss_unit'
         ? {

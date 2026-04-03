@@ -61,7 +61,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(waveSix.spawns.at(-1)?.atMs ?? 0).toBeLessThan(4500);
   });
 
-  it('makes Pebble ignore defenders and continue along its scripted path', () => {
+  it('makes Pebble ignore off-path defenders and continue along its scripted path', () => {
     let state = prepState();
     const defender = state.defenders.find((entry) => entry.location === 'ready');
     expect(defender).toBeTruthy();
@@ -95,6 +95,83 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.enemies[0]?.motion?.style).toBe('slither');
     expect(state.enemies[0]?.motion?.fromTile).toEqual({ q: 0, r: -6 });
     expect(state.enemies[0]?.motion?.toTile).toEqual({ q: 1, r: -5 });
+  });
+
+  it('makes Pebble attack a defender blocking its scripted path before moving on', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.location = 'board';
+    defender.tile = { q: 1, r: -5 };
+    defender.homeTile = { q: 1, r: -5 };
+    defender.hp = 20;
+    defender.attackReadyAtMs = 999999;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: gameContent.enemyArchetypes.pebble.maxHp,
+      maxHp: gameContent.enemyArchetypes.pebble.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 0,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.defenders.find((entry) => entry.id === defender.id)?.hp).toBeLessThan(20);
+    expect(state.enemies[0]?.tile).toEqual({ q: 0, r: -6 });
+    expect(state.enemies[0]?.pathIndex).toBe(0);
+  });
+
+  it('lets Pebble consume spawned beer bottles for permanent max hp', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.currentWave = {
+      index: 5,
+      isBoss: true,
+      rewardSisu: 7,
+      pressure: 18,
+      pattern: 'boss_breach',
+      bossId: 'pebble',
+      bossCategory: 'breach',
+      spawns: []
+    };
+    state.pendingSpawns = [];
+    state.pebbleBeerBottles = [{
+      id: 1,
+      tile: { q: 1, r: -5 },
+      maxHpGain: 22,
+      spawnedAtMs: 0
+    }];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: gameContent.enemyArchetypes.pebble.maxHp,
+      maxHp: gameContent.enemyArchetypes.pebble.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.pebbleBeerBottles).toHaveLength(0);
+    expect(state.enemies[0]?.tile).toEqual({ q: 1, r: -5 });
+    expect(state.enemies[0]?.maxHp).toBe(gameContent.enemyArchetypes.pebble.maxHp + 22);
+    expect(state.enemies[0]?.hp).toBe(gameContent.enemyArchetypes.pebble.maxHp + 22);
   });
 
   it('creates step motion metadata when a standard enemy advances', () => {

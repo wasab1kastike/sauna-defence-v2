@@ -37,6 +37,7 @@ import type {
   RunState,
   SkillId,
   SubclassDraftRequest,
+  PebbleBeerBottle,
   UnitMotionState,
   UnitStats,
   WaveDefinition,
@@ -111,6 +112,11 @@ const ELECTRIC_BATHER_ABILITY_COOLDOWN_MS = 5200;
 const ESCALATION_MANAGER_ABILITY_COOLDOWN_MS = 6000;
 const STEP_MOTION_DURATION_MS = 240;
 const PEBBLE_MOTION_DURATION_MS = 520;
+const PEBBLE_BEER_BOTTLE_SPAWN_INTERVAL_MS = 2800;
+const PEBBLE_BEER_BOTTLE_RETRY_MS = 900;
+const PEBBLE_BEER_BOTTLE_ACTIVE_CAP = 2;
+const PEBBLE_BEER_BOTTLE_MIN_PATH_OFFSET = 2;
+const PEBBLE_BEER_BOTTLE_MAX_PATH_OFFSET = 5;
 const BLINK_MOTION_DURATION_MS = 320;
 const SPAWN_SETTLE_DURATION_MS = 260;
 const PEBBLE_PATH_BASE: AxialCoord[] = [
@@ -137,7 +143,7 @@ const BOSS_ROTATION: BossRotationEntry[] = [
     bossId: 'pebble',
     bossCategory: 'breach',
     name: 'Pebble',
-    hint: 'Massive beer worm. Ignores heroes and tunnels straight for the sauna.'
+    hint: 'Massive beer worm. It chews through blockers, gulps stray beer bottles, and still cares most about your sauna.'
   },
   {
     bossId: 'end_user_horde',
@@ -635,7 +641,7 @@ function hasSubclass(defender: DefenderInstance, subclassId: DefenderSubclassId)
 }
 
 function enemyMaxHp(enemy: EnemyInstance, content: GameContent): number {
-  return content.enemyArchetypes[enemy.archetypeId].maxHp;
+  return enemy.maxHp ?? content.enemyArchetypes[enemy.archetypeId].maxHp;
 }
 
 function boardAlliesWithin(
@@ -2484,6 +2490,75 @@ function enemyTarget(state: RunState, enemy: EnemyInstance, content: GameContent
   return hexDistance(enemy.tile, CENTER) <= archetype.range ? 'sauna' : null;
 }
 
+function activePebbleBoss(state: RunState): EnemyInstance | null {
+  return state.enemies.find((enemy) => enemy.archetypeId === 'pebble') ?? null;
+}
+
+function pebbleBeerBottleGain(index: number, content: GameContent): number {
+  return 18 + bossWaveOrdinal(index, content) * 4;
+}
+
+function scheduleNextPebbleBeerBottle(state: RunState, delayMs = PEBBLE_BEER_BOTTLE_SPAWN_INTERVAL_MS): void {
+  state.nextPebbleBeerBottleSpawnAtMs = state.waveElapsedMs + delayMs;
+}
+
+function clearPebbleBeerBottles(state: RunState): void {
+  state.pebbleBeerBottles = [];
+  state.nextPebbleBeerBottleSpawnAtMs = Number.POSITIVE_INFINITY;
+}
+
+function maybeSpawnPebbleBeerBottle(state: RunState, content: GameContent): void {
+  if (!state.currentWave.isBoss || state.currentWave.bossId !== 'pebble') {
+    return;
+  }
+  if (state.waveElapsedMs < state.nextPebbleBeerBottleSpawnAtMs) {
+    return;
+  }
+  if (state.pebbleBeerBottles.length >= PEBBLE_BEER_BOTTLE_ACTIVE_CAP) {
+    scheduleNextPebbleBeerBottle(state);
+    return;
+  }
+
+  const pebble = activePebbleBoss(state);
+  if (!pebble) {
+    scheduleNextPebbleBeerBottle(state, 400);
+    return;
+  }
+
+  const path = pebblePathForLane(pebble.spawnLaneIndex ?? 0, currentGridRadius(state, content));
+  const pathIndex = Math.max(0, pebble.pathIndex ?? 0);
+  const existingBottleTiles = new Set(state.pebbleBeerBottles.map((bottle) => coordKey(bottle.tile)));
+  const candidates = path.filter((tile, index) =>
+    index >= pathIndex + PEBBLE_BEER_BOTTLE_MIN_PATH_OFFSET &&
+    index <= pathIndex + PEBBLE_BEER_BOTTLE_MAX_PATH_OFFSET &&
+    !sameCoord(tile, CENTER) &&
+    !existingBottleTiles.has(coordKey(tile)) &&
+    !occupied(state, tile)
+  );
+
+  if (candidates.length === 0) {
+    scheduleNextPebbleBeerBottle(state, PEBBLE_BEER_BOTTLE_RETRY_MS);
+    return;
+  }
+
+  const tile = cloneCoord(candidates[randomInt(state, 0, candidates.length - 1)]);
+  state.pebbleBeerBottles.push({
+    id: state.nextPebbleBeerBottleId++,
+    tile,
+    maxHpGain: pebbleBeerBottleGain(state.currentWave.index, content),
+    spawnedAtMs: state.timeMs
+  });
+  scheduleNextPebbleBeerBottle(state);
+}
+
+function bottleAtTile(bottles: PebbleBeerBottle[], tile: AxialCoord): PebbleBeerBottle | null {
+  return bottles.find((bottle) => sameCoord(bottle.tile, tile)) ?? null;
+}
+
+function blockingDefenderOnTile(state: RunState, tile: AxialCoord): DefenderInstance | null {
+  return boardDefenders(state).find((defender) => defender.tile && sameCoord(defender.tile, tile)) ?? null;
+}
+
 function moveEnemyTowardCenter(state: RunState, enemy: EnemyInstance, content: GameContent): boolean {
   const tile = DIRS.map((dir) => add(enemy.tile, dir))
     .filter((next) => hexDistance(next, CENTER) <= currentGridRadius(state, content))
@@ -2530,12 +2605,28 @@ function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent)
   const nextPathIndex = (enemy.pathIndex ?? 0) + 1;
   const nextTile = path[nextPathIndex] ?? null;
   if (!nextTile) return;
-  if (occupied(state, nextTile)) {
+  const blocker = blockingDefenderOnTile(state, nextTile);
+  if (blocker) {
+    if (state.timeMs >= enemy.attackReadyAtMs) {
+      applyEnemyDamageToDefender(state, enemy, blocker, archetype.damage, content);
+      enemy.attackReadyAtMs = state.timeMs + archetype.attackCooldownMs;
+    }
+    return;
+  }
+  if (state.enemies.some((other) => other.instanceId !== enemy.instanceId && sameCoord(other.tile, nextTile))) {
     enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
     return;
   }
   moveEnemyToTile(state, enemy, nextTile, 'slither', PEBBLE_MOTION_DURATION_MS);
   enemy.pathIndex = nextPathIndex;
+  const bottle = bottleAtTile(state.pebbleBeerBottles, nextTile);
+  if (bottle) {
+    state.pebbleBeerBottles = state.pebbleBeerBottles.filter((entry) => entry.id !== bottle.id);
+    enemy.maxHp = enemyMaxHp(enemy, content) + bottle.maxHpGain;
+    enemy.hp = Math.min(enemy.maxHp, enemy.hp + bottle.maxHpGain);
+    pushFx(state, 'pulse', nextTile, 260);
+    state.message = `Pebble swallowed a beer bottle and hardened up by ${bottle.maxHpGain} HP.`;
+  }
   enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
 }
 
@@ -2648,6 +2739,7 @@ function spawnEnemies(state: RunState, content: GameContent): void {
         style: spawn.enemyId === 'pebble' ? 'slither' : 'step'
       },
       hp: archetype.maxHp,
+      maxHp: archetype.maxHp,
       lastHitByDefenderId: null,
       attackReadyAtMs: state.timeMs + archetype.attackCooldownMs,
       moveReadyAtMs: state.timeMs + archetype.moveCooldownMs,
@@ -2680,6 +2772,11 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, message: strin
   state.waveSwapUsed = false;
   state.nextRegenTickAtMs = state.timeMs + 1000;
   state.autoplayReadyAtMs = state.timeMs + AUTOPLAY_DELAY_MS;
+  clearPebbleBeerBottles(state);
+  state.nextPebbleBeerBottleSpawnAtMs =
+    waveDef.isBoss && waveDef.bossId === 'pebble'
+      ? PEBBLE_BEER_BOTTLE_SPAWN_INTERVAL_MS
+      : Number.POSITIVE_INFINITY;
   state.currentWave = waveDef;
   state.pendingSpawns = waveDef.spawns.map((spawn) => ({ ...spawn }));
   state.message = message;
@@ -2687,6 +2784,7 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, message: strin
 
 function awardWave(state: RunState, content: GameContent): void {
   const clearedWave = state.currentWave;
+  clearPebbleBeerBottles(state);
   state.waveIndex += 1;
   const upcomingWave = createWaveDefinition(state.waveIndex, content);
   const alcoholBonus = alcoholTotals(state, content);
@@ -3482,6 +3580,8 @@ export function createInitialState(
     nextBeerOfferId: 1,
     nextFxEventId: 1,
     nextDeathLogEntryId: 1,
+    nextPebbleBeerBottleId: 1,
+    nextPebbleBeerBottleSpawnAtMs: Number.POSITIVE_INFINITY,
     headerItems: [],
     headerSkills: [],
     inventory: [],
@@ -3492,6 +3592,7 @@ export function createInitialState(
     recruitLevelUpCount: 0,
     beerShopOffers: [],
     activeAlcohols: clone(activeAlcohols),
+    pebbleBeerBottles: [],
     subclassDraftQueue: [],
     subclassDraftDefenderId: null,
     subclassDraftUnlockLevel: null,
@@ -4050,6 +4151,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     next.nextRegenTickAtMs += 1000;
   }
   spawnEnemies(next, content);
+  maybeSpawnPebbleBeerBottle(next, content);
   for (const defender of boardDefenders(next)) defenderAttack(next, defender, content);
   for (const enemy of next.enemies) enemyStep(next, enemy, content);
   resolveEnemyDeaths(next, content);
@@ -4061,6 +4163,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     next.overlayMode = 'intermission';
     clearActiveHudPanel(next);
     next.activeAlcohols = [];
+    clearPebbleBeerBottles(next);
     awardMeta(next);
     rollBeerShopOffersIntoState(next, content);
     next.message = 'The sauna went cold. Spend Steam, regroup, and prep the next shift.';
@@ -4389,7 +4492,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         lore: archetype.lore,
         isBoss,
         hp: selectedEnemy.hp,
-        maxHp: archetype.maxHp,
+        maxHp: enemyMaxHp(selectedEnemy, content),
         damage: archetype.damage,
         range: archetype.range,
         attackCooldownMs: archetype.attackCooldownMs,

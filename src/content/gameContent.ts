@@ -497,7 +497,7 @@ export const gameContent: GameContent = {
       id: 'pebble',
       name: 'Pebble',
       behavior: 'pebble',
-      description: 'A giant tunneling worm boss that ignores heroes and slithers straight toward the sauna.',
+      description: 'A giant tunneling worm boss that mauls blockers, slurps stray beers, and keeps tunneling toward the sauna.',
       lore: 'Named Pebble by someone who had never seen a pebble before.',
       maxHp: 260,
       damage: 18,

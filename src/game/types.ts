@@ -288,6 +288,13 @@ export interface ActiveAlcoholBuff {
   stacks: number;
 }
 
+export interface PebbleBeerBottle {
+  id: number;
+  tile: AxialCoord;
+  maxHpGain: number;
+  spawnedAtMs: number;
+}
+
 export interface DeathLogEntry {
   id: number;
   wave: number;
@@ -347,6 +354,7 @@ export interface EnemyInstance {
   tile: AxialCoord;
   motion?: UnitMotionState | null;
   hp: number;
+  maxHp?: number;
   lastHitByDefenderId: string | null;
   attackReadyAtMs: number;
   moveReadyAtMs: number;
@@ -500,6 +508,8 @@ export interface RunState {
   nextBeerOfferId: number;
   nextFxEventId: number;
   nextDeathLogEntryId: number;
+  nextPebbleBeerBottleId: number;
+  nextPebbleBeerBottleSpawnAtMs: number;
   headerItems: InventoryDrop[];
   headerSkills: InventoryDrop[];
   inventory: InventoryDrop[];
@@ -510,6 +520,7 @@ export interface RunState {
   recruitLevelUpCount: number;
   beerShopOffers: BeerShopOffer[];
   activeAlcohols: ActiveAlcoholBuff[];
+  pebbleBeerBottles: PebbleBeerBottle[];
   subclassDraftQueue: SubclassDraftRequest[];
   subclassDraftDefenderId: string | null;
   subclassDraftUnlockLevel: number | null;
