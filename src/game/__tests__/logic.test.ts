@@ -1426,12 +1426,14 @@ describe('Sauna Defense V2 logic', () => {
     ]);
   });
 
-  it('uses the expanded grid configuration for the new larger battlefield', () => {
+  it('uses the base battlefield size before any boss has been defeated', () => {
     const snapshot = createSnapshot(prepState(), gameContent);
 
     expect(snapshot.config.gridRadius).toBe(6);
     expect(snapshot.tiles.length).toBe(127);
-    expect(snapshot.spawnTiles.every((tile) => Math.max(Math.abs(tile.q), Math.abs(tile.r), Math.abs(-tile.q - tile.r)) >= 6)).toBe(true);
+    expect(snapshot.config.buildRadius).toBe(5);
+    expect(snapshot.spawnTiles).toHaveLength(6);
+    expect(snapshot.spawnTiles.every((tile) => Math.max(Math.abs(tile.q), Math.abs(tile.r), Math.abs(-tile.q - tile.r)) === 6)).toBe(true);
   });
 
   it('auto-assigns loot to the selected defender first when a slot is free', () => {
@@ -2209,6 +2211,40 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.globalModifierDraftOffers).toHaveLength(3);
     expect(snapshot.hud.globalModifierDraftOffers.every((entry) => entry.stackCount > 0)).toBe(true);
     expect(new Set(snapshot.hud.globalModifierDraftOffers.map((entry) => entry.id)).size).toBe(3);
+    expect(snapshot.config.gridRadius).toBe(7);
+    expect(snapshot.config.buildRadius).toBe(6);
+    expect(snapshot.tiles).toHaveLength(169);
+    expect(snapshot.spawnTiles).toHaveLength(8);
+    expect(snapshot.spawnTiles.every((tile) => Math.max(Math.abs(tile.q), Math.abs(tile.r), Math.abs(-tile.q - tile.r)) === 7)).toBe(true);
+    expect(snapshot.buildableTiles.some((tile) => Math.max(Math.abs(tile.q), Math.abs(tile.r), Math.abs(-tile.q - tile.r)) === 6)).toBe(true);
+  });
+
+  it('moves world landmarks outward on the expanded map after the first boss', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.waveIndex = 5;
+    state.currentWave = {
+      index: 5,
+      isBoss: true,
+      rewardSisu: 7,
+      pressure: 18,
+      pattern: 'boss_breach',
+      bossId: 'pebble',
+      bossCategory: 'breach',
+      spawns: []
+    };
+    state.pendingSpawns = [];
+    state.enemies = [];
+    state.meta.completedRuns = 1;
+    state.meta.upgrades.beer_shop_unlock = 1;
+
+    state = stepState(state, 16, gameContent);
+    const snapshot = createSnapshot(state, gameContent);
+    const metashop = snapshot.hud.worldLandmarks.find((entry) => entry.id === 'metashop');
+    const beerShop = snapshot.hud.worldLandmarks.find((entry) => entry.id === 'beer_shop');
+
+    expect(metashop?.tile).toEqual({ q: 4, r: -7 });
+    expect(beerShop?.tile).toEqual({ q: -4, r: 7 });
   });
 
   it('stores the picked global modifier and closes the boss reward overlay', () => {
