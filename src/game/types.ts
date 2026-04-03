@@ -84,7 +84,7 @@ export type SkillId =
   | 'steam_shield'
   | 'battle_hymn';
 export type LootKind = 'item' | 'skill';
-export type Rarity = 'common' | 'rare' | 'epic';
+export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
 export type AlcoholId =
   | 'light_lager'
   | 'sauna_stout'
@@ -176,6 +176,7 @@ export interface AlcoholModifier extends StatModifier {
 }
 
 export type GlobalModifierSource =
+  | { kind: 'first_name'; name: string }
   | { kind: 'template'; templateId: DefenderTemplateId }
   | { kind: 'subclass'; subclassId: DefenderSubclassId }
   | { kind: 'skill'; skillId: SkillId }
@@ -306,6 +307,13 @@ export interface CombatFxEvent {
   durationMs: number;
 }
 
+export interface PendingFireball {
+  ownerDefenderId: string;
+  targetTile: AxialCoord;
+  explodeAtMs: number;
+  damageSnapshot: number;
+}
+
 export type UnitMotionStyle = 'step' | 'slither' | 'blink';
 
 export interface UnitMotionState {
@@ -334,6 +342,7 @@ export interface DefenderInstance {
   motion?: UnitMotionState | null;
   attackReadyAtMs: number;
   blinkReadyAtMs: number;
+  fireballReadyAtMs: number;
   items: ItemId[];
   skills: SkillId[];
   kills: number;
@@ -386,6 +395,7 @@ export interface MetaUpgradeDefinition {
 export interface GlobalModifierDefinition {
   id: GlobalModifierId;
   name: string;
+  rarity: Rarity;
   description: string;
   countScope: GlobalModifierCountScope;
   source: GlobalModifierSource;
@@ -490,6 +500,7 @@ export interface RunState {
   defenders: DefenderInstance[];
   enemies: EnemyInstance[];
   fxEvents: CombatFxEvent[];
+  pendingFireballs: PendingFireball[];
   hitStopMs: number;
   saunaDefenderId: string | null;
   pendingSpawns: WaveSpawn[];
@@ -505,6 +516,8 @@ export interface RunState {
   selectedInventoryDropId: number | null;
   recentDropId: number | null;
   recruitOffers: RecruitOffer[];
+  benchRerollCountsByDefenderId: Record<string, number>;
+  recruitRerollCountsByOfferId: Record<number, number>;
   recruitLevelBonus: number;
   recruitLevelUpCount: number;
   beerShopOffers: BeerShopOffer[];
@@ -556,6 +569,8 @@ export interface HudRosterEntry {
   regenHpPerSecond: number;
   kills: number;
   location: DefenderLocation;
+  benchRerollCount: number;
+  benchRerollCost: number;
   selected: boolean;
 }
 
@@ -604,6 +619,7 @@ export interface HudSelectedDefender {
   range: number;
   attackCooldownMs: number;
   blinkLabel: string | null;
+  fireballLabel: string | null;
   defense: number;
   regenHpPerSecond: number;
   itemSlotCount: number;
@@ -707,6 +723,8 @@ export interface HudRecruitOfferEntry {
   damage: number;
   heal: number;
   range: number;
+  rerollCount: number;
+  rerollCost: number;
 }
 
 export interface HudRecruitLevelOddsEntry {
@@ -726,6 +744,8 @@ export interface HudSubclassDraftEntry {
 export interface HudGlobalModifierEntry {
   id: GlobalModifierId;
   name: string;
+  rarity: Rarity;
+  sourceLabel: string;
   description: string;
   formulaText: string;
   pickCount: number;
@@ -737,6 +757,8 @@ export interface HudGlobalModifierEntry {
 export interface HudGlobalModifierDraftEntry {
   id: GlobalModifierId;
   name: string;
+  rarity: Rarity;
+  sourceLabel: string;
   description: string;
   formulaText: string;
   ownedCount: number;
@@ -899,7 +921,9 @@ export type InputAction =
   | { type: 'draftGlobalModifier'; modifierId: GlobalModifierId }
   | { type: 'draftSubclassChoice'; subclassId: DefenderSubclassId }
   | { type: 'recallDefenderToSauna'; defenderId: string }
+  | { type: 'rerollBenchDefender'; defenderId: string }
   | { type: 'rerollRecruitOffers' }
+  | { type: 'rerollRecruitOffer'; offerId: number }
   | { type: 'levelUpRecruitment' }
   | { type: 'rollRecruitOffers' }
   | { type: 'recruitOffer'; offerId: number }

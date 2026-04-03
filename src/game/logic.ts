@@ -31,6 +31,7 @@ import type {
   LootKind,
   MetaProgress,
   MetaUpgradeId,
+  PendingFireball,
   Rarity,
   RecruitOffer,
   RunPreferences,
@@ -88,6 +89,9 @@ const NON_BOSS_PATTERNS: Array<Exclude<WavePattern, 'tutorial' | 'boss_pressure'
 const CENTER: AxialCoord = { q: 0, r: 0 };
 const WORLD_LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'beer_shop'];
 const BLINK_STEP_COOLDOWN_MS = 12000;
+const FIREBALL_COOLDOWN_MS = 12000;
+const FIREBALL_DELAY_MS = 1000;
+const FIREBALL_RADIUS = 2;
 const AUTOPLAY_DELAY_MS = 650;
 const EMPTY_STATS: UnitStats = {
   maxHp: 0,
@@ -391,6 +395,18 @@ export function createHexGrid(radius: number): AxialCoord[] {
     }
   }
   return tiles.sort((left, right) => (left.r - right.r) || (left.q - right.q));
+}
+
+function hexesInRadius(center: AxialCoord, radius: number): AxialCoord[] {
+  const tiles: AxialCoord[] = [];
+  for (let dq = -radius; dq <= radius; dq += 1) {
+    const rMin = Math.max(-radius, -dq - radius);
+    const rMax = Math.min(radius, -dq + radius);
+    for (let dr = rMin; dr <= rMax; dr += 1) {
+      tiles.push({ q: center.q + dq, r: center.r + dr });
+    }
+  }
+  return tiles;
 }
 
 function defeatedBossCountForWave(index: number, content: GameContent): number {
@@ -875,6 +891,8 @@ function globalModifierStacks(state: RunState, definition: GlobalModifierDefinit
   const defenders = countScopeDefenders(state, definition);
   const source = definition.source;
   switch (source.kind) {
+    case 'first_name':
+      return defenders.filter((defender) => defender.name === source.name).length;
     case 'template':
       return defenders.filter((defender) => defender.templateId === source.templateId).length;
     case 'subclass':
@@ -1040,6 +1058,7 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
     motion: null,
     attackReadyAtMs: 0,
     blinkReadyAtMs: 0,
+    fireballReadyAtMs: 0,
     items: [],
     skills: [],
     kills: 0,
@@ -1643,30 +1662,76 @@ function availableGlobalModifierDefinitions(
     .filter((definition) => globalModifierStacks(state, definition) > 0);
 }
 
+function modifierDraftTierForWave(index: number): number {
+  if (index >= 20) return 3;
+  if (index >= 10) return 2;
+  return 1;
+}
+
+function allowedModifierRaritiesForWave(index: number): Rarity[] {
+  const tier = modifierDraftTierForWave(index);
+  return tier === 1
+    ? ['common', 'rare']
+    : tier === 2
+      ? ['common', 'rare', 'epic']
+      : ['common', 'rare', 'epic', 'legendary'];
+}
+
+function guaranteedModifierRarityFloor(index: number): Rarity {
+  return modifierDraftTierForWave(index) >= 3 ? 'epic' : 'rare';
+}
+
+function modifierDraftWeight(definition: GlobalModifierDefinition, waveIndex: number): number {
+  const tierWeights = RARITY_WEIGHT_BY_WAVE[modifierDraftTierForWave(waveIndex)];
+  return tierWeights[definition.rarity];
+}
+
+function pickWeightedModifier(
+  state: RunState,
+  definitions: GlobalModifierDefinition[],
+  waveIndex: number
+): GlobalModifierDefinition | null {
+  return weightedPick(state, definitions, (definition) => modifierDraftWeight(definition, waveIndex));
+}
+
 function rollGlobalModifierDraftOffersIntoState(state: RunState, content: GameContent): boolean {
-  const primaryPool = availableGlobalModifierDefinitions(state, content, false);
-  const fallbackPool = availableGlobalModifierDefinitions(state, content, true);
+  const allowedRarities = new Set<Rarity>(allowedModifierRaritiesForWave(state.currentWave.index));
+  const primaryPool = availableGlobalModifierDefinitions(state, content, false)
+    .filter((definition) => allowedRarities.has(definition.rarity));
+  const fallbackPool = availableGlobalModifierDefinitions(state, content, true)
+    .filter((definition) => allowedRarities.has(definition.rarity));
   const picked: GlobalModifierDefinition[] = [];
   const pickedIds = new Set<GlobalModifierId>();
+  const waveIndex = state.currentWave.index;
+  const guaranteedFloor = guaranteedModifierRarityFloor(waveIndex);
+  const uniquePool = [...primaryPool, ...fallbackPool];
+  const pushPick = (candidate: GlobalModifierDefinition | null) => {
+    if (!candidate || pickedIds.has(candidate.id)) return false;
+    picked.push(candidate);
+    pickedIds.add(candidate.id);
+    return true;
+  };
   const takeUniqueFromPool = (pool: GlobalModifierDefinition[]) => {
-    const remaining = [...pool];
+    const remaining = pool.filter((definition) => !pickedIds.has(definition.id));
     while (remaining.length > 0 && picked.length < 3) {
-      const index = randomInt(state, 0, remaining.length - 1);
-      const candidate = remaining.splice(index, 1)[0];
-      if (pickedIds.has(candidate.id)) continue;
-      picked.push(candidate);
-      pickedIds.add(candidate.id);
+      const candidate = pickWeightedModifier(state, remaining, waveIndex);
+      if (!candidate) break;
+      pushPick(candidate);
+      const nextIndex = remaining.findIndex((definition) => definition.id === candidate.id);
+      if (nextIndex >= 0) remaining.splice(nextIndex, 1);
     }
   };
 
+  const guaranteedPool = uniquePool.filter((definition) => rarityRank(definition.rarity) >= rarityRank(guaranteedFloor));
+  pushPick(pickWeightedModifier(state, guaranteedPool, waveIndex));
   takeUniqueFromPool(primaryPool);
-  if (picked.length < 3) {
-    takeUniqueFromPool(fallbackPool);
-  }
+  if (picked.length < 3) takeUniqueFromPool(fallbackPool);
 
   const repeatPool = [...primaryPool, ...fallbackPool];
   while (repeatPool.length > 0 && picked.length < 3) {
-    picked.push(repeatPool[randomInt(state, 0, repeatPool.length - 1)]);
+    const candidate = pickWeightedModifier(state, repeatPool, waveIndex);
+    if (!candidate) break;
+    picked.push(candidate);
   }
 
   state.globalModifierDraftOffers = picked.map((definition) => definition.id);
@@ -1694,6 +1759,7 @@ function createRecruitOffer(state: RunState, content: GameContent): RecruitOffer
 
 function rollRecruitOffersIntoState(state: RunState, content: GameContent): void {
   state.recruitOffers = Array.from({ length: 3 }, () => createRecruitOffer(state, content));
+  state.recruitRerollCountsByOfferId = Object.fromEntries(state.recruitOffers.map((offer) => [offer.offerId, 0]));
 }
 
 function createBeerShopOffer(state: RunState, alcoholId: AlcoholId): BeerShopOffer {
@@ -1751,6 +1817,7 @@ function replaceDefenderWithRecruit(
 
   state.defenders = state.defenders.filter((defender) => defender.id !== outgoing.id);
   state.defenders.push(incoming);
+  delete state.benchRerollCountsByDefenderId[outgoing.id];
   fillDefenderToMax(state, incoming, content);
 
   if (state.selectedDefenderId === outgoing.id || state.selectedMapTarget === 'sauna') {
@@ -1783,6 +1850,40 @@ function ageFx(state: RunState, deltaMs: number): void {
   state.fxEvents = state.fxEvents
     .map((event) => ({ ...event, ageMs: event.ageMs + deltaMs }))
     .filter((event) => event.ageMs < event.durationMs);
+}
+
+function scheduleFireball(
+  state: RunState,
+  defender: DefenderInstance,
+  targetTile: AxialCoord,
+  damageSnapshot: number
+): void {
+  const pending: PendingFireball = {
+    ownerDefenderId: defender.id,
+    targetTile: cloneCoord(targetTile),
+    explodeAtMs: state.timeMs + FIREBALL_DELAY_MS,
+    damageSnapshot: Math.max(1, Math.round(damageSnapshot))
+  };
+  state.pendingFireballs.push(pending);
+  defender.fireballReadyAtMs = state.timeMs + FIREBALL_COOLDOWN_MS;
+}
+
+function resolvePendingFireballs(state: RunState): void {
+  const remaining: PendingFireball[] = [];
+  for (const pending of state.pendingFireballs) {
+    if (state.timeMs < pending.explodeAtMs) {
+      remaining.push(pending);
+      continue;
+    }
+    for (const enemy of state.enemies) {
+      if (hexDistance(enemy.tile, pending.targetTile) <= FIREBALL_RADIUS) {
+        applyDamageToEnemy(state, enemy, pending.damageSnapshot, pending.ownerDefenderId);
+      }
+    }
+    pushFx(state, 'fireball', pending.targetTile, 360);
+    addHitStop(state, 48);
+  }
+  state.pendingFireballs = remaining;
 }
 
 function addHitStop(state: RunState, durationMs: number): void {
@@ -2426,14 +2527,8 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
   grantCombatXp(state, defender, 1, content);
   applySubclassAttackEffects(state, defender, target, hitDamage, stats, content);
 
-  if (defender.skills.includes('fireball')) {
-    pushFx(state, 'fireball', target.tile, 260, defender.tile);
-    for (const enemy of state.enemies) {
-      if (enemy.instanceId !== target.instanceId && hexDistance(enemy.tile, target.tile) <= 1) {
-        applyDamageToEnemy(state, enemy, Math.max(1, Math.round(stats.damage * 0.35)), defender.id);
-      }
-    }
-    addHitStop(state, 36);
+  if (defender.skills.includes('fireball') && state.timeMs >= defender.fireballReadyAtMs) {
+    scheduleFireball(state, defender, target.tile, hitDamage);
   }
   if (defender.skills.includes('chain_spark')) {
     const chainedTarget = state.enemies
@@ -2713,6 +2808,7 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, message: strin
   state.waveElapsedMs = 0;
   state.hitStopMs = 0;
   state.fxEvents = [];
+  state.pendingFireballs = [];
   state.waveSwapUsed = false;
   state.nextRegenTickAtMs = state.timeMs + 1000;
   state.autoplayReadyAtMs = state.timeMs + AUTOPLAY_DELAY_MS;
@@ -2723,6 +2819,7 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, message: strin
 
 function awardWave(state: RunState, content: GameContent): void {
   const clearedWave = state.currentWave;
+  state.pendingFireballs = [];
   state.waveIndex += 1;
   const upcomingWave = createWaveDefinition(state.waveIndex, content);
   const alcoholBonus = alcoholTotals(state, content);
@@ -2780,6 +2877,8 @@ function getInventoryDrop(state: RunState, dropId: number | null): InventoryDrop
 
 function sellPriceForRarity(rarity: Rarity): number {
   switch (rarity) {
+    case 'legendary':
+      return 6;
     case 'epic':
       return 4;
     case 'rare':
@@ -3153,6 +3252,8 @@ function globalModifierScopeLabel(definition: GlobalModifierDefinition, content:
         : 'living';
 
   switch (definition.source.kind) {
+    case 'first_name':
+      return `${prefix} heroes named ${definition.source.name}`;
     case 'template':
       return `${prefix} ${content.defenderTemplates[definition.source.templateId].name}`;
     case 'subclass':
@@ -3167,6 +3268,27 @@ function globalModifierScopeLabel(definition: GlobalModifierDefinition, content:
       return `${prefix} hero`;
     default:
       return `${prefix} source`;
+  }
+}
+
+function globalModifierSourceLabel(definition: GlobalModifierDefinition, content: GameContent): string {
+  switch (definition.source.kind) {
+    case 'first_name':
+      return `First name: ${definition.source.name}`;
+    case 'template':
+      return `Main class: ${content.defenderTemplates[definition.source.templateId].name}`;
+    case 'subclass':
+      return `Subclass: ${content.defenderSubclasses[definition.source.subclassId].name}`;
+    case 'skill':
+      return `Skill: ${content.skillDefinitions[definition.source.skillId].name}`;
+    case 'item':
+      return `Item: ${content.itemDefinitions[definition.source.itemId].name}`;
+    case 'title':
+      return `Title: ${definition.source.title}`;
+    case 'roster':
+      return 'Roster-wide';
+    default:
+      return 'Unknown source';
   }
 }
 
@@ -3227,6 +3349,8 @@ function globalModifierHudEntry(state: RunState, definition: GlobalModifierDefin
   return {
     id: definition.id,
     name: definition.name,
+    rarity: definition.rarity,
+    sourceLabel: globalModifierSourceLabel(definition, content),
     description: definition.description,
     formulaText: `${formatModifierAmount(definition.amountPerStack, definition.effectStat)} ${globalModifierStatLabel(definition.effectStat)} per ${globalModifierScopeLabel(definition, content)}`,
     pickCount,
@@ -3244,6 +3368,8 @@ function globalModifierDraftHudEntry(state: RunState, definition: GlobalModifier
   return {
     id: definition.id,
     name: definition.name,
+    rarity: definition.rarity,
+    sourceLabel: globalModifierSourceLabel(definition, content),
     description: definition.description,
     formulaText: `${formatModifierAmount(definition.amountPerStack, definition.effectStat)} ${globalModifierStatLabel(definition.effectStat)} per ${globalModifierScopeLabel(definition, content)}`,
     ownedCount,
@@ -3509,6 +3635,7 @@ export function createInitialState(
     defenders: [],
     enemies: [],
     fxEvents: [],
+    pendingFireballs: [],
     hitStopMs: 0,
     saunaDefenderId: null,
     pendingSpawns: [],
@@ -3524,6 +3651,8 @@ export function createInitialState(
     selectedInventoryDropId: null,
     recentDropId: null,
     recruitOffers: [],
+    benchRerollCountsByDefenderId: {},
+    recruitRerollCountsByOfferId: {},
     recruitLevelBonus: 0,
     recruitLevelUpCount: 0,
     beerShopOffers: [],
@@ -3866,6 +3995,43 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
           : 'No recruits showed up.';
       return next;
     }
+    case 'rerollBenchDefender': {
+      if (!canAccessRecruitment(next)) return next;
+      const defender = getDefender(next, action.defenderId);
+      if (!defender || defender.location !== 'ready') return next;
+      const cost = benchRerollCost(next, defender.id);
+      if (next.sisu.current < cost) {
+        next.message = `Not enough SISU to reroll ${defender.name}.`;
+        return next;
+      }
+      const previousName = defender.name;
+      next.sisu.current -= cost;
+      rerollDefenderIdentityAndStats(next, defender, content, 'clamp');
+      next.benchRerollCountsByDefenderId[defender.id] = (next.benchRerollCountsByDefenderId[defender.id] ?? 0) + 1;
+      normalizeDefender(next, defender, content);
+      next.message = `${previousName} rerolled into ${defender.name} ${defender.title} for ${cost} SISU.`;
+      return next;
+    }
+    case 'rerollRecruitOffer': {
+      if (!canAccessRecruitment(next)) return next;
+      const offer = next.recruitOffers.find((entry) => entry.offerId === action.offerId);
+      if (!offer) return next;
+      const cost = recruitOfferRerollCost(next, offer.offerId);
+      if (next.sisu.current < cost) {
+        next.message = `Not enough SISU to reroll ${offer.candidate.name}.`;
+        return next;
+      }
+      const previousName = offer.candidate.name;
+      next.sisu.current -= cost;
+      rerollDefenderIdentityAndStats(next, offer.candidate, content, 'fill');
+      const score = recruitScore(offer.candidate, content);
+      offer.quality = recruitQuality(score);
+      offer.price = recruitOfferPrice(offer.candidate, content);
+      next.recruitRerollCountsByOfferId[offer.offerId] = (next.recruitRerollCountsByOfferId[offer.offerId] ?? 0) + 1;
+      setActiveHudPanel(next, 'recruit');
+      next.message = `${previousName} rerolled into ${offer.candidate.name} ${offer.candidate.title} for ${cost} SISU.`;
+      return next;
+    }
     case 'levelUpRecruitment': {
       if (!canAccessRecruitment(next)) return next;
       const cost = recruitLevelUpCost(next.recruitLevelUpCount);
@@ -3901,7 +4067,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         fillDefenderToMax(next, offer.candidate, content);
         next.defenders.push(offer.candidate);
       }
+      delete next.recruitRerollCountsByOfferId[offer.offerId];
       next.recruitOffers = [];
+      next.recruitRerollCountsByOfferId = {};
       clearActiveHudPanel(next);
       next.message = replacement
         ? `${offer.candidate.name} ${offer.candidate.title} replaced ${replacement.name} for ${offer.price} SISU.`
@@ -3911,6 +4079,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     case 'clearRecruitOffers':
       if (!canAccessRecruitment(next)) return next;
       next.recruitOffers = [];
+      next.recruitRerollCountsByOfferId = {};
       clearActiveHudPanel(next);
       next.message = 'Recruit offers dismissed.';
       return next;
@@ -4086,6 +4255,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     next.nextRegenTickAtMs += 1000;
   }
   spawnEnemies(next, content);
+  resolvePendingFireballs(next);
   for (const defender of boardDefenders(next)) defenderAttack(next, defender, content);
   for (const enemy of next.enemies) enemyStep(next, enemy, content);
   resolveEnemyDeaths(next, content);
@@ -4097,6 +4267,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     next.overlayMode = 'intermission';
     clearActiveHudPanel(next);
     next.activeAlcohols = [];
+    next.pendingFireballs = [];
     awardMeta(next);
     rollBeerShopOffersIntoState(next, content);
     next.message = 'The sauna went cold. Spend Steam, regroup, and prep the next shift.';
@@ -4221,7 +4392,9 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         hp: roleStats.maxHp,
         damage: roleStats.damage,
         heal: roleStats.heal,
-        range: roleStats.range
+        range: roleStats.range,
+        rerollCount: state.recruitRerollCountsByOfferId[offer.offerId] ?? 0,
+        rerollCost: recruitOfferRerollCost(state, offer.offerId)
       };
     }),
     steamEarned: state.steamEarned,
@@ -4298,6 +4471,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         regenHpPerSecond: stats.regenHpPerSecond,
         kills: defender.kills,
         location: defender.location,
+        benchRerollCount: state.benchRerollCountsByDefenderId[defender.id] ?? 0,
+        benchRerollCost: benchRerollCost(state, defender.id),
         selected: state.selectedDefenderId === defender.id
       };
     }),
@@ -4387,6 +4562,11 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
           ? state.timeMs >= selected.blinkReadyAtMs
             ? 'Blink ready'
             : `Blink ${Math.ceil((selected.blinkReadyAtMs - state.timeMs) / 1000)}s`
+          : null,
+        fireballLabel: selected.skills.includes('fireball')
+          ? state.timeMs >= selected.fireballReadyAtMs
+            ? 'Fireball ready'
+            : `Fireball ${Math.ceil((selected.fireballReadyAtMs - state.timeMs) / 1000)}s`
           : null,
         defense: stats.defense,
         regenHpPerSecond: stats.regenHpPerSecond,

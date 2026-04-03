@@ -1,4 +1,10 @@
-import { getTileViewportPosition, pickEnemyAtCanvasPoint, resolveAnimatedHexPosition, resolveBossVisualProfile } from '../render';
+import {
+  collectFireballTelegraphTiles,
+  getTileViewportPosition,
+  pickEnemyAtCanvasPoint,
+  resolveAnimatedHexPosition,
+  resolveBossVisualProfile
+} from '../render';
 import { gameContent } from '../../content/gameContent';
 import { createDefaultMetaProgress, createInitialState, createSnapshot, createWaveDefinition } from '../logic';
 import type { UnitMotionState, WaveDefinition } from '../types';
@@ -89,5 +95,23 @@ describe('render helpers', () => {
     const point = getTileViewportPosition(snapshot, rect.width, rect.height, state.enemies[0].tile);
 
     expect(pickEnemyAtCanvasPoint(snapshot, rect, point.x, point.y)).toBe(44);
+  });
+
+  it('exposes the full radius-2 fireball telegraph area for rendering', () => {
+    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+    state.pendingFireballs = [{
+      ownerDefenderId: 'guardian-1',
+      targetTile: { q: 0, r: -2 },
+      explodeAtMs: 1000,
+      damageSnapshot: 9
+    }];
+
+    const snapshot = createSnapshot(state, gameContent);
+    const telegraphKeys = new Set(collectFireballTelegraphTiles(snapshot).map((tile) => `${tile.q},${tile.r}`));
+
+    expect(telegraphKeys.has('0,-2')).toBe(true);
+    expect(telegraphKeys.has('2,-2')).toBe(true);
+    expect(telegraphKeys.has('-1,-1')).toBe(true);
+    expect(telegraphKeys.has('3,-2')).toBe(false);
   });
 });

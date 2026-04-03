@@ -953,6 +953,109 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.recruitOffers.every((offer) => offer.candidate.lore.length > 0)).toBe(true);
   });
 
+  it('rerolls a bench hero identity and base stats without touching progression or loadout', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready');
+    expect(defender).toBeTruthy();
+
+    defender!.name = 'Before';
+    defender!.title = 'Old Title';
+    defender!.lore = 'Old lore';
+    defender!.stats = {
+      maxHp: 99,
+      damage: 99,
+      heal: 99,
+      range: 9,
+      attackCooldownMs: 999,
+      defense: 4,
+      regenHpPerSecond: 4
+    };
+    defender!.hp = 77;
+    defender!.level = 7;
+    defender!.xp = 70;
+    defender!.subclassIds = ['stonewall'];
+    defender!.items = ['iron_whisk'];
+    defender!.skills = ['steam_shield'];
+    defender!.kills = 3;
+    state.sisu.current = 10;
+
+    state = applyAction(state, { type: 'rerollBenchDefender', defenderId: defender!.id }, gameContent);
+
+    const updated = state.defenders.find((entry) => entry.id === defender!.id)!;
+    expect(updated.name).not.toBe('Before');
+    expect(updated.title).not.toBe('Old Title');
+    expect(updated.lore).not.toBe('Old lore');
+    expect(updated.stats.maxHp).not.toBe(99);
+    expect(updated.level).toBe(7);
+    expect(updated.xp).toBe(70);
+    expect(updated.subclassIds).toEqual(['stonewall']);
+    expect(updated.items).toEqual(['iron_whisk']);
+    expect(updated.skills).toEqual(['steam_shield']);
+    expect(updated.kills).toBe(3);
+    expect(state.benchRerollCountsByDefenderId[defender!.id]).toBe(1);
+    expect(updated.hp).toBeLessThanOrEqual(createSnapshot(state, gameContent).hud.rosterEntries.find((entry) => entry.id === defender!.id)!.maxHp);
+  });
+
+  it('does not reroll a non-bench hero', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'sauna');
+    expect(defender).toBeTruthy();
+    const before = JSON.parse(JSON.stringify(state));
+
+    state = applyAction(state, { type: 'rerollBenchDefender', defenderId: defender!.id }, gameContent);
+
+    expect(state).toEqual(before);
+  });
+
+  it('rerolls one recruit offer in place and tracks per-offer reroll cost', () => {
+    let state = prepState();
+    state.sisu.current = 20;
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
+    const offer = state.recruitOffers[0];
+
+    offer.candidate.name = 'Before';
+    offer.candidate.title = 'Old Title';
+    offer.candidate.lore = 'Old lore';
+    offer.candidate.stats = {
+      maxHp: 99,
+      damage: 99,
+      heal: 99,
+      range: 9,
+      attackCooldownMs: 999,
+      defense: 4,
+      regenHpPerSecond: 4
+    };
+    offer.price = 17;
+    offer.quality = 'elite';
+
+    state = applyAction(state, { type: 'rerollRecruitOffer', offerId: offer.offerId }, gameContent);
+
+    const updated = state.recruitOffers.find((entry) => entry.offerId === offer.offerId)!;
+    expect(updated.offerId).toBe(offer.offerId);
+    expect(updated.candidate.templateId).toBe(offer.candidate.templateId);
+    expect(updated.candidate.level).toBe(offer.candidate.level);
+    expect(updated.candidate.name).not.toBe('Before');
+    expect(updated.candidate.title).not.toBe('Old Title');
+    expect(updated.candidate.lore).not.toBe('Old lore');
+    expect(updated.price).not.toBe(17);
+    expect(state.recruitRerollCountsByOfferId[offer.offerId]).toBe(1);
+    expect(createSnapshot(state, gameContent).hud.recruitOffers.find((entry) => entry.id === offer.offerId)?.rerollCost).toBe(2);
+  });
+
+  it('resets per-offer reroll counters when the whole market rerolls', () => {
+    let state = prepState();
+    state.sisu.current = 20;
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
+    const offerId = state.recruitOffers[0].offerId;
+
+    state = applyAction(state, { type: 'rerollRecruitOffer', offerId }, gameContent);
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
+
+    expect(state.recruitOffers).toHaveLength(3);
+    expect(Object.values(state.recruitRerollCountsByOfferId).every((count) => count === 0)).toBe(true);
+    expect(state.recruitOffers.every((offer) => offer.offerId !== offerId)).toBe(true);
+  });
+
   it('recruits one chosen offer and clears the rest', () => {
     let state = prepState();
     state.defenders = state.defenders.filter((defender) => defender.location !== 'dead').slice(0, 4);
@@ -1623,7 +1726,7 @@ describe('Sauna Defense V2 logic', () => {
       definitionId: 'fireball',
       rarity: 'rare',
       name: 'Fireball',
-      effectText: 'Basic attacks splash ember damage to nearby enemies.',
+      effectText: 'Every 12s your next basic attack marks a tile. After 1s, a fireball explodes there for full damage in radius 2.',
       flavorText: 'Throws a rude little sun at anyone standing too close.',
       artPath: 'loot/fireball.svg',
       waveFound: 1,
@@ -1674,7 +1777,7 @@ describe('Sauna Defense V2 logic', () => {
       definitionId: 'fireball',
       rarity: 'rare',
       name: 'Fireball',
-      effectText: 'Basic attacks splash ember damage to nearby enemies.',
+      effectText: 'Every 12s your next basic attack marks a tile. After 1s, a fireball explodes there for full damage in radius 2.',
       flavorText: 'Throws a rude little sun at anyone standing too close.',
       artPath: 'loot/fireball.svg',
       waveFound: 1,
@@ -1700,13 +1803,14 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.message).toContain('no room');
   });
 
-  it('creates visible combat fx and brief hit-stop for skill procs', () => {
+  it('queues a telegraphed fireball before the delayed explosion lands', () => {
     let state = prepState();
     const attacker = state.defenders.find((defender) => defender.location === 'ready');
     expect(attacker).toBeTruthy();
     attacker!.location = 'board';
     attacker!.tile = { q: 0, r: -1 };
     attacker!.skills.push('fireball');
+    attacker!.stats.attackCooldownMs = 999999;
     attacker!.attackReadyAtMs = 0;
     state.phase = 'wave';
     state.enemies = [
@@ -1736,8 +1840,106 @@ describe('Sauna Defense V2 logic', () => {
     state = stepState(state, 16, gameContent);
 
     expect(state.fxEvents.some((event) => event.kind === 'hit')).toBe(true);
+    expect(state.fxEvents.some((event) => event.kind === 'fireball')).toBe(false);
+    expect(state.pendingFireballs).toHaveLength(1);
+    expect(state.pendingFireballs[0]?.targetTile).toEqual({ q: 0, r: -2 });
+    expect(state.hitStopMs).toBe(0);
+
+    state = stepState(state, 1000, gameContent);
+
+    expect(state.pendingFireballs).toHaveLength(0);
     expect(state.fxEvents.some((event) => event.kind === 'fireball')).toBe(true);
     expect(state.hitStopMs).toBeGreaterThan(0);
+  });
+
+  it('uses a fixed fireball area instead of tracking the original target', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(attacker).toBeTruthy();
+    attacker!.location = 'board';
+    attacker!.tile = { q: 0, r: -1 };
+    attacker!.skills.push('fireball');
+    attacker!.stats.damage = 11;
+    attacker!.stats.attackCooldownMs = 999999;
+    attacker!.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 0, r: -2 },
+        hp: 30,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      },
+      {
+        instanceId: 2,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 2, r: -2 },
+        hp: 30,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      }
+    ];
+
+    state = stepState(state, 16, gameContent);
+
+    state.enemies.find((enemy) => enemy.instanceId === 1)!.tile = { q: 4, r: -2 };
+    state.enemies.push({
+      instanceId: 3,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 1, r: -2 },
+      hp: 30,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    });
+
+    state = stepState(state, 1000, gameContent);
+
+    expect(state.enemies.find((enemy) => enemy.instanceId === 1)?.hp).toBe(19);
+    expect(state.enemies.find((enemy) => enemy.instanceId === 2)?.hp).toBe(19);
+    expect(state.enemies.find((enemy) => enemy.instanceId === 3)?.hp).toBe(19);
+  });
+
+  it('shows the fireball cooldown label on the selected defender HUD', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(attacker).toBeTruthy();
+    attacker!.location = 'board';
+    attacker!.tile = { q: 0, r: -1 };
+    attacker!.skills.push('fireball');
+    attacker!.attackReadyAtMs = 0;
+    state.selectedDefenderId = attacker!.id;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -2 },
+      hp: 20,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    let snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.selectedDefender?.fireballLabel).toBe('Fireball ready');
+
+    state = stepState(state, 16, gameContent);
+    snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.selectedDefender?.fireballLabel).toBe('Fireball 12s');
+
+    state.timeMs = state.defenders.find((defender) => defender.id === attacker!.id)?.fireballReadyAtMs ?? state.timeMs;
+    snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.selectedDefender?.fireballLabel).toBe('Fireball ready');
   });
 
   it('grants xp and levels up a hero from combat kills', () => {
@@ -2066,7 +2268,8 @@ describe('Sauna Defense V2 logic', () => {
 
     state = stepState(state, 16, gameContent);
 
-    expect(state.fxEvents.filter((event) => event.kind === 'fireball')).toHaveLength(1);
+    expect(state.pendingFireballs).toHaveLength(1);
+    expect(state.fxEvents.filter((event) => event.kind === 'fireball')).toHaveLength(0);
     expect(state.fxEvents.filter((event) => event.kind === 'volley')).toHaveLength(3);
   });
 
@@ -2286,13 +2489,14 @@ describe('Sauna Defense V2 logic', () => {
 
     const snapshot = createSnapshot(state, gameContent);
     const sharedGrit = snapshot.hud.globalModifiers.find((entry) => entry.id === 'shared_grit');
-    const summary = snapshot.hud.globalModifierSummary.find((entry) => entry.stat === 'maxHp');
+    const summary = snapshot.hud.globalModifierSummary.find((entry) => entry.stat === 'damage');
+    const hurlerCount = state.defenders.filter((defender) => defender.location !== 'dead' && defender.templateId === 'hurler').length;
 
     expect(state.activeGlobalModifierIds).toEqual(['shared_grit', 'shared_grit']);
     expect(sharedGrit?.pickCount).toBe(2);
-    expect(sharedGrit?.stackCount).toBe(state.defenders.filter((defender) => defender.location !== 'dead').length);
-    expect(sharedGrit?.resolvedEffectText).toContain('+10 max HP');
-    expect(summary?.total).toBe(10);
+    expect(sharedGrit?.stackCount).toBe(hurlerCount);
+    expect(sharedGrit?.resolvedEffectText).toContain(`+${hurlerCount * 2} damage`);
+    expect(summary?.total).toBe(hurlerCount * 2);
   });
 
   it('still offers boss reward cards after every modifier has already been seen once', () => {
@@ -2349,9 +2553,9 @@ describe('Sauna Defense V2 logic', () => {
   it('updates global modifier stacks when items are equipped and defenders die', () => {
     let state = prepState();
     const defender = state.defenders.find((entry) => entry.location === 'ready');
-    const mender = state.defenders.find((entry) => entry.templateId === 'mender');
+    const hurler = state.defenders.find((entry) => entry.templateId === 'hurler');
     expect(defender).toBeTruthy();
-    expect(mender).toBeTruthy();
+    expect(hurler).toBeTruthy();
 
     state.activeGlobalModifierIds = ['whisk_discipline', 'fallen_saints'];
     state.headerItems.push({
@@ -2375,25 +2579,118 @@ describe('Sauna Defense V2 logic', () => {
     snapshot = createSnapshot(state, gameContent);
     expect(snapshot.hud.globalModifiers.find((entry) => entry.id === 'whisk_discipline')?.stackCount).toBe(1);
 
-    const menderAfterEquip = state.defenders.find((entry) => entry.id === mender!.id);
-    menderAfterEquip!.location = 'dead';
-    menderAfterEquip!.tile = null;
-    menderAfterEquip!.hp = 0;
+    const hurlerAfterEquip = state.defenders.find((entry) => entry.id === hurler!.id);
+    hurlerAfterEquip!.location = 'dead';
+    hurlerAfterEquip!.tile = null;
+    hurlerAfterEquip!.hp = 0;
     snapshot = createSnapshot(state, gameContent);
     expect(snapshot.hud.globalModifiers.find((entry) => entry.id === 'fallen_saints')?.stackCount).toBe(1);
   });
 
   it('supports global modifiers tied to the newer milestone subclass branches', () => {
     const state = prepState();
-    const guardian = state.defenders.find((entry) => entry.templateId === 'guardian');
-    expect(guardian).toBeTruthy();
-    guardian!.subclassIds = ['stonewall', 'iron_bastion'];
-    state.activeGlobalModifierIds = ['bastion_engine'];
+    const mender = state.defenders.find((entry) => entry.templateId === 'mender');
+    expect(mender).toBeTruthy();
+    mender!.subclassIds = ['afterglow_warden'];
+    state.activeGlobalModifierIds = ['afterglow_watch'];
 
     const snapshot = createSnapshot(state, gameContent);
 
-    expect(snapshot.hud.globalModifiers.find((entry) => entry.id === 'bastion_engine')?.stackCount).toBe(1);
-    expect(snapshot.hud.globalModifiers.find((entry) => entry.id === 'bastion_engine')?.description).toContain('Iron Bastions');
+    expect(snapshot.hud.globalModifiers.find((entry) => entry.id === 'afterglow_watch')?.stackCount).toBe(1);
+    expect(snapshot.hud.globalModifiers.find((entry) => entry.id === 'afterglow_watch')?.description).toContain('Afterglow Wardens');
+  });
+
+  it('counts first-name modifiers and exposes rarity plus source labels in the HUD', () => {
+    const state = prepState();
+    state.defenders.forEach((entry, index) => {
+      entry.name = `Hero ${index}`;
+    });
+    const defender = state.defenders.find((entry) => entry.location !== 'dead');
+    expect(defender).toBeTruthy();
+    defender!.name = 'Mikko';
+    state.activeGlobalModifierIds = ['bastion_engine'];
+
+    const snapshot = createSnapshot(state, gameContent);
+    const modifier = snapshot.hud.globalModifiers.find((entry) => entry.id === 'bastion_engine');
+
+    expect(modifier?.stackCount).toBe(1);
+    expect(modifier?.rarity).toBe('legendary');
+    expect(modifier?.sourceLabel).toContain('First name: Mikko');
+  });
+
+  it('gates early boss drafts to common and rare modifiers while guaranteeing a rare pick', () => {
+    let state = prepState();
+    state.defenders[0].title = 'Vihtavelho Test';
+    state.defenders[1].title = 'Kiuaskuiskaaja Test';
+    state.phase = 'wave';
+    state.waveIndex = 5;
+    state.currentWave = {
+      index: 5,
+      isBoss: true,
+      rewardSisu: 7,
+      pressure: 18,
+      pattern: 'boss_breach',
+      bossId: 'pebble',
+      bossCategory: 'breach',
+      spawns: []
+    };
+    state.pendingSpawns = [];
+    state.enemies = [];
+
+    state = stepState(state, 16, gameContent);
+    const snapshot = createSnapshot(state, gameContent);
+    const rarities = snapshot.hud.globalModifierDraftOffers.map((entry) => entry.rarity);
+
+    expect(rarities.every((rarity) => rarity === 'common' || rarity === 'rare')).toBe(true);
+    expect(rarities.some((rarity) => rarity === 'rare')).toBe(true);
+  });
+
+  it('allows epic modifiers in mid-game boss drafts and guarantees epic-or-better late', () => {
+    let midState = prepState();
+    midState.defenders[0].name = 'Arto';
+    midState.defenders[1].title = 'Loylylordi Test';
+    midState.phase = 'wave';
+    midState.waveIndex = 15;
+    midState.currentWave = {
+      index: 15,
+      isBoss: true,
+      rewardSisu: 7,
+      pressure: 30,
+      pattern: 'boss_pressure',
+      bossId: 'electric_bather',
+      bossCategory: 'pressure',
+      spawns: []
+    };
+    midState.pendingSpawns = [];
+    midState.enemies = [];
+    midState = stepState(midState, 16, gameContent);
+
+    const midRarities = createSnapshot(midState, gameContent).hud.globalModifierDraftOffers.map((entry) => entry.rarity);
+    expect(midRarities.every((rarity) => rarity !== 'legendary')).toBe(true);
+    expect(midRarities.some((rarity) => rarity === 'rare' || rarity === 'epic')).toBe(true);
+
+    let lateState = prepState();
+    lateState.defenders[0].name = 'Mikko';
+    lateState.defenders[1].name = 'Henri';
+    lateState.defenders[2].title = 'Loylylordi Test';
+    lateState.phase = 'wave';
+    lateState.waveIndex = 20;
+    lateState.currentWave = {
+      index: 20,
+      isBoss: true,
+      rewardSisu: 7,
+      pressure: 34,
+      pattern: 'boss_pressure',
+      bossId: 'escalation_manager',
+      bossCategory: 'pressure',
+      spawns: []
+    };
+    lateState.pendingSpawns = [];
+    lateState.enemies = [];
+    lateState = stepState(lateState, 16, gameContent);
+
+    const lateRarities = createSnapshot(lateState, gameContent).hud.globalModifierDraftOffers.map((entry) => entry.rarity);
+    expect(lateRarities.some((rarity) => rarity === 'epic' || rarity === 'legendary')).toBe(true);
   });
 
   it('reduces incoming defender damage by defense but never below one', () => {

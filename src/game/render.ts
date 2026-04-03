@@ -135,6 +135,18 @@ export function getTileViewportPosition(
   return axialToPixel(tile, getBoardLayout(viewportWidth, viewportHeight, snapshot.config.gridRadius));
 }
 
+export function collectFireballTelegraphTiles(snapshot: GameSnapshot): AxialCoord[] {
+  const tiles = new Map<string, AxialCoord>();
+  for (const pending of snapshot.state.pendingFireballs) {
+    for (const tile of snapshot.tiles) {
+      if (hexDistance(tile, pending.targetTile) <= 2) {
+        tiles.set(coordKey(tile), tile);
+      }
+    }
+  }
+  return [...tiles.values()];
+}
+
 function roundAxial(q: number, r: number): AxialCoord {
   let x = q;
   let z = r;
@@ -1659,8 +1671,8 @@ function getCombatShake(snapshot: GameSnapshot) {
         ? 8 * (1 - progress)
         : event.kind === 'boss_hit'
           ? 4.5 * (1 - progress)
-          : event.kind === 'fireball' && progress > 0.42
-            ? 2.2 * (1 - progress)
+          : event.kind === 'fireball'
+            ? 3.4 * (1 - progress)
             : 0;
     if (strength <= 0) continue;
     const angle = event.id * 1.73 + event.ageMs * 0.055;
@@ -1674,6 +1686,36 @@ function getCombatShake(snapshot: GameSnapshot) {
     y *= scale;
   }
   return { x, y };
+}
+
+function drawFireballTelegraphs(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, layout: BoardLayout) {
+  if (snapshot.state.pendingFireballs.length === 0) return;
+
+  for (const pending of snapshot.state.pendingFireballs) {
+    const timeRemaining = Math.max(0, pending.explodeAtMs - snapshot.state.timeMs);
+    const progress = 1 - Math.min(1, timeRemaining / 1000);
+    const pulse = 0.58 + Math.sin(snapshot.state.timeMs * 0.02 + pending.targetTile.q * 0.7 + pending.targetTile.r * 0.5) * 0.18;
+
+    for (const tile of snapshot.tiles) {
+      const distance = hexDistance(tile, pending.targetTile);
+      if (distance > 2) continue;
+      const center = axialToPixel(tile, layout);
+      const fillAlpha = distance === 0 ? 0.18 + progress * 0.18 : 0.08 + progress * 0.12;
+      const strokeAlpha = distance === 0 ? 0.62 + progress * 0.18 : 0.28 + progress * 0.18;
+      drawTile(
+        ctx,
+        center,
+        layout.hexSize - 4.5,
+        `rgba(255, 112, 61, ${fillAlpha * pulse})`,
+        `rgba(255, 210, 144, ${strokeAlpha})`,
+        distance === 0 ? 2.6 : 1.4
+      );
+    }
+
+    const targetCenter = axialToPixel(pending.targetTile, layout);
+    drawGlowDisc(ctx, targetCenter, layout.hexSize * (0.7 + progress * 0.3), 'rgba(255,188,98,0.34)', 'rgba(255,99,56,0)', 0.82);
+    drawShockRing(ctx, targetCenter, layout.hexSize * (0.42 + progress * 0.18), 'rgba(255,232,182,0.92)', Math.max(2, layout.hexSize * 0.06), 0.92);
+  }
 }
 
 function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, layout: BoardLayout) {
@@ -1723,8 +1765,12 @@ function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, lay
             drawSmokeParticles(ctx, center, layout.hexSize * 1.2, explosionPhase, event.id * 9.4, 'rgba(51, 36, 31, 1)', 8);
           }
         } else {
-          drawGlowDisc(ctx, center, layout.hexSize * (0.34 + progress * 0.56), 'rgba(255,232,164,0.9)', 'rgba(255,122,58,0)', 0.9);
-          drawShockRing(ctx, center, layout.hexSize * (0.18 + progress * 0.52), '#ffd27b', 2.2, 0.8);
+          drawGlowDisc(ctx, center, layout.hexSize * (0.74 + progress * 1.12), 'rgba(255,228,172,0.96)', 'rgba(255,104,48,0)', 0.96);
+          drawShockRing(ctx, center, layout.hexSize * (0.28 + progress * 1.18), '#ffd27b', Math.max(3, layout.hexSize * 0.09), 0.94);
+          drawShockRing(ctx, center, layout.hexSize * (0.48 + progress * 1.48), 'rgba(255,188,112,0.56)', Math.max(1.5, layout.hexSize * 0.05), 0.72);
+          drawSparkBurst(ctx, center, layout.hexSize * (0.44 + progress * 0.92), '#fff0be', 0.96 - progress * 0.42, 10, progress * Math.PI * 0.9);
+          drawEmberParticles(ctx, center, layout.hexSize * 1.9, progress, event.id * 7.7, '#ffb05f', 22);
+          drawSmokeParticles(ctx, center, layout.hexSize * 1.7, progress, event.id * 9.4, 'rgba(51, 36, 31, 1)', 12);
         }
         break;
       case 'spin':
@@ -2030,6 +2076,7 @@ export function paintSnapshot(
     }
   }
 
+  drawFireballTelegraphs(ctx, snapshot, layout);
   drawWorldLandmarks(ctx, snapshot, layout);
 
   const saunaCenter = axialToPixel({ q: 0, r: 0 }, layout);

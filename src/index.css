@@ -160,6 +160,27 @@ button {
   display: block;
 }
 
+.rarity-tag {
+  color: #182021;
+  font-weight: 700;
+}
+
+.rarity-common {
+  background: linear-gradient(135deg, #d8ebe3, #abc7bc);
+}
+
+.rarity-rare {
+  background: linear-gradient(135deg, #94c8ff, #5d89d8);
+}
+
+.rarity-epic {
+  background: linear-gradient(135deg, #ffc28c, #ff8d5f);
+}
+
+.rarity-legendary {
+  background: linear-gradient(135deg, #ffe784, #ffb347);
+}
+
 .topbar-stat span,
 .panel-copy,
 .popup-card small,

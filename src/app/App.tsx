@@ -441,14 +441,13 @@ export function App() {
         </div>
         <div className="bench-list">
           {readyEntries.map((entry) => (
-            <button
-              key={entry.id}
-              className={entry.selected ? 'bench-card selected' : 'bench-card'}
-              onClick={() => dispatch({ type: 'selectDefender', defenderId: entry.id })}
-            >
-              <strong>
-                {entry.name} <em>{entry.title}</em>
-              </strong>
+            <div key={entry.id} className={entry.selected ? 'bench-card selected' : 'bench-card'}>
+              <div className="unit-row-top">
+                <strong>
+                  {entry.name} <em>{entry.title}</em>
+                </strong>
+                <span className="mini-tag">Rerolls {entry.benchRerollCount}</span>
+              </div>
               <small>{entry.summary}</small>
               <div className="mini-tag-row">
                 <span className="mini-tag">HP {entry.hp}/{entry.maxHp}</span>
@@ -456,7 +455,15 @@ export function App() {
                 <span className="mini-tag">Kills {entry.kills}</span>
                 {entry.heal > 0 ? <span className="mini-tag">Heal {entry.heal}</span> : null}
               </div>
-            </button>
+              <div className="button-row tight">
+                <button className="ghost-button small-ghost" onClick={() => dispatch({ type: 'selectDefender', defenderId: entry.id })}>
+                  {entry.selected ? 'Selected' : 'Inspect'}
+                </button>
+                <button className="mini-button" onClick={() => dispatch({ type: 'rerollBenchDefender', defenderId: entry.id })}>
+                  Reroll ({entry.benchRerollCost} SISU)
+                </button>
+              </div>
+            </div>
           ))}
         </div>
       </aside>
@@ -557,6 +564,7 @@ export function App() {
               <span className="mini-tag">Items {selectedDefender.items.length}/{selectedDefender.itemSlotCount}</span>
               <span className="mini-tag">Skills {selectedDefender.skills.length}/{selectedDefender.skillSlotCount}</span>
               {selectedDefender.blinkLabel ? <span className="mini-tag">{selectedDefender.blinkLabel}</span> : null}
+              {selectedDefender.fireballLabel ? <span className="mini-tag">{selectedDefender.fireballLabel}</span> : null}
             </div>
             {(selectedDefender.items.length > 0 || selectedDefender.skills.length > 0) ? (
               <div className="popup-list">
@@ -647,8 +655,10 @@ export function App() {
                   <div key={modifier.id} className="popup-card modifier-card">
                     <strong>{modifier.name}</strong>
                     <small>{modifier.description}</small>
+                    <small>{modifier.sourceLabel}</small>
                     <small>{modifier.formulaText}</small>
                     <div className="mini-tag-row">
+                      <span className={`mini-tag rarity-tag rarity-${modifier.rarity}`}>{formatRarity(modifier.rarity)}</span>
                       <span className="mini-tag">{modifier.pickCount} picks</span>
                       <span className="mini-tag">{modifier.stackCount} live stacks</span>
                       <span className="mini-tag">{modifier.resolvedEffectText}</span>
@@ -759,6 +769,9 @@ export function App() {
               <span className="mini-tag">SISU {snapshot.hud.sisu}</span>
               <span className="mini-tag">Recruit Lvl +{snapshot.hud.recruitLevelBonus}</span>
             </div>
+            <p className="panel-copy small-copy">
+              Targeted rerolls keep the main class and level, but reroll the hero identity and base attributes.
+            </p>
             <div className="button-row tight">
               <button
                 className="mini-button"
@@ -804,10 +817,16 @@ export function App() {
                       <span className="mini-tag">ATK {offer.damage}</span>
                       <span className="mini-tag">Heal {offer.heal}</span>
                       <span className="mini-tag">Range {offer.range}</span>
+                      <span className="mini-tag">Rerolls {offer.rerollCount}</span>
                     </div>
-                    <button className="mini-button" onClick={() => dispatch({ type: 'recruitOffer', offerId: offer.id })}>
-                      Recruit For {offer.price} SISU
-                    </button>
+                    <div className="button-row tight">
+                      <button className="mini-button" onClick={() => dispatch({ type: 'recruitOffer', offerId: offer.id })}>
+                        Recruit For {offer.price} SISU
+                      </button>
+                      <button className="ghost-button small-ghost" onClick={() => dispatch({ type: 'rerollRecruitOffer', offerId: offer.id })}>
+                        Reroll ({offer.rerollCost} SISU)
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1197,15 +1216,17 @@ export function App() {
               <span>Choose one</span>
             </div>
             <p className="panel-copy">
-              Pick one run-long modifier. Its stacks update automatically from your board, roster, items, skills and casualties.
+              Pick one run-long modifier. Identity-heavy cards now care most about first names, titles and main classes.
             </p>
             <div className="modifier-draft-grid">
               {snapshot.hud.globalModifierDraftOffers.map((modifier, index) => (
                 <div key={`${modifier.id}-${index}`} className="modifier-card draft-card">
                   <strong>{modifier.name}</strong>
                   <small>{modifier.description}</small>
+                  <small>{modifier.sourceLabel}</small>
                   <small>{modifier.formulaText}</small>
                   <div className="mini-tag-row">
+                    <span className={`mini-tag rarity-tag rarity-${modifier.rarity}`}>{formatRarity(modifier.rarity)}</span>
                     <span className="mini-tag">{modifier.ownedCount} owned</span>
                     <span className="mini-tag">{modifier.stackCount} stacks live</span>
                     <span className="mini-tag">{modifier.incrementText}</span>

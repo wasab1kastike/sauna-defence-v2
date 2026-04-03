@@ -684,8 +684,8 @@ export const gameContent: GameContent = {
       kind: 'skill',
       name: 'Fireball',
       rarity: 'rare',
-      effectText: 'Basic attacks splash ember damage to nearby enemies.',
-      flavorText: 'Throws a rude little sun at anyone standing too close.',
+      effectText: 'Every 12s your next basic attack marks a tile. After 1s, a fireball explodes there for full damage in radius 2.',
+      flavorText: 'Marks the floor, lets everyone panic, then drops a whole bad afternoon on it.',
       artPath: 'loot/fireball.png'
     },
     spin2win: {
@@ -811,6 +811,7 @@ export const gameContent: GameContent = {
   globalModifierDefinitions: {
     iron_brotherhood: {
       id: 'iron_brotherhood',
+      rarity: 'common',
       name: 'Iron Brotherhood',
       description: 'Each Frontline Tank on the board hardens the whole roster.',
       countScope: 'board',
@@ -820,6 +821,7 @@ export const gameContent: GameContent = {
     },
     triage_circle: {
       id: 'triage_circle',
+      rarity: 'common',
       name: 'Triage Circle',
       description: 'Living Sauna Medics keep everyone slowly recovering.',
       countScope: 'living',
@@ -829,15 +831,17 @@ export const gameContent: GameContent = {
     },
     fallen_saints: {
       id: 'fallen_saints',
-      name: 'Fallen Saints',
-      description: 'Each fallen Sauna Medic steels the survivors against the next hit.',
+      rarity: 'rare',
+      name: 'Fallen Throwers',
+      description: 'Every fallen Backline Thrower leaves the survivors angrier and more accurate.',
       countScope: 'dead',
-      source: { kind: 'template', templateId: 'mender' },
-      effectStat: 'defense',
+      source: { kind: 'template', templateId: 'hurler' },
+      effectStat: 'damage',
       amountPerStack: 1
     },
     stone_oath: {
       id: 'stone_oath',
+      rarity: 'rare',
       name: 'Stone Oath',
       description: 'Stonewalls turn the board into a safer place for everyone.',
       countScope: 'board',
@@ -847,42 +851,47 @@ export const gameContent: GameContent = {
     },
     bastion_engine: {
       id: 'bastion_engine',
-      name: 'Bastion Engine',
-      description: 'Iron Bastions turn every frontline into a thicker wall of bad news.',
+      rarity: 'legendary',
+      name: 'Mikko Engine',
+      description: 'Every Mikko turns the whole roster into a thicker wall of bad decisions.',
       countScope: 'living',
-      source: { kind: 'subclass', subclassId: 'iron_bastion' },
+      source: { kind: 'first_name', name: 'Mikko' },
       effectStat: 'maxHp',
-      amountPerStack: 3
+      amountPerStack: 5
     },
     coal_echoes: {
       id: 'coal_echoes',
-      name: 'Coal Echoes',
-      description: 'Coalflingers make the whole squad hit harder.',
+      rarity: 'common',
+      name: 'Sofia Sparks',
+      description: 'Every Sofia convinces the room that throwing harder is a real doctrine.',
       countScope: 'living',
-      source: { kind: 'subclass', subclassId: 'coalflinger' },
+      source: { kind: 'first_name', name: 'Sofia' },
       effectStat: 'damage',
       amountPerStack: 1
     },
     scope_lattice: {
       id: 'scope_lattice',
-      name: 'Scope Lattice',
-      description: 'Ash Scopes help the whole roster line up cleaner shots through the steam.',
+      rarity: 'epic',
+      name: 'Arto Angle',
+      description: 'Every Arto somehow finds one cleaner firing line through the steam.',
       countScope: 'living',
-      source: { kind: 'subclass', subclassId: 'ash_scope' },
+      source: { kind: 'first_name', name: 'Arto' },
       effectStat: 'range',
       amountPerStack: 1
     },
     oracle_draft: {
       id: 'oracle_draft',
-      name: 'Oracle Draft',
+      rarity: 'common',
+      name: 'Jussi Draft',
       description: 'Towel Oracles extend everyone’s reach through the steam.',
       countScope: 'living',
-      source: { kind: 'subclass', subclassId: 'towel_oracle' },
-      effectStat: 'range',
+      source: { kind: 'first_name', name: 'Jussi' },
+      effectStat: 'heal',
       amountPerStack: 1
     },
     afterglow_watch: {
       id: 'afterglow_watch',
+      rarity: 'epic',
       name: 'Afterglow Watch',
       description: 'Afterglow Wardens leave the whole room steadier and harder to wear down.',
       countScope: 'living',
@@ -892,6 +901,7 @@ export const gameContent: GameContent = {
     },
     cinder_cadence: {
       id: 'cinder_cadence',
+      rarity: 'rare',
       name: 'Cinder Cadence',
       description: 'Each Fireball user quickens the whole roster’s rhythm.',
       countScope: 'living',
@@ -901,15 +911,17 @@ export const gameContent: GameContent = {
     },
     battle_psalm: {
       id: 'battle_psalm',
-      name: 'Battle Psalm',
+      rarity: 'legendary',
+      name: 'Henri Hymnal',
       description: 'Battle Hymns lift the whole team’s healing output.',
       countScope: 'living',
-      source: { kind: 'skill', skillId: 'battle_hymn' },
+      source: { kind: 'first_name', name: 'Henri' },
       effectStat: 'heal',
-      amountPerStack: 1
+      amountPerStack: 3
     },
     shield_mist: {
       id: 'shield_mist',
+      rarity: 'common',
       name: 'Shield Mist',
       description: 'Steam Shields make the whole team tougher.',
       countScope: 'living',
@@ -919,15 +931,17 @@ export const gameContent: GameContent = {
     },
     cedar_swear: {
       id: 'cedar_swear',
-      name: 'Cedar Swear',
-      description: 'Cedar Rings bulk up everyone in the room.',
+      rarity: 'rare',
+      name: 'Laudekuningas Oath',
+      description: 'Every Laudekuningas convinces the whole squad to carry themselves like royalty.',
       countScope: 'living',
-      source: { kind: 'item', itemId: 'cedar_ring' },
+      source: { kind: 'title', title: 'Laudekuningas' },
       effectStat: 'maxHp',
-      amountPerStack: 2
+      amountPerStack: 3
     },
     whisk_discipline: {
       id: 'whisk_discipline',
+      rarity: 'epic',
       name: 'Whisk Discipline',
       description: 'Iron Whisks teach the whole team to brace for impact.',
       countScope: 'living',
@@ -937,24 +951,27 @@ export const gameContent: GameContent = {
     },
     salt_sight: {
       id: 'salt_sight',
-      name: 'Salt Sight',
-      description: 'Sauna Salt sharpens the reach of every ally.',
+      rarity: 'common',
+      name: 'Kiuaskuiskaaja Sight',
+      description: 'Kiuaskuiskaajat somehow keep every ally one step ahead of the steam.',
       countScope: 'living',
-      source: { kind: 'item', itemId: 'sauna_salt' },
+      source: { kind: 'title', title: 'Kiuaskuiskaaja' },
       effectStat: 'range',
       amountPerStack: 1
     },
     loylylordi_lineage: {
       id: 'loylylordi_lineage',
+      rarity: 'epic',
       name: 'Loylylordi Lineage',
       description: 'Every Loylylordi raises the damage ceiling for the whole roster.',
       countScope: 'living',
       source: { kind: 'title', title: 'Loylylordi' },
       effectStat: 'damage',
-      amountPerStack: 1
+      amountPerStack: 2
     },
     vihtavelho_vow: {
       id: 'vihtavelho_vow',
+      rarity: 'rare',
       name: 'Vihtavelho Vow',
       description: 'Vihtavelhot turn every heal into a slightly bigger miracle.',
       countScope: 'living',
@@ -964,25 +981,27 @@ export const gameContent: GameContent = {
     },
     saunklonkku_requiem: {
       id: 'saunklonkku_requiem',
+      rarity: 'epic',
       name: 'Saunklonkku Requiem',
       description: 'Dead Saunklonkkus leave behind a harsher fighting spirit.',
       countScope: 'dead',
       source: { kind: 'title', title: 'Saunklonkku' },
       effectStat: 'damage',
-      amountPerStack: 1
+      amountPerStack: 2
     },
     shared_grit: {
       id: 'shared_grit',
+      rarity: 'common',
       name: 'Shared Grit',
-      description: 'Fallback doctrine: every living hero adds a little bulk to everyone.',
+      description: 'Each Backline Thrower keeps the whole room leaning harder into offense.',
       countScope: 'living',
-      source: { kind: 'roster' },
-      effectStat: 'maxHp',
-      amountPerStack: 1,
-      isFallback: true
+      source: { kind: 'template', templateId: 'hurler' },
+      effectStat: 'damage',
+      amountPerStack: 1
     },
     steady_hands: {
       id: 'steady_hands',
+      rarity: 'rare',
       name: 'Steady Hands',
       description: 'Fallback doctrine: a full room speeds everyone up.',
       countScope: 'living',
@@ -993,6 +1012,7 @@ export const gameContent: GameContent = {
     },
     campfire_doctrine: {
       id: 'campfire_doctrine',
+      rarity: 'common',
       name: 'Campfire Doctrine',
       description: 'Fallback doctrine: every living hero inspires a bit more healing.',
       countScope: 'living',
