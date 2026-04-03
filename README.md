@@ -13,9 +13,15 @@ Kevyt selainpeli, jossa puolustat keskustassa hehkuvaa saunaa kuuden aallon ajan
 ```bash
 npm install
 npm run dev
+npm run lint
+npm run typecheck
 npm run test
 npm run build
 ```
+
+- `npm run lint` tarkistaa vähintään `src/**/*.ts` ja `src/**/*.tsx` ESLintillä.
+- `npm run typecheck` ajaa TypeScript project references -tarkistuksen (`tsc -b --pretty false`).
+- GitHub Pages -workflow ajaa komennot järjestyksessä `lint -> typecheck -> test -> build`.
 
 ## Julkaisu
 

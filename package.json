@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc -b --pretty false",
+    "lint": "npx --yes -p eslint@9.24.0 -p @eslint/js@9.24.0 -p typescript-eslint@8.29.1 -p eslint-plugin-react-hooks@5.2.0 -p eslint-plugin-react-refresh@0.4.19 -p globals@16.0.0 eslint \"src/**/*.{ts,tsx}\""
   },
   "dependencies": {
     "react": "^19.1.1",
