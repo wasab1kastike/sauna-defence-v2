@@ -8,9 +8,13 @@ All notable changes to this project are documented in this file.
 - New PR checklist section for behavior-impact + changelog confirmation in `.github/pull_request_template.md`.
 - New CI workflow `.github/workflows/changelog-check.yml` that enforces changelog updates for behavior-changing pull requests.
 - README now includes a dedicated **Release process** section with version bump, changelog update, GitHub Pages deployment validation, and custom-domain verification instructions.
+- New `docs/visual-guidelines.md` that defines color/contrast palette, animation duration + easing standards, UI layer hierarchy, render performance budgets, and measurement workflow.
+- New `public/ASSET_POLICY.md` that defines preferred vector-first asset formats, optimization requirements, and naming conventions for `public/` assets.
 
 ### Changed
 - Normalized changelog section taxonomy to Keep a Changelog style categories: `Added`, `Changed`, `Fixed`, `Breaking`.
+- Updated `.github/pull_request_template.md` with a visual regression checklist (before/after screenshots, HUD readability review, desktop/mobile validation).
+- Updated README documentation index to include the new visual and asset governance docs to keep GitHub Pages-facing project docs current.
 
 ### Fixed
 - No unreleased fixes.

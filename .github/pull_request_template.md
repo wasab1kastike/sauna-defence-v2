@@ -12,5 +12,12 @@
 - [ ] Tämä PR **ei** muuta balanssia.
 - [ ] Tämä PR muuttaa balanssia, ja olen päivittänyt `docs/balance.md` sekä regressiomittarit (`src/game/__tests__/balance.spec.ts`).
 
+
+## Visual regression checklist
+- [ ] Tämä PR **ei** muuta visuaaleja.
+- [ ] Tämä PR muuttaa visuaaleja, ja olen liittänyt ennen/jälkeen-kuvakaappaukset samasta näkymästä.
+- [ ] HUD readability tarkistettu (kontrasti, hierarkia, luettavuus).
+- [ ] Desktop + mobile tarkistettu (layout, clipping, skaalautuvuus).
+
 ## Notes
 - [ ] Mahdolliset riskit, follow-upit tai rollout-huomiot.
