@@ -2,9 +2,45 @@ import { applyAction, createDefaultMetaProgress, createDefaultRunPreferences, cr
 import { paintSnapshot } from './render';
 import type { GameRuntime, GameRuntimeConfig, GameSnapshot, InputAction, MetaProgress, RunPreferences, RunState } from './types';
 
-const META_STORAGE_KEY = 'sauna-defense-v2-meta';
-const PREFERENCES_STORAGE_KEY = 'sauna-defense-v2-preferences';
-const INTRO_STORAGE_KEY = 'sauna-defense-v2-intro-seen';
+export const STORAGE_VERSION = 'v3';
+export const STORAGE_KEY_PREFIX = `sauna-defense-${STORAGE_VERSION}`;
+
+const STORAGE_KEYS = {
+  meta: `${STORAGE_KEY_PREFIX}-meta`,
+  preferences: `${STORAGE_KEY_PREFIX}-preferences`,
+  introSeen: `${STORAGE_KEY_PREFIX}-intro-seen`
+} as const;
+
+const LEGACY_STORAGE_KEYS_V2 = {
+  meta: 'sauna-defense-v2-meta',
+  preferences: 'sauna-defense-v2-preferences',
+  introSeen: 'sauna-defense-v2-intro-seen'
+} as const;
+
+export function migrateLegacyStorageKeys(storage?: Storage | null) {
+  if (!storage) {
+    return;
+  }
+
+  try {
+    for (const [key, legacyKey] of Object.entries(LEGACY_STORAGE_KEYS_V2) as Array<[
+      keyof typeof LEGACY_STORAGE_KEYS_V2,
+      string
+    ]>) {
+      const nextKey = STORAGE_KEYS[key];
+      const existing = storage.getItem(nextKey);
+      const legacyValue = storage.getItem(legacyKey);
+      if (existing === null && legacyValue !== null) {
+        storage.setItem(nextKey, legacyValue);
+      }
+      if (legacyValue !== null) {
+        storage.removeItem(legacyKey);
+      }
+    }
+  } catch {
+    // Ignore localStorage errors.
+  }
+}
 
 function loadMeta(storage?: Storage | null): MetaProgress {
   if (!storage) {
@@ -12,7 +48,7 @@ function loadMeta(storage?: Storage | null): MetaProgress {
   }
 
   try {
-    const raw = storage.getItem(META_STORAGE_KEY);
+    const raw = storage.getItem(STORAGE_KEYS.meta);
     if (!raw) {
       return createDefaultMetaProgress();
     }
@@ -35,7 +71,7 @@ function saveMeta(storage: Storage | null | undefined, meta: MetaProgress) {
   if (!storage) {
     return;
   }
-  storage.setItem(META_STORAGE_KEY, JSON.stringify(meta));
+  storage.setItem(STORAGE_KEYS.meta, JSON.stringify(meta));
 }
 
 function loadPreferences(storage?: Storage | null): RunPreferences {
@@ -44,7 +80,7 @@ function loadPreferences(storage?: Storage | null): RunPreferences {
   }
 
   try {
-    const raw = storage.getItem(PREFERENCES_STORAGE_KEY);
+    const raw = storage.getItem(STORAGE_KEYS.preferences);
     if (!raw) {
       return createDefaultRunPreferences();
     }
@@ -63,7 +99,7 @@ function savePreferences(storage: Storage | null | undefined, preferences: RunPr
   if (!storage) {
     return;
   }
-  storage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
+  storage.setItem(STORAGE_KEYS.preferences, JSON.stringify(preferences));
 }
 
 function loadIntroSeen(storage?: Storage | null): boolean {
@@ -71,7 +107,7 @@ function loadIntroSeen(storage?: Storage | null): boolean {
     return false;
   }
   try {
-    return storage.getItem(INTRO_STORAGE_KEY) === 'true';
+    return storage.getItem(STORAGE_KEYS.introSeen) === 'true';
   } catch {
     return false;
   }
@@ -82,7 +118,7 @@ function saveIntroSeen(storage?: Storage | null, value = true) {
     return;
   }
   try {
-    storage.setItem(INTRO_STORAGE_KEY, value ? 'true' : 'false');
+    storage.setItem(STORAGE_KEYS.introSeen, value ? 'true' : 'false');
   } catch {
     // Ignore localStorage errors.
   }
@@ -90,6 +126,7 @@ function saveIntroSeen(storage?: Storage | null, value = true) {
 
 export function createGameRuntime(config: GameRuntimeConfig): GameRuntime {
   const storage = config.storage ?? (typeof window !== 'undefined' ? window.localStorage : null);
+  migrateLegacyStorageKeys(storage);
   let state: RunState = createInitialState(
     config.content,
     loadMeta(storage),
