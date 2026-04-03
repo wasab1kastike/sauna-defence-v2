@@ -43,14 +43,37 @@ Canonical tallennusversio on **`v3`** ja yhtenäinen avainprefix on **`sauna-def
 - `README.md`
   - dokumentoi canonical version (`v3`) ja yhtenäisen avainprefixin (`sauna-defense-v3`).
 
-## Julkaisu
+## Release process
 
-GitHub Pages -julkaisu käyttää custom domainia `artobest.com`.
+### 1) Version nosto
 
-- tuotantobase on `/`
-- push `main`-branchiin julkaisee pelin GitHub Pagesiin GitHub Actionsin kautta
-- julkaisuosoite on `https://artobest.com/`
-- `public/CNAME` kertoo GitHub Pagesille käytettävän custom domainin
+1. Päivitä versionumero tiedostoon `package.json` (semver: patch/minor/major).
+2. Varmista että mahdolliset breaking-muutokset on merkitty myös changelogiin kohdassa `Breaking`.
+
+### 2) Changelogin päivitys
+
+Päivitä juuren `CHANGELOG.md` aina ennen mergeä seuraavalla rakenteella:
+
+- `Added`
+- `Changed`
+- `Fixed`
+- `Breaking`
+
+Jos PR muuttaa käyttäytymistä (`src/`, `public/`, build- tai runtime-konfiguraatio), lisää vähintään yksi merkintä relevanttiin kohtaan.
+
+### 3) GitHub Pages deployn validointi
+
+1. Avaa GitHub Actions ja varmista että workflow **Deploy To GitHub Pages** on onnistunut (`lint -> typecheck -> test -> build -> deploy`).
+2. Tarkista workflow-ajon `deploy`-jobista julkaistu `page_url`.
+3. Varmista että tuotanto-URL vastaa odotettua osoitetta: `https://artobest.com/`.
+
+### 4) Domain-varmistus (GitHub Pages)
+
+- `public/CNAME` täytyy sisältää custom domain: `artobest.com`.
+- GitHub repository settings → Pages: varmista että custom domain on `artobest.com` ja HTTPS on käytössä.
+- Julkaisun jälkeen validoi sekä:
+  - `https://artobest.com/`
+  - GitHub Pages -ympäristön URL workflow-ajosta (deploy-jobin `page_url`)
 
 ## Pelisilmukka
 
