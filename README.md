@@ -89,3 +89,7 @@ Jos PR muuttaa käyttäytymistä (`src/`, `public/`, build- tai runtime-konfigur
 - `src/game` pelitila, runtime, renderöinti ja testit
 - `src/content` tasapaino- ja aaltodata (moduulit: `config`, `defenders`, `subclasses`, `enemies`, `waves`, `items`)
 - `docs/content-authoring.md` ohjeet uuden yksikön lisäämiseen ja content-viitteiden ylläpitoon
+
+- `docs/balance.md` balanssibaseline + regressiokäytännöt
+- `docs/visual-guidelines.md` visuaalinen paletti, animaatiostandardit, render-budgetit ja visual regression -checklist
+- `public/ASSET_POLICY.md` `public/`-hakemiston formaatti-, optimointi- ja nimeämispolitiikat
