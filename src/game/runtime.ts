@@ -1,8 +1,9 @@
 import { applyAction, createDefaultMetaProgress, createDefaultRunPreferences, createInitialState, createSnapshot, stepState } from './logic';
 import { paintSnapshot } from './render';
 import type { GameRuntime, GameRuntimeConfig, GameSnapshot, InputAction, MetaProgress, RunPreferences, RunState } from './types';
+import { SAVE_SCHEMA_VERSION } from './version';
 
-export const STORAGE_VERSION = 'v3';
+export const STORAGE_VERSION = SAVE_SCHEMA_VERSION;
 export const STORAGE_KEY_PREFIX = `sauna-defense-${STORAGE_VERSION}`;
 
 const STORAGE_KEYS = {

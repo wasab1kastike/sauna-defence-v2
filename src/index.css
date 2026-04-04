@@ -95,7 +95,8 @@ button {
 .hud-utility-rail,
 .selection-card,
 .board-popup,
-.landmark-chip {
+.landmark-chip,
+.hud-footer-version {
   position: absolute;
   z-index: 2;
 }
@@ -231,6 +232,11 @@ button {
   display: grid;
   gap: 8px;
   width: 118px;
+}
+
+.hud-footer-version {
+  right: 18px;
+  bottom: 14px;
 }
 
 .bench-strip {

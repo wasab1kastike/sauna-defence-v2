@@ -5,6 +5,7 @@ import { latestPatchNotes } from '../content/patchNotes';
 import { gameContent } from '../content/gameContent';
 import { getTileViewportPosition, pickDefenderAtCanvasPoint, pickEnemyAtCanvasPoint, pickTileAtCanvasPoint } from '../game/render';
 import { createGameRuntime, STORAGE_KEY_PREFIX } from '../game/runtime';
+import { APP_VERSION } from '../game/version';
 import type {
   GameRuntime,
   GameSnapshot,
@@ -1199,6 +1200,9 @@ export function App() {
 
             {renderSelectionCard()}
             {renderPanelPopup()}
+            <footer className="hud-footer-version">
+              <span className="mini-tag">App {APP_VERSION}</span>
+            </footer>
             </>
           ) : (
             <section className="boot-panel boot-overlay">
