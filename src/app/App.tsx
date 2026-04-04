@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 
+import { latestPatchNotes } from '../content/patchNotes';
 import { gameContent } from '../content/gameContent';
 import { getTileViewportPosition, pickDefenderAtCanvasPoint, pickEnemyAtCanvasPoint, pickTileAtCanvasPoint } from '../game/render';
 import { createGameRuntime, STORAGE_KEY_PREFIX } from '../game/runtime';
@@ -61,6 +62,7 @@ const BOARD_POPUP_MARGIN = 18;
 const BOARD_POPUP_MIN_TOP = 86;
 
 const GUIDE_STORAGE_KEY = `${STORAGE_KEY_PREFIX}-guide-seen`;
+const PATCH_NOTES_LAST_SEEN_STORAGE_KEY = `${STORAGE_KEY_PREFIX}-last-seen-patch-notes`;
 const GUIDE_STEPS = [
   {
     title: 'Topbar At A Glance',
@@ -191,6 +193,19 @@ export function App() {
     }
   });
   const [guideStep, setGuideStep] = useState<number | null>(null);
+  const [patchNotesOpen, setPatchNotesOpen] = useState(false);
+  const [patchNotesChecked, setPatchNotesChecked] = useState(false);
+
+  const markPatchNotesSeen = () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      window.localStorage.setItem(PATCH_NOTES_LAST_SEEN_STORAGE_KEY, latestPatchNotes.version);
+    } catch {
+      // Ignore localStorage failures.
+    }
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -253,6 +268,28 @@ export function App() {
     setGuideStep(0);
   }, [guideSeen, guideStep, snapshot]);
 
+  useEffect(() => {
+    if (!snapshot || patchNotesChecked) {
+      return;
+    }
+    if (typeof window === 'undefined') {
+      setPatchNotesChecked(true);
+      return;
+    }
+
+    let lastSeenVersion = '';
+    try {
+      lastSeenVersion = window.localStorage.getItem(PATCH_NOTES_LAST_SEEN_STORAGE_KEY) ?? '';
+    } catch {
+      // Ignore localStorage failures.
+    }
+
+    if (lastSeenVersion !== latestPatchNotes.version) {
+      setPatchNotesOpen(true);
+    }
+    setPatchNotesChecked(true);
+  }, [patchNotesChecked, snapshot]);
+
   const persistGuideSeen = (value: boolean) => {
     setGuideSeen(value);
     if (typeof window === 'undefined') {
@@ -277,6 +314,15 @@ export function App() {
 
   const dispatch = (action: Parameters<GameRuntime['dispatch']>[0]) => {
     runtimeRef.current?.dispatch(action);
+  };
+
+  const openPatchNotes = () => {
+    setPatchNotesOpen(true);
+  };
+
+  const closePatchNotes = () => {
+    setPatchNotesOpen(false);
+    markPatchNotesSeen();
   };
 
   const pickLandmarkAtPointer = (
@@ -1025,6 +1071,9 @@ export function App() {
                 </div>
               </div>
               <div className="topbar-actions">
+                <button className="ghost-button small-ghost" onClick={openPatchNotes}>
+                  Patch Notes
+                </button>
                 <button
                   className="ghost-button small-ghost"
                   onClick={() => {
@@ -1127,6 +1176,58 @@ export function App() {
           )}
         </div>
       </section>
+
+      {patchNotesOpen ? (
+        <div className="overlay-shell patch-notes-shell" role="dialog" aria-modal="true" aria-labelledby="patch-notes-title">
+          <section className="overlay-card patch-notes-card">
+            <div className="panel-head patch-notes-head">
+              <div>
+                <p className="eyebrow">Tuoreimmat kuulumiset</p>
+                <h2 id="patch-notes-title">Patch Notes</h2>
+                <p className="panel-copy small-copy">Pieni katsaus siihen, mikä tekee seuraavasta runista sujuvamman.</p>
+              </div>
+              <button className="ghost-button" onClick={closePatchNotes}>
+                Sulje
+              </button>
+            </div>
+            <div className="patch-notes-meta">
+              <span className="version-badge">Versio {latestPatchNotes.version}</span>
+              <span className="panel-copy small-copy">{latestPatchNotes.date}</span>
+            </div>
+            <div className="patch-notes-grid">
+              <section className="inventory-card patch-notes-section">
+                <h3>✨ Uutta</h3>
+                <ul>
+                  {latestPatchNotes.new.map((entry) => (
+                    <li key={entry}>{entry}</li>
+                  ))}
+                </ul>
+              </section>
+              <section className="inventory-card patch-notes-section">
+                <h3>🛠️ Parannettu</h3>
+                <ul>
+                  {latestPatchNotes.improved.map((entry) => (
+                    <li key={entry}>{entry}</li>
+                  ))}
+                </ul>
+              </section>
+              <section className="inventory-card patch-notes-section">
+                <h3>✅ Korjattu</h3>
+                <ul>
+                  {latestPatchNotes.fixed.map((entry) => (
+                    <li key={entry}>{entry}</li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+            <div className="button-row">
+              <button className="primary-button" onClick={closePatchNotes}>
+                Jatka peliin
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {snapshot && introOpen && guideStep === null ? (
         <div className="overlay-shell intro-shell">

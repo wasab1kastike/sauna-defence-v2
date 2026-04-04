@@ -10,11 +10,14 @@ All notable changes to this project are documented in this file.
 - README now includes a dedicated **Release process** section with version bump, changelog update, GitHub Pages deployment validation, and custom-domain verification instructions.
 - New `docs/visual-guidelines.md` that defines color/contrast palette, animation duration + easing standards, UI layer hierarchy, render performance budgets, and measurement workflow.
 - New `public/ASSET_POLICY.md` that defines preferred vector-first asset formats, optimization requirements, and naming conventions for `public/` assets.
+- New `src/content/patchNotes.ts` data source for the latest player-facing patch notes (`version`, `date`, `new`, `improved`, `fixed`).
 
 ### Changed
 - Normalized changelog section taxonomy to Keep a Changelog style categories: `Added`, `Changed`, `Fixed`, `Breaking`.
 - Updated `.github/pull_request_template.md` with a visual regression checklist (before/after screenshots, HUD readability review, desktop/mobile validation).
 - Updated README documentation index to include the new visual and asset governance docs to keep GitHub Pages-facing project docs current.
+- Added a polished in-game Patch Notes modal and topbar entry point in `src/app/App.tsx`, including auto-open behavior only when users have not seen the newest version yet.
+- Added lightweight visual polish for Patch Notes in `src/index.css`: hero heading, version badge, category icon headings, and improved typography for readability.
 
 ### Fixed
 - No unreleased fixes.

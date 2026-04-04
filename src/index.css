@@ -550,6 +550,57 @@ button {
   width: min(520px, 100%);
 }
 
+.patch-notes-card {
+  width: min(760px, 100%);
+}
+
+.patch-notes-head h2 {
+  margin: 0;
+  font-size: 1.45rem;
+}
+
+.patch-notes-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.version-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  background: linear-gradient(135deg, #ffdca0, #ffb661);
+  color: #1d1810;
+}
+
+.patch-notes-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.patch-notes-section {
+  gap: 10px;
+}
+
+.patch-notes-section h3 {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
+.patch-notes-section ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .panel-copy {
   margin: 0;
   line-height: 1.5;
