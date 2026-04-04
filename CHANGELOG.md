@@ -11,6 +11,7 @@ All notable changes to this project are documented in this file.
 - New `docs/visual-guidelines.md` that defines color/contrast palette, animation duration + easing standards, UI layer hierarchy, render performance budgets, and measurement workflow.
 - New `public/ASSET_POLICY.md` that defines preferred vector-first asset formats, optimization requirements, and naming conventions for `public/` assets.
 - New `src/content/patchNotes.ts` data source for the latest player-facing patch notes (`version`, `date`, `new`, `improved`, `fixed`).
+- New centralized version module `src/game/version.ts` exporting `APP_VERSION` (build-time from Vite define) and `SAVE_SCHEMA_VERSION` (`v3`) for consistent version references across runtime and UI.
 
 ### Changed
 - Normalized changelog section taxonomy to Keep a Changelog style categories: `Added`, `Changed`, `Fixed`, `Breaking`.
@@ -18,6 +19,8 @@ All notable changes to this project are documented in this file.
 - Updated README documentation index to include the new visual and asset governance docs to keep GitHub Pages-facing project docs current.
 - Added a polished in-game Patch Notes modal and topbar entry point in `src/app/App.tsx`, including auto-open behavior only when users have not seen the newest version yet.
 - Added lightweight visual polish for Patch Notes in `src/index.css`: hero heading, version badge, category icon headings, and improved typography for readability.
+- Vite build now injects `__APP_VERSION__` from `process.env.npm_package_version`, patch notes use `APP_VERSION` instead of hardcoded text, and HUD now shows `App <version>` in an always-visible footer badge.
+- Save schema version references now use `SAVE_SCHEMA_VERSION` via runtime constants, and runtime migration tests consume `STORAGE_KEY_PREFIX` rather than hardcoded `v3` keys.
 
 ### Fixed
 - Patch Notes auto-open now waits until blocking overlays (intro, guided tips, draft overlays) are closed, preventing stacked modals on first load.

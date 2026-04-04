@@ -28,7 +28,7 @@ npm run build
 
 ## Tallennusavaimet ja versiointi
 
-Canonical tallennusversio on **`v3`** ja yhtenäinen avainprefix on **`sauna-defense-v3`**.
+Tallennusskeeman canonical-versio tulee vakiosta `SAVE_SCHEMA_VERSION` (`src/game/version.ts`) ja nykyinen arvo on **`v3`**. Avainprefix muodostuu runtime:ssa automaattisesti muodossa `sauna-defense-${SAVE_SCHEMA_VERSION}`.
 
 ### Inventaario
 
@@ -49,6 +49,7 @@ Canonical tallennusversio on **`v3`** ja yhtenäinen avainprefix on **`sauna-def
 
 1. Päivitä versionumero tiedostoon `package.json` (semver: patch/minor/major).
 2. Varmista että mahdolliset breaking-muutokset on merkitty myös changelogiin kohdassa `Breaking`.
+3. Buildissä Vite injektoi `__APP_VERSION__`-globaalin arvosta `process.env.npm_package_version` (`vite.config.ts`), ja peli näyttää sen HUD-footerissa (`App x.y.z`). Tämä tarkoittaa, että pelissä näkyvä versio päivittyy automaattisesti aina `package.json` version bumpin yhteydessä.
 
 ### 2) Changelogin päivitys
 

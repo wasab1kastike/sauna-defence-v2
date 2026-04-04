@@ -1,4 +1,4 @@
-import { migrateLegacyStorageKeys } from '../runtime';
+import { STORAGE_KEY_PREFIX, migrateLegacyStorageKeys } from '../runtime';
 
 function createStorageMock(initial: Record<string, string>): Storage {
   const values = new Map(Object.entries(initial));
@@ -25,6 +25,10 @@ function createStorageMock(initial: Record<string, string>): Storage {
 }
 
 describe('storage migration', () => {
+  const META_KEY = `${STORAGE_KEY_PREFIX}-meta`;
+  const PREFERENCES_KEY = `${STORAGE_KEY_PREFIX}-preferences`;
+  const INTRO_SEEN_KEY = `${STORAGE_KEY_PREFIX}-intro-seen`;
+
   it('moves v2 values into v3 keys and removes v2 keys', () => {
     const storage = createStorageMock({
       'sauna-defense-v2-meta': '{"steam":55}',
@@ -34,9 +38,9 @@ describe('storage migration', () => {
 
     migrateLegacyStorageKeys(storage);
 
-    expect(storage.getItem('sauna-defense-v3-meta')).toBe('{"steam":55}');
-    expect(storage.getItem('sauna-defense-v3-preferences')).toBe('{"autoplayEnabled":true}');
-    expect(storage.getItem('sauna-defense-v3-intro-seen')).toBe('true');
+    expect(storage.getItem(META_KEY)).toBe('{"steam":55}');
+    expect(storage.getItem(PREFERENCES_KEY)).toBe('{"autoplayEnabled":true}');
+    expect(storage.getItem(INTRO_SEEN_KEY)).toBe('true');
     expect(storage.getItem('sauna-defense-v2-meta')).toBeNull();
     expect(storage.getItem('sauna-defense-v2-preferences')).toBeNull();
     expect(storage.getItem('sauna-defense-v2-intro-seen')).toBeNull();
@@ -45,12 +49,12 @@ describe('storage migration', () => {
   it('does not overwrite existing v3 values', () => {
     const storage = createStorageMock({
       'sauna-defense-v2-meta': '{"steam":3}',
-      'sauna-defense-v3-meta': '{"steam":999}'
+      [META_KEY]: '{"steam":999}'
     });
 
     migrateLegacyStorageKeys(storage);
 
-    expect(storage.getItem('sauna-defense-v3-meta')).toBe('{"steam":999}');
+    expect(storage.getItem(META_KEY)).toBe('{"steam":999}');
     expect(storage.getItem('sauna-defense-v2-meta')).toBeNull();
   });
 });

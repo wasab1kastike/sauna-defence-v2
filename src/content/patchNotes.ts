@@ -1,3 +1,5 @@
+import { APP_VERSION } from '../game/version';
+
 export type PatchNotesEntry = {
   version: string;
   date: string;
@@ -7,7 +9,7 @@ export type PatchNotesEntry = {
 };
 
 export const latestPatchNotes: PatchNotesEntry = {
-  version: '0.1.1',
+  version: APP_VERSION,
   date: '2026-04-04',
   new: [
     'Patch Notes -näkymä löytyy nyt suoraan topbarista, joten näet uudet jutut ilman valikoissa seikkailua.',
