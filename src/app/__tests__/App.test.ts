@@ -1,4 +1,10 @@
-import { getLandmarkPopupPlacement, getSelectionCardTitle, resolveBoardPointerAction } from '../App';
+import {
+  formatPatchNotesDate,
+  getLandmarkPopupPlacement,
+  getSelectionCardTitle,
+  resolveBoardPointerAction,
+  shouldAutoOpenPatchNotes
+} from '../App';
 import { gameContent } from '../../content/gameContent';
 import { createDefaultMetaProgress, createInitialState, createSnapshot } from '../../game/logic';
 import { getTileViewportPosition } from '../../game/render';
@@ -60,5 +66,16 @@ describe('App popup helpers', () => {
     const action = resolveBoardPointerAction(snapshot, rect, point.x, point.y, () => null);
 
     expect(action).toEqual({ type: 'selectDefender', defenderId: defender.id });
+  });
+
+  it('opens patch notes automatically only when version differs', () => {
+    expect(shouldAutoOpenPatchNotes('0.1.0', '0.1.1')).toBe(true);
+    expect(shouldAutoOpenPatchNotes('0.1.1', '0.1.1')).toBe(false);
+    expect(shouldAutoOpenPatchNotes(null, '0.1.1')).toBe(true);
+  });
+
+  it('formats patch note dates to player-friendly Finnish date text', () => {
+    expect(formatPatchNotesDate('2026-04-04')).toContain('2026');
+    expect(formatPatchNotesDate('not-a-date')).toBe('not-a-date');
   });
 });
