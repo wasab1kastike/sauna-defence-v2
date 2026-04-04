@@ -20,7 +20,8 @@ All notable changes to this project are documented in this file.
 - Added lightweight visual polish for Patch Notes in `src/index.css`: hero heading, version badge, category icon headings, and improved typography for readability.
 
 ### Fixed
-- No unreleased fixes.
+- Patch Notes auto-open now waits until blocking overlays (intro, guided tips, draft overlays) are closed, preventing stacked modals on first load.
+- Patch Notes modal now supports Escape-to-close and backdrop click-to-close for smoother UX.
 
 ### Breaking
 - Save key namespace has moved from `sauna-defense-v2-*` to `sauna-defense-v3-*`. Existing `v2` saves are migrated automatically at runtime, but tooling/scripts that read keys directly must switch to the new names.

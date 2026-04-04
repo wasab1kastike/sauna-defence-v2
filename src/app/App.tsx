@@ -52,6 +52,22 @@ export function getSelectionCardTitle(selectedSauna: boolean, selectedEnemy: Hud
   return 'Selected Hero';
 }
 
+export function shouldAutoOpenPatchNotes(lastSeenVersion: string | null | undefined, latestVersion: string): boolean {
+  return (lastSeenVersion ?? '') !== latestVersion;
+}
+
+export function formatPatchNotesDate(date: string): string {
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) {
+    return date;
+  }
+  return new Intl.DateTimeFormat('fi-FI', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  }).format(parsed);
+}
+
 const BOARD_POPUP_MIN_WIDTH = 280;
 const BOARD_POPUP_MAX_WIDTH = 420;
 const BOARD_POPUP_WIDTH_RATIO = 0.34;
@@ -272,6 +288,9 @@ export function App() {
     if (!snapshot || patchNotesChecked) {
       return;
     }
+    if (snapshot.hud.introOpen || snapshot.hud.showGlobalModifierDraft || snapshot.hud.showSubclassDraft || guideStep !== null) {
+      return;
+    }
     if (typeof window === 'undefined') {
       setPatchNotesChecked(true);
       return;
@@ -284,11 +303,24 @@ export function App() {
       // Ignore localStorage failures.
     }
 
-    if (lastSeenVersion !== latestPatchNotes.version) {
+    if (shouldAutoOpenPatchNotes(lastSeenVersion, latestPatchNotes.version)) {
       setPatchNotesOpen(true);
     }
     setPatchNotesChecked(true);
-  }, [patchNotesChecked, snapshot]);
+  }, [guideStep, patchNotesChecked, snapshot]);
+
+  useEffect(() => {
+    if (!patchNotesOpen) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closePatchNotes();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [patchNotesOpen]);
 
   const persistGuideSeen = (value: boolean) => {
     setGuideSeen(value);
@@ -1178,8 +1210,14 @@ export function App() {
       </section>
 
       {patchNotesOpen ? (
-        <div className="overlay-shell patch-notes-shell" role="dialog" aria-modal="true" aria-labelledby="patch-notes-title">
-          <section className="overlay-card patch-notes-card">
+        <div
+          className="overlay-shell patch-notes-shell"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="patch-notes-title"
+          onClick={() => closePatchNotes()}
+        >
+          <section className="overlay-card patch-notes-card" onClick={(event) => event.stopPropagation()}>
             <div className="panel-head patch-notes-head">
               <div>
                 <p className="eyebrow">Tuoreimmat kuulumiset</p>
@@ -1192,7 +1230,7 @@ export function App() {
             </div>
             <div className="patch-notes-meta">
               <span className="version-badge">Versio {latestPatchNotes.version}</span>
-              <span className="panel-copy small-copy">{latestPatchNotes.date}</span>
+              <span className="panel-copy small-copy">{formatPatchNotesDate(latestPatchNotes.date)}</span>
             </div>
             <div className="patch-notes-grid">
               <section className="inventory-card patch-notes-section">
