@@ -140,7 +140,8 @@ describe('Sauna Defense V2 logic', () => {
     defender.tile = { q: 1, r: -5 };
     defender.homeTile = { q: 1, r: -5 };
     defender.hp = 60;
-    defender.xp = 3;
+    defender.xp = 5;
+    defender.level = 2;
     defender.stats.defense = 0;
     defender.attackReadyAtMs = 999999;
     state.meta.upgrades.sauna_slap_swap = 0;
@@ -163,7 +164,9 @@ describe('Sauna Defense V2 logic', () => {
 
     state = stepState(state, 16, gameContent);
     const firstPassXp = state.defenders.find((entry) => entry.id === defender.id)!.xp;
-    expect(firstPassXp).toBe(2);
+    const firstPassDefender = state.defenders.find((entry) => entry.id === defender.id)!;
+    expect(firstPassXp).toBe(4);
+    expect(firstPassDefender.level).toBe(1);
 
     state.enemies[0].tile = { q: 0, r: -6 };
     state.enemies[0].pathIndex = 0;
@@ -175,7 +178,7 @@ describe('Sauna Defense V2 logic', () => {
     state.enemies[0].pathIndex = 0;
     state.enemies[0].moveReadyAtMs = state.timeMs;
     state = stepState(state, 1800, gameContent);
-    expect(state.defenders.find((entry) => entry.id === defender.id)?.xp).toBe(0);
+    expect(state.defenders.find((entry) => entry.id === defender.id)?.xp).toBe(2);
   });
 
   it('creates step motion metadata when a standard enemy advances', () => {

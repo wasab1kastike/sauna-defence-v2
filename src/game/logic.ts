@@ -2560,6 +2560,7 @@ function applyPebblePassThroughEffect(state: RunState, enemy: EnemyInstance, def
   defender.pebbleCrushLastXpDrainAtMs = state.timeMs;
   const drainAmount = Math.min(PEBBLE_XP_DRAIN_MAX, defender.pebbleCrushStacks * PEBBLE_XP_DRAIN_PER_STACK);
   defender.xp = Math.max(0, defender.xp - drainAmount);
+  defender.level = levelFromXp(defender.xp);
 }
 
 function enemyTarget(state: RunState, enemy: EnemyInstance, content: GameContent): DefenderInstance | 'sauna' | null {
