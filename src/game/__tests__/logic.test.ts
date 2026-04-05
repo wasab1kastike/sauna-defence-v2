@@ -181,6 +181,42 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.defenders.find((entry) => entry.id === defender.id)?.xp).toBe(2);
   });
 
+  it('recomputes defender level immediately when Pebble drains XP.', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.location = 'board';
+    defender.tile = { q: 1, r: -5 };
+    defender.homeTile = { q: 1, r: -5 };
+    defender.hp = 60;
+    defender.xp = 5;
+    defender.level = 2;
+    defender.stats.defense = 0;
+    defender.attackReadyAtMs = 999999;
+    state.meta.upgrades.sauna_slap_swap = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: gameContent.enemyArchetypes.pebble.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    const drainedDefender = state.defenders.find((entry) => entry.id === defender.id)!;
+    expect(drainedDefender.xp).toBe(4);
+    expect(drainedDefender.level).toBe(1);
+  });
+
   it('creates step motion metadata when a standard enemy advances', () => {
     let state = prepState();
     state.phase = 'wave';
