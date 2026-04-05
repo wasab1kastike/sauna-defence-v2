@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc -b --pretty false",
-    "lint": "npx --yes -p eslint@9.24.0 -p @eslint/js@9.24.0 -p typescript-eslint@8.29.1 -p eslint-plugin-react-hooks@5.2.0 -p eslint-plugin-react-refresh@0.4.19 -p globals@16.0.0 eslint \"src/**/*.{ts,tsx}\""
+    "lint": "npx --yes -p eslint@9.24.0 -p @eslint/js@9.24.0 -p typescript-eslint@8.29.1 -p eslint-plugin-react-hooks@5.2.0 -p eslint-plugin-react-refresh@0.4.19 -p globals@16.0.0 eslint \"src/**/*.{ts,tsx}\"",
+    "build:patch-notes": "node scripts/generate-player-patch-notes.mjs",
+    "check:player-patch-notes": "node scripts/check-player-patch-notes.mjs"
   },
   "dependencies": {
     "react": "^19.1.1",

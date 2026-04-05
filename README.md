@@ -19,12 +19,16 @@ npm run dev
 npm run lint
 npm run typecheck
 npm run test
+npm run build:patch-notes
+npm run check:player-patch-notes
 npm run build
 ```
 
 - `npm run lint` tarkistaa vähintään `src/**/*.ts` ja `src/**/*.tsx` ESLintillä.
 - `npm run typecheck` ajaa TypeScript project references -tarkistuksen (`tsc -b --pretty false`).
-- GitHub Pages -workflow ajaa komennot järjestyksessä `lint -> typecheck -> test -> build`.
+- `npm run build:patch-notes` generoi uusimman release-version pelaajille näkyvät patch notes -tiedostot (`src/content/generated/latest-player-patch-notes.json` + `docs/latest-player-patch-notes.md`).
+- `npm run check:player-patch-notes` varmistaa että `package.json` version release-kohdassa on vähintään yksi `[player]` merkintä **ja** että generoidut patch notes -tiedostot ovat synkassa version/päivämäärän kanssa.
+- GitHub Pages -workflow ajaa komennot järjestyksessä `lint -> typecheck -> test -> build:patch-notes -> build`.
 
 ## Tallennusavaimet ja versiointi
 
@@ -60,15 +64,25 @@ Päivitä juuren `CHANGELOG.md` aina ennen mergeä seuraavalla rakenteella:
 - `Fixed`
 - `Breaking`
 
+Jokainen release- ja Unreleased-listarivi tagitetaan muodossa `- [player] ...` tai `- [internal] ...`.
+
 Jos PR muuttaa käyttäytymistä (`src/`, `public/`, build- tai runtime-konfiguraatio), lisää vähintään yksi merkintä relevanttiin kohtaan.
 
-### 3) GitHub Pages deployn validointi
+### 3) Patch notes -generointi ennen buildia
 
-1. Avaa GitHub Actions ja varmista että workflow **Deploy To GitHub Pages** on onnistunut (`lint -> typecheck -> test -> build -> deploy`).
+1. Aja `npm run build:patch-notes` (tai luota CI:hin), joka lukee uusimman release-kohdan (`## x.y.z - YYYY-MM-DD`) ja käyttää vain `[player]`-rivien sisältöä.
+2. Tarkista generoidut tiedostot:
+   - `src/content/generated/latest-player-patch-notes.json` (UI käyttää tätä)
+   - `docs/latest-player-patch-notes.md` (GitHub Pages -dokumentaatio)
+3. Aja `npm run check:player-patch-notes` ennen releasemergausta; CI tekee saman validoinnin PR:issä.
+
+### 4) GitHub Pages deployn validointi
+
+1. Avaa GitHub Actions ja varmista että workflow **Deploy To GitHub Pages** on onnistunut (`lint -> typecheck -> test -> build:patch-notes -> build -> deploy`).
 2. Tarkista workflow-ajon `deploy`-jobista julkaistu `page_url`.
 3. Varmista että tuotanto-URL vastaa odotettua osoitetta: `https://artobest.com/`.
 
-### 4) Domain-varmistus (GitHub Pages)
+### 5) Domain-varmistus (GitHub Pages)
 
 - `public/CNAME` täytyy sisältää custom domain: `artobest.com`.
 - GitHub repository settings → Pages: varmista että custom domain on `artobest.com` ja HTTPS on käytössä.
@@ -93,4 +107,6 @@ Jos PR muuttaa käyttäytymistä (`src/`, `public/`, build- tai runtime-konfigur
 
 - `docs/balance.md` balanssibaseline + regressiokäytännöt
 - `docs/visual-guidelines.md` visuaalinen paletti, animaatiostandardit, render-budgetit ja visual regression -checklist
+- `docs/patch-notes.md` patch notes -prosessi, tagikäytäntö, generointi ja ylläpito
+- `docs/latest-player-patch-notes.md` automaattisesti generoitu viimeisin pelaajille julkaistava patch notes
 - `public/ASSET_POLICY.md` `public/`-hakemiston formaatti-, optimointi- ja nimeämispolitiikat
