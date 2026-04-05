@@ -21,6 +21,7 @@ All notable changes to this project are documented in this file.
 - Added lightweight visual polish for Patch Notes in `src/index.css`: hero heading, version badge, category icon headings, and improved typography for readability.
 - Vite build now injects `__APP_VERSION__` from `process.env.npm_package_version`, patch notes use `APP_VERSION` instead of hardcoded text, and HUD now shows `App <version>` in an always-visible footer badge.
 - Save schema version references now use `SAVE_SCHEMA_VERSION` via runtime constants, and runtime migration tests consume `STORAGE_KEY_PREFIX` rather than hardcoded `v3` keys.
+- Pebble now damages defenders while passing through them, applies stacking crush pressure with telegraphed FX, and can drain defender XP on a per-defender cooldown.
 
 ### Fixed
 - Patch Notes auto-open now waits until blocking overlays (intro, guided tips, draft overlays) are closed, preventing stacked modals on first load.

@@ -642,6 +642,11 @@ export function App() {
               </span>
               <span className="mini-tag">Items {selectedDefender.items.length}/{selectedDefender.itemSlotCount}</span>
               <span className="mini-tag">Skills {selectedDefender.skills.length}/{selectedDefender.skillSlotCount}</span>
+              {selectedDefender.pebbleCrushStacks > 0 ? (
+                <span className="mini-tag" title="Pebble Crush: stacking pass-through damage from Pebble.">
+                  Crush {selectedDefender.pebbleCrushStacks}
+                </span>
+              ) : null}
               {selectedDefender.blinkLabel ? <span className="mini-tag">{selectedDefender.blinkLabel}</span> : null}
               {selectedDefender.fireballLabel ? <span className="mini-tag">{selectedDefender.fireballLabel}</span> : null}
             </div>

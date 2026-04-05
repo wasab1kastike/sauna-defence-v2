@@ -45,15 +45,18 @@ describe('Sauna Defense V2 logic', () => {
     ]);
   });
 
-  it('makes Pebble ignore defenders and continue along its scripted path', () => {
+  it('Pebble crossing defender applies stacking effect and still advances.', () => {
     let state = prepState();
     const defender = state.defenders.find((entry) => entry.location === 'ready');
     expect(defender).toBeTruthy();
     defender!.location = 'board';
-    defender!.tile = { q: 1, r: -6 };
-    defender!.homeTile = { q: 1, r: -6 };
+    defender!.tile = { q: 1, r: -5 };
+    defender!.homeTile = { q: 1, r: -5 };
     defender!.hp = 20;
+    defender!.xp = 50;
+    defender!.stats.defense = 0;
     defender!.attackReadyAtMs = 999999;
+    state.meta.upgrades.sauna_slap_swap = 0;
     state.phase = 'wave';
     state.pendingSpawns = [];
     state.enemies = [{
@@ -73,12 +76,106 @@ describe('Sauna Defense V2 logic', () => {
 
     state = stepState(state, 16, gameContent);
 
-    expect(state.defenders.find((entry) => entry.id === defender!.id)?.hp).toBe(20);
+    const defenderAfter = state.defenders.find((entry) => entry.id === defender!.id);
+    expect(defenderAfter?.hp).toBe(17);
+    expect(defenderAfter?.pebbleCrushStacks).toBe(1);
+    expect(defenderAfter?.xp).toBe(49);
     expect(state.enemies[0]?.tile).toEqual({ q: 1, r: -5 });
     expect(state.enemies[0]?.pathIndex).toBe(1);
     expect(state.enemies[0]?.motion?.style).toBe('slither');
     expect(state.enemies[0]?.motion?.fromTile).toEqual({ q: 0, r: -6 });
     expect(state.enemies[0]?.motion?.toTile).toEqual({ q: 1, r: -5 });
+  });
+
+  it('Stacking damage increases over repeated crossings/ticks.', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.location = 'board';
+    defender.tile = { q: 1, r: -5 };
+    defender.homeTile = { q: 1, r: -5 };
+    defender.stats.maxHp = 80;
+    defender.hp = 80;
+    defender.xp = 100;
+    defender.stats.defense = 0;
+    defender.attackReadyAtMs = 999999;
+    state.meta.upgrades.sauna_slap_swap = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: gameContent.enemyArchetypes.pebble.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    const hpTimeline: number[] = [];
+    for (let pass = 0; pass < 3; pass += 1) {
+      const loopDefender = state.defenders.find((entry) => entry.id === defender.id)!;
+      loopDefender.location = 'board';
+      loopDefender.tile = { q: 1, r: -5 };
+      state.hitStopMs = 0;
+      state = stepState(state, 64, gameContent);
+      hpTimeline.push(state.defenders.find((entry) => entry.id === defender.id)!.hp);
+      state.enemies[0].tile = { q: 0, r: -6 };
+      state.enemies[0].pathIndex = 0;
+      state.enemies[0].moveReadyAtMs = state.timeMs;
+    }
+
+    expect(hpTimeline).toEqual([77, 73, 68]);
+    expect(state.defenders.find((entry) => entry.id === defender.id)?.pebbleCrushStacks).toBe(3);
+  });
+
+  it('XP drain (if enabled) is capped and never negative.', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.location = 'board';
+    defender.tile = { q: 1, r: -5 };
+    defender.homeTile = { q: 1, r: -5 };
+    defender.hp = 60;
+    defender.xp = 3;
+    defender.stats.defense = 0;
+    defender.attackReadyAtMs = 999999;
+    state.meta.upgrades.sauna_slap_swap = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: gameContent.enemyArchetypes.pebble.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+    const firstPassXp = state.defenders.find((entry) => entry.id === defender.id)!.xp;
+    expect(firstPassXp).toBe(2);
+
+    state.enemies[0].tile = { q: 0, r: -6 };
+    state.enemies[0].pathIndex = 0;
+    state.enemies[0].moveReadyAtMs = state.timeMs;
+    state = stepState(state, 200, gameContent);
+    expect(state.defenders.find((entry) => entry.id === defender.id)?.xp).toBe(firstPassXp);
+
+    state.enemies[0].tile = { q: 0, r: -6 };
+    state.enemies[0].pathIndex = 0;
+    state.enemies[0].moveReadyAtMs = state.timeMs;
+    state = stepState(state, 1800, gameContent);
+    expect(state.defenders.find((entry) => entry.id === defender.id)?.xp).toBe(0);
   });
 
   it('creates step motion metadata when a standard enemy advances', () => {

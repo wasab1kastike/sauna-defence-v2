@@ -1835,6 +1835,15 @@ function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, lay
         drawShockRing(ctx, center, layout.hexSize * (0.16 + progress * 0.46), '#a4f3c3', Math.max(2, layout.hexSize * 0.05), 0.84);
         drawEmberParticles(ctx, center, layout.hexSize * 0.75, progress, event.id * 5.8, '#deffe7', 7);
         break;
+      case 'crush':
+        if (secondary) {
+          drawAfterimageTrail(ctx, secondary, center, 'rgba(201, 146, 93, 0.88)', 0.84);
+        }
+        drawGlowDisc(ctx, center, layout.hexSize * (0.34 + progress * 0.34), 'rgba(255,190,133,0.52)', 'rgba(148,90,44,0)', 0.85);
+        drawShockRing(ctx, center, layout.hexSize * (0.2 + progress * 0.52), 'rgba(255,200,148,0.76)', Math.max(2, layout.hexSize * 0.06), 0.8);
+        drawSmokeParticles(ctx, center, layout.hexSize * 1.05, progress, event.id * 6.9, 'rgba(70, 46, 34, 1)', 8);
+        drawEmberParticles(ctx, center, layout.hexSize * 0.92, progress, event.id * 5.4, '#ffd6ab', 8);
+        break;
       case 'defender_hit':
         if (secondary) {
           const impact = pointLerp(secondary, center, 0.84);

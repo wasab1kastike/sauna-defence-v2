@@ -115,6 +115,11 @@ const ELECTRIC_BATHER_ABILITY_COOLDOWN_MS = 5200;
 const ESCALATION_MANAGER_ABILITY_COOLDOWN_MS = 6000;
 const STEP_MOTION_DURATION_MS = 240;
 const PEBBLE_MOTION_DURATION_MS = 520;
+const PEBBLE_CRUSH_BASE_DAMAGE = 2;
+const PEBBLE_CRUSH_STACK_DAMAGE = 1;
+const PEBBLE_XP_DRAIN_INTERVAL_MS = 1600;
+const PEBBLE_XP_DRAIN_PER_STACK = 1;
+const PEBBLE_XP_DRAIN_MAX = 6;
 const BLINK_MOTION_DURATION_MS = 320;
 const SPAWN_SETTLE_DURATION_MS = 260;
 const PEBBLE_PATH_BASE: AxialCoord[] = [
@@ -1010,7 +1015,10 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
     items: [],
     skills: [],
     kills: 0,
-    lastHitByEnemyId: null
+    lastHitByEnemyId: null,
+    pebbleCrushStacks: 0,
+    pebbleCrushLastAppliedAtMs: -1,
+    pebbleCrushLastXpDrainAtMs: -PEBBLE_XP_DRAIN_INTERVAL_MS
   };
 }
 
@@ -2535,6 +2543,25 @@ function applyEnemyDamageToDefender(
   }
 }
 
+function applyPebblePassThroughEffect(state: RunState, enemy: EnemyInstance, defender: DefenderInstance, content: GameContent): void {
+  defender.pebbleCrushStacks += 1;
+  defender.pebbleCrushLastAppliedAtMs = state.timeMs;
+  const crushDamage = PEBBLE_CRUSH_BASE_DAMAGE + defender.pebbleCrushStacks * PEBBLE_CRUSH_STACK_DAMAGE;
+  applyEnemyDamageToDefender(state, enemy, defender, crushDamage, content);
+  if (defender.tile) {
+    pushFx(state, 'crush', defender.tile, 300, enemy.tile);
+  }
+
+  const lastXpDrainAtMs = Number.isFinite(defender.pebbleCrushLastXpDrainAtMs)
+    ? defender.pebbleCrushLastXpDrainAtMs
+    : -PEBBLE_XP_DRAIN_INTERVAL_MS;
+  const canDrainXp = state.timeMs - lastXpDrainAtMs >= PEBBLE_XP_DRAIN_INTERVAL_MS;
+  if (!canDrainXp) return;
+  defender.pebbleCrushLastXpDrainAtMs = state.timeMs;
+  const drainAmount = Math.min(PEBBLE_XP_DRAIN_MAX, defender.pebbleCrushStacks * PEBBLE_XP_DRAIN_PER_STACK);
+  defender.xp = Math.max(0, defender.xp - drainAmount);
+}
+
 function enemyTarget(state: RunState, enemy: EnemyInstance, content: GameContent): DefenderInstance | 'sauna' | null {
   const archetype = content.enemyArchetypes[enemy.archetypeId];
   const defenders = boardDefenders(state)
@@ -2590,10 +2617,16 @@ function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent)
   const nextPathIndex = (enemy.pathIndex ?? 0) + 1;
   const nextTile = path[nextPathIndex] ?? null;
   if (!nextTile) return;
-  if (occupied(state, nextTile)) {
+  const defenderOnNextTile = boardDefenders(state).find((defender) => defender.tile && sameCoord(defender.tile, nextTile));
+  if (occupied(state, nextTile) && !defenderOnNextTile) {
     enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
     return;
   }
+
+  if (defenderOnNextTile) {
+    applyPebblePassThroughEffect(state, enemy, defenderOnNextTile, content);
+  }
+
   moveEnemyToTile(state, enemy, nextTile, 'slither', PEBBLE_MOTION_DURATION_MS);
   enemy.pathIndex = nextPathIndex;
   enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
@@ -4510,7 +4543,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
           id: skillId,
           name: content.skillDefinitions[skillId].name
         })),
-        location: selected.location
+        location: selected.location,
+        pebbleCrushStacks: selected.pebbleCrushStacks
       };
     })() : null,
     selectedSauna: state.selectedMapTarget === 'sauna' ? {

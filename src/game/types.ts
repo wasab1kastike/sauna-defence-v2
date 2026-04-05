@@ -109,7 +109,8 @@ export type CombatFxKind =
   | 'boss_hit'
   | 'chain'
   | 'volley'
-  | 'pulse';
+  | 'pulse'
+  | 'crush';
 export type MapTarget = 'defender' | 'sauna' | 'enemy';
 export type HudPanelId = 'modifiers' | 'loot' | 'recruit' | 'beer_shop' | 'metashop';
 export type WorldLandmarkId = 'metashop' | 'beer_shop';
@@ -347,6 +348,9 @@ export interface DefenderInstance {
   skills: SkillId[];
   kills: number;
   lastHitByEnemyId: EnemyUnitId | null;
+  pebbleCrushStacks: number;
+  pebbleCrushLastAppliedAtMs: number;
+  pebbleCrushLastXpDrainAtMs: number;
 }
 
 export interface EnemyInstance {
@@ -628,6 +632,7 @@ export interface HudSelectedDefender {
   items: HudEquippedItemEntry[];
   skills: HudEquippedSkillEntry[];
   location: DefenderLocation;
+  pebbleCrushStacks: number;
 }
 
 export interface HudSelectedSubclassEntry {
