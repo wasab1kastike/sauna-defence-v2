@@ -38,7 +38,9 @@ npm run check:player-patch-notes
 Tarkistus varmistaa, että:
 
 - `package.json` version kohdalle löytyy release-otsikko `CHANGELOG.md`:stä,
-- kyseisessä release-kohdassa on vähintään yksi `[player]`-merkintä.
+- kyseisessä release-kohdassa on vähintään yksi `[player]`-merkintä,
+- `src/content/generated/latest-player-patch-notes.json` sisältää saman version + päivämäärän kuin release,
+- `docs/latest-player-patch-notes.md` sisältää saman version + päivämäärän kuin release.
 
 Sama tarkistus ajetaan CI:ssä PR:lle workflowssa `changelog-check.yml`.
 

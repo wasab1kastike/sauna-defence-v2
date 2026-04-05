@@ -16,10 +16,10 @@ All notable changes to this project are documented in this file.
 - [internal] Ei vielä merkintöjä.
 
 ### Changed
-- [internal] Ei vielä merkintöjä.
+- [internal] `scripts/check-player-patch-notes.mjs` validates now that generated JSON/Markdown patch notes match current release version/date, not only that `[player]` bullets exist.
 
 ### Fixed
-- [internal] Ei vielä merkintöjä.
+- [internal] CI now catches stale generated patch-notes artifacts before release by validating generated files against `CHANGELOG.md` + `package.json`.
 
 ### Breaking
 - [internal] Ei vielä merkintöjä.

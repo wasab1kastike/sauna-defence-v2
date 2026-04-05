@@ -27,7 +27,7 @@ npm run build
 - `npm run lint` tarkistaa vähintään `src/**/*.ts` ja `src/**/*.tsx` ESLintillä.
 - `npm run typecheck` ajaa TypeScript project references -tarkistuksen (`tsc -b --pretty false`).
 - `npm run build:patch-notes` generoi uusimman release-version pelaajille näkyvät patch notes -tiedostot (`src/content/generated/latest-player-patch-notes.json` + `docs/latest-player-patch-notes.md`).
-- `npm run check:player-patch-notes` varmistaa että `package.json` version release-kohdassa on vähintään yksi `[player]` merkintä.
+- `npm run check:player-patch-notes` varmistaa että `package.json` version release-kohdassa on vähintään yksi `[player]` merkintä **ja** että generoidut patch notes -tiedostot ovat synkassa version/päivämäärän kanssa.
 - GitHub Pages -workflow ajaa komennot järjestyksessä `lint -> typecheck -> test -> build:patch-notes -> build`.
 
 ## Tallennusavaimet ja versiointi
