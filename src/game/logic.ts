@@ -46,6 +46,42 @@ import type {
   WorldLandmarkId
 } from './types';
 import { bossRotation, nonBossPatterns, tutorialWaves, type BossRotationEntry } from '../content/waves';
+import {
+  add as addCoord,
+  cloneCoord as cloneAxialCoord,
+  coordKey as coordKeyFromGeometry,
+  createHexGrid as createHexGridFromGeometry,
+  hexDistance as hexDistanceFromGeometry,
+  rotateClockwise as rotateClockwiseFromGeometry,
+  rotateCoord as rotateCoordFromGeometry
+} from './geometry';
+import {
+  currentBuildRadius as resolveCurrentBuildRadius,
+  currentGridRadius as resolveCurrentGridRadius,
+  currentSpawnLanes as resolveCurrentSpawnLanes,
+  landmarkTileForWave as resolveLandmarkTileForWave
+} from './boardGeometry';
+import {
+  createReadyReserveEntries,
+  createReserveShortcutKeyMap,
+  createRosterEntries,
+  createSaunaReserveEntry
+} from './hudSelectors';
+import {
+  addRecruitToReserve as addRecruitToReserveFromModule,
+  benchRerollCost as benchRerollCostFromModule,
+  canRerollSaunaDefender as canRerollSaunaDefenderFromModule,
+  fillDefenderToMax as fillDefenderToMaxFromModule,
+  recruitLevelUpCost as recruitLevelUpCostFromModule,
+  recruitOfferRerollCost as recruitOfferRerollCostFromModule,
+  recruitRollCost as recruitRollCostFromModule,
+  recruitmentStatusText as recruitmentStatusTextFromModule,
+  saunaRerollCost as saunaRerollCostFromModule
+} from './recruitment';
+import {
+  autoFillSaunaFromBench as autoFillSaunaFromBenchFromModule,
+  rerollSaunaDefenderIdentityAndClass as rerollSaunaDefenderIdentityAndClassFromModule
+} from './sauna';
 
 const DIRS: AxialCoord[] = [
   { q: 1, r: 0 },
@@ -176,8 +212,40 @@ const DEATH_LINES: Record<EnemyUnitId, string[]> = {
   ]
 };
 
+const recruitmentDeps = {
+  boardCap,
+  boardDefenders,
+  canAccessRecruitment,
+  clearUnitMotion: (unit: DefenderInstance) => clearUnitMotion(unit),
+  derivedMaxHp: (state: RunState, defender: DefenderInstance, content: GameContent) => derivedStats(state, defender, content).maxHp,
+  getDefender,
+  livingDefenders,
+  recruitReplacementTarget,
+  rosterCap
+};
+
+const saunaDeps = {
+  boardCap,
+  boardDefenders,
+  clearUnitMotion: (unit: DefenderInstance) => clearUnitMotion(unit),
+  derivedMaxHp: (state: RunState, defender: DefenderInstance, content: GameContent) => derivedStats(state, defender, content).maxHp,
+  generateLore,
+  generateName,
+  pickTemplateId: (state: RunState) => pick(state, DEF_IDS),
+  randomInt,
+  rollBaseStatsForTemplate
+};
+
+const hudSelectorDeps = {
+  benchRerollCost: (state: RunState, defenderId: string) => benchRerollCost(state, defenderId),
+  canRerollSaunaDefender: (state: RunState) => canRerollSaunaDefender(state),
+  derivedStats: (state: RunState, defender: DefenderInstance, content: GameContent) => derivedStats(state, defender, content),
+  saunaRerollCost: (state: RunState) => saunaRerollCost(state),
+  subclassSummary
+};
+
 export function coordKey(coord: AxialCoord): string {
-  return `${coord.q},${coord.r}`;
+  return coordKeyFromGeometry(coord);
 }
 
 export function sameCoord(left: AxialCoord, right: AxialCoord): boolean {
@@ -185,11 +253,11 @@ export function sameCoord(left: AxialCoord, right: AxialCoord): boolean {
 }
 
 function add(left: AxialCoord, right: AxialCoord): AxialCoord {
-  return { q: left.q + right.q, r: left.r + right.r };
+  return addCoord(left, right);
 }
 
 function cloneCoord(coord: AxialCoord): AxialCoord {
-  return { q: coord.q, r: coord.r };
+  return cloneAxialCoord(coord);
 }
 
 function assignUnitMotion(
@@ -265,15 +333,11 @@ function clearExpiredMotions(state: RunState): void {
 }
 
 function rotateClockwise(coord: AxialCoord): AxialCoord {
-  return { q: -coord.r, r: coord.q + coord.r };
+  return rotateClockwiseFromGeometry(coord);
 }
 
 function rotateCoord(coord: AxialCoord, times: number): AxialCoord {
-  let next = { ...coord };
-  for (let index = 0; index < times; index += 1) {
-    next = rotateClockwise(next);
-  }
-  return next;
+  return rotateCoordFromGeometry(coord, times);
 }
 
 function bossWaveOrdinal(index: number, content: GameContent): number {
@@ -339,22 +403,11 @@ function isBossThreat(enemy: EnemyInstance): boolean {
 }
 
 export function hexDistance(left: AxialCoord, right: AxialCoord): number {
-  const dq = left.q - right.q;
-  const dr = left.r - right.r;
-  const ds = -left.q - left.r - (-right.q - right.r);
-  return (Math.abs(dq) + Math.abs(dr) + Math.abs(ds)) / 2;
+  return hexDistanceFromGeometry(left, right);
 }
 
 export function createHexGrid(radius: number): AxialCoord[] {
-  const tiles: AxialCoord[] = [];
-  for (let q = -radius; q <= radius; q += 1) {
-    const rMin = Math.max(-radius, -q - radius);
-    const rMax = Math.min(radius, -q + radius);
-    for (let r = rMin; r <= rMax; r += 1) {
-      tiles.push({ q, r });
-    }
-  }
-  return tiles.sort((left, right) => (left.r - right.r) || (left.q - right.q));
+  return createHexGridFromGeometry(radius);
 }
 
 function defeatedBossCountForWave(index: number, content: GameContent): number {
@@ -370,11 +423,11 @@ function buildRadiusForWave(index: number, content: GameContent): number {
 }
 
 function currentGridRadius(state: RunState, content: GameContent): number {
-  return gridRadiusForWave(state.waveIndex, content);
+  return resolveCurrentGridRadius(state, content);
 }
 
 function currentBuildRadius(state: RunState, content: GameContent): number {
-  return buildRadiusForWave(state.waveIndex, content);
+  return resolveCurrentBuildRadius(state, content);
 }
 
 function perimeterTiles(radius: number): AxialCoord[] {
@@ -421,15 +474,11 @@ function spawnLanesForWave(index: number, content: GameContent): AxialCoord[] {
 }
 
 function currentSpawnLanes(state: RunState, content: GameContent): AxialCoord[] {
-  return spawnLanesForWave(state.waveIndex, content);
+  return resolveCurrentSpawnLanes(state, content);
 }
 
 function landmarkTileForWave(index: number, landmarkId: WorldLandmarkId, content: GameContent): AxialCoord {
-  const radius = gridRadiusForWave(index, content);
-  const offset = Math.ceil(radius / 2);
-  return landmarkId === 'metashop'
-    ? { q: offset, r: -radius }
-    : { q: -offset, r: radius };
+  return resolveLandmarkTileForWave(index, landmarkId, content);
 }
 
 export function createDefaultMetaProgress(): MetaProgress {
@@ -985,6 +1034,14 @@ function rerollDefenderIdentityAndStats(
   defender.hp = Math.min(defender.hp, derivedStats(state, defender, content).maxHp);
 }
 
+function rerollSaunaDefenderIdentityAndClass(
+  state: RunState,
+  defender: DefenderInstance,
+  content: GameContent
+): void {
+  rerollSaunaDefenderIdentityAndClassFromModule(state, defender, content, saunaDeps);
+}
+
 function newDefender(state: RunState, templateId: DefenderTemplateId, content: GameContent): DefenderInstance {
   const identity = generateName(state, content);
   const stats = rollBaseStatsForTemplate(state, templateId, content);
@@ -1290,18 +1347,7 @@ function deploySaunaOccupant(state: RunState, content: GameContent, preferredTil
 }
 
 function autoFillSaunaFromBench(state: RunState, content: GameContent): DefenderInstance | null {
-  if (state.saunaDefenderId || boardDefenders(state).length < boardCap(state, content)) {
-    return null;
-  }
-  const reserve = state.defenders.find((defender) => defender.location === 'ready') ?? null;
-  if (!reserve) {
-    return null;
-  }
-  reserve.location = 'sauna';
-  reserve.tile = null;
-  clearUnitMotion(reserve);
-  state.saunaDefenderId = reserve.id;
-  return reserve;
+  return autoFillSaunaFromBenchFromModule(state, content, saunaDeps);
 }
 
 function maybeSaunaSlapSwap(state: RunState, defender: DefenderInstance, content: GameContent): boolean {
@@ -1338,19 +1384,23 @@ function recruitPriceFloor(): number {
 }
 
 function recruitRollCost(): number {
-  return 2;
+  return recruitRollCostFromModule();
 }
 
 function benchRerollCost(state: RunState, defenderId: string): number {
-  return 1 + (state.benchRerollCountsByDefenderId[defenderId] ?? 0);
+  return benchRerollCostFromModule(state, defenderId);
 }
 
 function recruitOfferRerollCost(state: RunState, offerId: number): number {
-  return 1 + (state.recruitRerollCountsByOfferId[offerId] ?? 0);
+  return recruitOfferRerollCostFromModule(state, offerId);
 }
 
 function recruitLevelUpCost(levelUpCount: number): number {
-  return 2 + Math.floor((levelUpCount * (levelUpCount + 3)) / 2);
+  return recruitLevelUpCostFromModule(levelUpCount);
+}
+
+function saunaRerollCost(state: RunState): number | null {
+  return saunaRerollCostFromModule(state, recruitmentDeps);
 }
 
 function canAccessRecruitment(state: RunState): boolean {
@@ -1470,47 +1520,12 @@ function canBuyAnyRecruitOffer(state: RunState, content: GameContent): boolean {
   );
 }
 
+function canRerollSaunaDefender(state: RunState): boolean {
+  return canRerollSaunaDefenderFromModule(state, recruitmentDeps);
+}
+
 function recruitmentStatusText(state: RunState, content: GameContent): string {
-  if (state.phase === 'lost' || state.overlayMode === 'intermission') {
-    return 'Recruitment closes between runs.';
-  }
-  if (state.introOpen) {
-    return 'Finish the briefing before opening the recruitment market.';
-  }
-  const replacement = recruitReplacementTarget(state);
-  const rosterFull = livingDefenders(state).length >= rosterCap(state, content);
-  const boardFull = boardDefenders(state).length >= boardCap(state, content);
-  const rerollCost = recruitRollCost();
-  const nextLevelUpCost = recruitLevelUpCost(state.recruitLevelUpCount);
-  if (rosterFull && state.recruitOffers.length === 0) {
-    return replacement
-      ? `Roster full: reroll normally, then your next recruit will replace ${replacement.name}.`
-      : 'Roster full: reroll normally, then select a roster hero or the sauna reserve to replace.';
-  }
-  if (state.recruitOffers.length > 0) {
-    if (rosterFull) {
-      return replacement
-        ? state.sisu.current >= Math.min(...state.recruitOffers.map((offer) => offer.price))
-          ? `Roster full: buying a recruit will replace ${replacement.name}.`
-          : `Roster full: ${replacement.name} is marked for replacement, but you still need more SISU.`
-        : 'Roster full: select who gets replaced before buying a recruit.';
-    }
-    if (boardFull) {
-      return state.sisu.current >= Math.min(...state.recruitOffers.map((offer) => offer.price))
-        ? 'Board full: new recruits still join the bench. Pick one, or reroll for a better fit.'
-        : 'Board full: recruits still join the bench, but you need more SISU to buy this batch.';
-    }
-    return state.sisu.current >= Math.min(...state.recruitOffers.map((offer) => offer.price))
-      ? 'Pick one candidate. The others leave when you sign a recruit.'
-      : 'You can inspect the market, but you need more SISU to afford any offer.';
-  }
-  if (boardFull && !rosterFull) {
-    return `Board full: new recruits will join the bench. Reroll costs ${rerollCost} SISU and Level Up costs ${nextLevelUpCost} SISU.`;
-  }
-  if (state.sisu.current >= rerollCost) {
-    return `Reroll 3 candidates for ${rerollCost} SISU, or buy Level Up for ${nextLevelUpCost} SISU to improve future recruits.`;
-  }
-  return `Need ${rerollCost} SISU to reroll the market. Level Up currently costs ${nextLevelUpCost} SISU.`;
+  return recruitmentStatusTextFromModule(state, content, recruitmentDeps);
 }
 
 function recruitScore(defender: DefenderInstance, content: GameContent): number {
@@ -1668,7 +1683,11 @@ function rollGlobalModifierDraftOffersIntoState(state: RunState, content: GameCo
 }
 
 function fillDefenderToMax(state: RunState, defender: DefenderInstance, content: GameContent): void {
-  defender.hp = derivedStats(state, defender, content).maxHp;
+  fillDefenderToMaxFromModule(state, defender, content, recruitmentDeps);
+}
+
+function addRecruitToReserve(state: RunState, defender: DefenderInstance, content: GameContent): void {
+  addRecruitToReserveFromModule(state, defender, content, recruitmentDeps);
 }
 
 function createRecruitOffer(state: RunState, content: GameContent): RecruitOffer {
@@ -2035,7 +2054,7 @@ function createDeathLogText(state: RunState, defender: DefenderInstance, content
   const line = pick(state, lines);
   return {
     enemyName,
-    text: `Wave ${state.currentWave.index} · ${defender.name} ${defender.title} fell when ${enemyName} ${line}.`
+    text: `Wave ${state.currentWave.index} Â· ${defender.name} ${defender.title} fell when ${enemyName} ${line}.`
   };
 }
 
@@ -3350,7 +3369,7 @@ function subclassSummary(defender: DefenderInstance, content: GameContent): stri
     const next = nextSubclassMilestoneLevel(defender, content);
     return next ? `First branch at level ${next}` : 'No branch unlocked';
   }
-  return unlocked.map((definition) => definition.name).join(' · ');
+  return unlocked.map((definition) => definition.name).join(' Â· ');
 }
 
 function subclassDescription(defender: DefenderInstance, content: GameContent): string {
@@ -3873,14 +3892,39 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     }
     case 'recallDefenderToSauna': {
-      if (next.overlayMode !== 'none' || next.phase !== 'prep' || next.saunaDefenderId) return next;
+      if (next.overlayMode !== 'none' || next.phase !== 'prep') return next;
       const defender = getDefender(next, action.defenderId);
       if (!defender || defender.location !== 'board') return next;
+      const currentSaunaDefender = getDefender(next, next.saunaDefenderId);
+      if (currentSaunaDefender && currentSaunaDefender.location === 'sauna') {
+        currentSaunaDefender.location = 'ready';
+        currentSaunaDefender.tile = null;
+        clearUnitMotion(currentSaunaDefender);
+      }
       defender.location = 'sauna';
       defender.tile = null;
       clearUnitMotion(defender);
       next.saunaDefenderId = defender.id;
-      next.message = `${defender.name} went to recover in the sauna.`;
+      next.message = currentSaunaDefender && currentSaunaDefender.location === 'ready'
+        ? `${defender.name} took the sauna seat and ${currentSaunaDefender.name} moved back to the reserve row.`
+        : `${defender.name} went to recover in the sauna.`;
+      return next;
+    }
+    case 'rerollSaunaDefender': {
+      if (!canAccessRecruitment(next)) return next;
+      const defender = getDefender(next, next.saunaDefenderId);
+      if (!defender || defender.location !== 'sauna') return next;
+      const cost = saunaRerollCost(next);
+      if (cost === null || next.sisu.current < cost) {
+        next.message = `Not enough SISU to reroll ${defender.name}.`;
+        return next;
+      }
+      const previousName = defender.name;
+      next.sisu.current -= cost;
+      rerollSaunaDefenderIdentityAndClass(next, defender, content);
+      next.benchRerollCountsByDefenderId[defender.id] = (next.benchRerollCountsByDefenderId[defender.id] ?? 0) + 1;
+      normalizeDefender(next, defender, content);
+      next.message = `${previousName} reforged into ${defender.name} ${defender.title} for ${cost} SISU.`;
       return next;
     }
     case 'activateSisu':
@@ -3993,8 +4037,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       if (replacement) {
         replaceDefenderWithRecruit(next, replacement, offer.candidate, content);
       } else {
-        fillDefenderToMax(next, offer.candidate, content);
-        next.defenders.push(offer.candidate);
+        addRecruitToReserve(next, offer.candidate, content);
       }
       delete next.recruitRerollCountsByOfferId[offer.offerId];
       next.recruitOffers = [];
@@ -4002,7 +4045,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       clearActiveHudPanel(next);
       next.message = replacement
         ? `${offer.candidate.name} ${offer.candidate.title} replaced ${replacement.name} for ${offer.price} SISU.`
-        : `${offer.candidate.name} ${offer.candidate.title} joined your reserve bench for ${offer.price} SISU.`;
+        : offer.candidate.location === 'sauna'
+          ? `${offer.candidate.name} ${offer.candidate.title} took the sauna reserve for ${offer.price} SISU.`
+          : `${offer.candidate.name} ${offer.candidate.title} joined your reserve row for ${offer.price} SISU.`;
       return next;
     }
     case 'clearRecruitOffers':
@@ -4224,11 +4269,40 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const activeMs = Math.max(0, state.sisu.activeUntilMs - state.timeMs);
   const cdMs = Math.max(0, state.sisu.cooldownUntilMs - state.timeMs);
   const saunaDefender = getDefender(state, state.saunaDefenderId);
+  const readyReserveDefenders = state.defenders.filter((defender) => defender.location === 'ready');
+  const shortcutKeyByDefenderId = createReserveShortcutKeyMap(readyReserveDefenders);
   const action = actionCopy(state, content);
   const boardCount = boardDefenders(state).length;
-  const readyBenchCount = state.defenders.filter((defender) => defender.location === 'ready').length;
+  const readyBenchCount = readyReserveDefenders.length;
   const freeRecruitSlots = Math.max(0, rosterCap(state, content) - livingDefenders(state).length);
   const beerTier = beerShopTier(state);
+  const selectedBoardDefender = selected && selected.location === 'board' ? selected : null;
+  const saunaSendLabel = selectedBoardDefender
+    ? saunaDefender
+      ? `Swap ${selectedBoardDefender.name} Into Sauna`
+      : `Send ${selectedBoardDefender.name} To Sauna`
+    : null;
+  const readyReserveEntries = createReadyReserveEntries(
+    state,
+    readyReserveDefenders,
+    content,
+    shortcutKeyByDefenderId,
+    hudSelectorDeps
+  );
+  const saunaReserve = createSaunaReserveEntry(
+    state,
+    saunaDefender,
+    selectedBoardDefender,
+    content,
+    hudSelectorDeps
+  );
+  const rosterEntries = createRosterEntries(
+    state,
+    state.defenders,
+    content,
+    shortcutKeyByDefenderId,
+    hudSelectorDeps
+  );
   const activeGlobalModifiers = uniqueGlobalModifierIds(state.activeGlobalModifierIds)
     .map((modifierId) => globalModifierHudEntry(state, content.globalModifierDefinitions[modifierId], content));
   const globalModifierSummary = globalModifierSummaryEntries(state, content);
@@ -4369,42 +4443,9 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     actionBody: action.body,
     readyBenchCount,
     freeRecruitSlots,
-    rosterEntries: state.defenders.filter((defender) => defender.location !== 'dead').sort((left, right) => {
-      const order: Record<DefenderLocation, number> = { board: 0, sauna: 1, ready: 2, dead: 3 };
-      return (order[left.location] - order[right.location]) || left.name.localeCompare(right.name);
-    }).map((defender) => {
-      const stats = derivedStats(state, defender, content);
-      return {
-        id: defender.id,
-        name: defender.name,
-        title: defender.title,
-        templateName: content.defenderTemplates[defender.templateId].name,
-        subclassName: subclassSummary(defender, content),
-        roleSummary: content.defenderTemplates[defender.templateId].role,
-        locationLabel:
-          defender.location === 'board'
-            ? 'On Board'
-            : defender.location === 'sauna'
-              ? 'In Sauna'
-              : defender.location === 'ready'
-                ? 'On Bench'
-                : 'Fallen',
-        summary: `Lvl ${defender.level} ${subclassSummary(defender, content)} · ${stats.damage} ATK · ${stats.defense} DEF`,
-        level: defender.level,
-        hp: defender.hp,
-        maxHp: stats.maxHp,
-        damage: stats.damage,
-        heal: stats.heal,
-        range: stats.range,
-        defense: stats.defense,
-        regenHpPerSecond: stats.regenHpPerSecond,
-        kills: defender.kills,
-        location: defender.location,
-        benchRerollCount: state.benchRerollCountsByDefenderId[defender.id] ?? 0,
-        benchRerollCost: benchRerollCost(state, defender.id),
-        selected: state.selectedDefenderId === defender.id
-      };
-    }),
+    readyReserveEntries,
+    saunaReserve,
+    rosterEntries,
     deathLogEntries: state.deathLog.slice(0, 5).map((entry) => ({
       id: entry.id,
       wave: entry.wave,
@@ -4515,14 +4556,20 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     })() : null,
     selectedSauna: state.selectedMapTarget === 'sauna' ? {
       occupancyLabel: `${saunaOccupancy(state)}/${content.config.saunaCap}`,
+      occupantId: saunaDefender?.id ?? null,
       occupantName: saunaDefender?.name ?? null,
       occupantTitle: saunaDefender?.title ?? null,
       occupantRole: saunaDefender ? content.defenderTemplates[saunaDefender.templateId].name : null,
+      occupantSubclassName: saunaDefender ? subclassSummary(saunaDefender, content) : null,
       occupantLore: saunaDefender?.lore ?? null,
       occupantHp: saunaDefender?.hp ?? null,
       occupantMaxHp: saunaDefender ? derivedStats(state, saunaDefender, content).maxHp : null,
       autoDeployUnlocked: hasSaunaAutoDeploy(state),
-      slapSwapUnlocked: hasSaunaSlapSwap(state)
+      slapSwapUnlocked: hasSaunaSlapSwap(state),
+      canReroll: canRerollSaunaDefender(state),
+      rerollCost: saunaRerollCost(state),
+      canSendSelectedBoardHero: selectedBoardDefender !== null && state.overlayMode === 'none' && state.phase === 'prep',
+      sendSelectedBoardHeroLabel: saunaSendLabel
     } : null,
     selectedEnemy: state.selectedMapTarget === 'enemy' && selectedEnemy ? (() => {
       const archetype = content.enemyArchetypes[selectedEnemy.archetypeId];

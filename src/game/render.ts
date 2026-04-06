@@ -1,4 +1,16 @@
-import { coordKey, hexDistance } from './logic';
+import { coordKey, hexDistance } from './geometry';
+import {
+  axialFloatToPixel,
+  axialToPixel,
+  getBoardLayout,
+  type BoardLayout
+} from './render/layout';
+import {
+  pickDefenderAtCanvasPoint as pickDefenderAtCanvasPointFromModule,
+  pickEnemyAtCanvasPoint as pickEnemyAtCanvasPointFromModule,
+  pickTileAtCanvasPoint as pickTileAtCanvasPointFromModule
+} from './render/picking';
+export { getTileViewportPosition } from './render/layout';
 import type {
   AxialCoord,
   BossId,
@@ -9,14 +21,6 @@ import type {
   UnitMotionState,
   WaveDefinition
 } from './types';
-
-const SQRT3 = Math.sqrt(3);
-
-interface BoardLayout {
-  hexSize: number;
-  centerX: number;
-  centerY: number;
-}
 
 interface TokenPalette {
   shell: string;
@@ -84,6 +88,7 @@ const ENEMY_PORTRAIT_URLS = [
 ];
 const PEBBLE_HEAD_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_head.png`;
 const PEBBLE_BODY_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_body.png`;
+const BEER_SHOP_SPRITE_URL = `${import.meta.env.BASE_URL}Buildings/olutkauppa.png`;
 const DEFENDER_SPRITE_SHEET_URL = `${import.meta.env.BASE_URL}defenders/sauna-party-sheet.png`;
 const DEFENDER_ROLE_PORTRAITS: Record<DefenderTemplateId, number[]> = {
   guardian: [0],
@@ -107,33 +112,8 @@ let processedPortraits = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 let pebbleHeadSprite: HTMLImageElement | null | undefined;
 let pebbleBodySprite: HTMLImageElement | null | undefined;
 let processedPebbleSprites = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
-
-function getBoardLayout(width: number, height: number, radius: number): BoardLayout {
-  const padding = Math.max(14, Math.min(width, height) * 0.04);
-  const horizontalCapacity = (width - padding * 2) / (SQRT3 * (radius * 2 + 1.5));
-  const verticalCapacity = (height - padding * 2) / (radius * 3 + 2.4);
-  return {
-    hexSize: Math.max(14, Math.min(horizontalCapacity, verticalCapacity)),
-    centerX: width / 2,
-    centerY: height / 2
-  };
-}
-
-function axialToPixel(tile: AxialCoord, layout: BoardLayout) {
-  return {
-    x: layout.centerX + layout.hexSize * SQRT3 * (tile.q + tile.r / 2),
-    y: layout.centerY + layout.hexSize * 1.5 * tile.r
-  };
-}
-
-export function getTileViewportPosition(
-  snapshot: GameSnapshot,
-  viewportWidth: number,
-  viewportHeight: number,
-  tile: AxialCoord
-) {
-  return axialToPixel(tile, getBoardLayout(viewportWidth, viewportHeight, snapshot.config.gridRadius));
-}
+let beerShopSprite: HTMLImageElement | null | undefined;
+let processedBackdropSprites = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 
 export function collectFireballTelegraphTiles(snapshot: GameSnapshot): AxialCoord[] {
   const tiles = new Map<string, AxialCoord>();
@@ -145,30 +125,6 @@ export function collectFireballTelegraphTiles(snapshot: GameSnapshot): AxialCoor
     }
   }
   return [...tiles.values()];
-}
-
-function roundAxial(q: number, r: number): AxialCoord {
-  let x = q;
-  let z = r;
-  let y = -x - z;
-  let rx = Math.round(x);
-  let ry = Math.round(y);
-  let rz = Math.round(z);
-  const xDiff = Math.abs(rx - x);
-  const yDiff = Math.abs(ry - y);
-  const zDiff = Math.abs(rz - z);
-  if (xDiff > yDiff && xDiff > zDiff) rx = -ry - rz;
-  else if (yDiff > zDiff) ry = -rx - rz;
-  else rz = -rx - ry;
-  return { q: rx, r: rz };
-}
-
-function pixelToAxial(x: number, y: number, layout: BoardLayout): AxialCoord {
-  const localX = x - layout.centerX;
-  const localY = y - layout.centerY;
-  const q = (SQRT3 / 3 * localX - localY / 3) / layout.hexSize;
-  const r = ((2 / 3) * localY) / layout.hexSize;
-  return roundAxial(q, r);
 }
 
 function buildHexPath(ctx: CanvasRenderingContext2D, center: { x: number; y: number }, size: number) {
@@ -646,6 +602,21 @@ function getPebbleBodySprite(): HTMLImageElement | null {
   return pebbleBodySprite;
 }
 
+function getBeerShopSprite(): HTMLImageElement | null {
+  if (typeof Image === 'undefined') {
+    return null;
+  }
+  if (!beerShopSprite) {
+    beerShopSprite = new Image();
+    beerShopSprite.src = BEER_SHOP_SPRITE_URL;
+  }
+  return beerShopSprite;
+}
+
+function isDrawableImage(image: HTMLImageElement | HTMLCanvasElement | null | undefined): image is HTMLImageElement | HTMLCanvasElement {
+  return Boolean(image) && (!(image instanceof HTMLImageElement) || (image.complete && image.naturalWidth > 0));
+}
+
 function fitSpriteDimensions(sourceWidth: number, sourceHeight: number, maxWidth: number, maxHeight: number) {
   const scale = Math.min(maxWidth / sourceWidth, maxHeight / sourceHeight);
   return {
@@ -724,6 +695,29 @@ function drawRotatedSprite(
   const previousSmoothing = ctx.imageSmoothingEnabled;
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(image, -dims.width / 2, -dims.height * (flipY ? 0.28 : 0.72), dims.width, dims.height);
+  ctx.imageSmoothingEnabled = previousSmoothing;
+  ctx.restore();
+}
+
+function drawBaselineSprite(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement | HTMLCanvasElement,
+  center: { x: number; y: number },
+  maxWidth: number,
+  maxHeight: number,
+  baselineY: number,
+  smooth = false
+) {
+  const sourceWidth = image instanceof HTMLImageElement ? image.naturalWidth : image.width;
+  const sourceHeight = image instanceof HTMLImageElement ? image.naturalHeight : image.height;
+  const dims = fitSpriteDimensions(sourceWidth, sourceHeight, maxWidth, maxHeight);
+  const destX = center.x - dims.width / 2;
+  const destY = baselineY - dims.height;
+
+  ctx.save();
+  const previousSmoothing = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = smooth;
+  ctx.drawImage(image, destX, destY, dims.width, dims.height);
   ctx.imageSmoothingEnabled = previousSmoothing;
   ctx.restore();
 }
@@ -887,6 +881,91 @@ function getProcessedPebbleSprite(image: HTMLImageElement | null): HTMLCanvasEle
 
   ctx.putImageData(imageData, 0, 0);
   processedPebbleSprites.set(image, canvas);
+  return canvas;
+}
+
+function getProcessedBackdropSprite(image: HTMLImageElement | null): HTMLCanvasElement | HTMLImageElement | null {
+  if (!image || !image.complete || image.naturalWidth === 0 || typeof document === 'undefined') {
+    return image;
+  }
+
+  const cached = processedBackdropSprites.get(image);
+  if (cached) {
+    return cached;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) {
+    return image;
+  }
+
+  ctx.drawImage(image, 0, 0);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const { data, width, height } = imageData;
+  const cornerSamples = [
+    { r: data[0], g: data[1], b: data[2] },
+    { r: data[(width - 1) * 4], g: data[(width - 1) * 4 + 1], b: data[(width - 1) * 4 + 2] },
+    {
+      r: data[((height - 1) * width) * 4],
+      g: data[((height - 1) * width) * 4 + 1],
+      b: data[((height - 1) * width) * 4 + 2]
+    },
+    {
+      r: data[((height * width) - 1) * 4],
+      g: data[((height * width) - 1) * 4 + 1],
+      b: data[((height * width) - 1) * 4 + 2]
+    }
+  ];
+  const background = cornerSamples.reduce(
+    (total, sample) => ({
+      r: total.r + sample.r / cornerSamples.length,
+      g: total.g + sample.g / cornerSamples.length,
+      b: total.b + sample.b / cornerSamples.length
+    }),
+    { r: 0, g: 0, b: 0 }
+  );
+
+  const visited = new Uint8Array(width * height);
+  const queue: number[] = [];
+  const threshold = 60;
+
+  const enqueue = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const index = y * width + x;
+    if (visited[index]) return;
+    visited[index] = 1;
+    const offset = index * 4;
+    const pixel = { r: data[offset], g: data[offset + 1], b: data[offset + 2] };
+    if (data[offset + 3] === 0 || rgbaDistance(pixel, background) > threshold) return;
+    queue.push(index);
+  };
+
+  for (let x = 0; x < width; x += 1) {
+    enqueue(x, 0);
+    enqueue(x, height - 1);
+  }
+  for (let y = 0; y < height; y += 1) {
+    enqueue(0, y);
+    enqueue(width - 1, y);
+  }
+
+  while (queue.length > 0) {
+    const index = queue.pop()!;
+    const offset = index * 4;
+    data[offset + 3] = 0;
+    const x = index % width;
+    const y = Math.floor(index / width);
+    enqueue(x + 1, y);
+    enqueue(x - 1, y);
+    enqueue(x, y + 1);
+    enqueue(x, y - 1);
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  processedBackdropSprites.set(image, canvas);
   return canvas;
 }
 
@@ -1325,13 +1404,6 @@ function drawSpinBlade(
   ctx.restore();
 }
 
-function axialFloatToPixel(tile: { q: number; r: number }, layout: BoardLayout) {
-  return {
-    x: layout.centerX + layout.hexSize * SQRT3 * (tile.q + tile.r / 2),
-    y: layout.centerY + layout.hexSize * 1.5 * tile.r
-  };
-}
-
 function getTravelAngle(tile: AxialCoord, motion: UnitMotionState | null | undefined, layout: BoardLayout) {
   const from = motion?.fromTile ?? tile;
   const to = motion?.toTile ?? tile;
@@ -1533,6 +1605,8 @@ function drawEscalationManagerBoss(
   timeMs: number,
   shielded: boolean
 ) {
+  const managerPortrait = getEnemyPortrait(ENEMY_ROLE_PORTRAITS.escalation_manager[0] ?? 0);
+  const processedManagerPortrait = getProcessedPortrait(managerPortrait);
   drawGroundShadow(ctx, { x: center.x, y: center.y + radius * 1.05 }, radius, radius * 0.32, 'rgba(14, 8, 15, 0.45)');
   drawGlowDisc(ctx, center, radius * 1.9, shielded ? 'rgba(255, 178, 240, 0.4)' : 'rgba(222, 133, 195, 0.28)', 'rgba(132, 32, 98, 0)', 0.86);
   if (shielded) {
@@ -1553,8 +1627,19 @@ function drawEscalationManagerBoss(
   ctx.strokeStyle = '#ffdff7';
   ctx.lineWidth = Math.max(2, radius * 0.06);
   ctx.stroke();
-  ctx.fillStyle = '#ffd8ef';
-  ctx.fillRect(-radius * 0.18, -radius * 0.18, radius * 0.36, radius * 0.56);
+  if (isDrawableImage(processedManagerPortrait)) {
+    drawBaselineSprite(
+      ctx,
+      processedManagerPortrait,
+      { x: 0, y: radius * 0.06 },
+      radius * 1.36,
+      radius * 1.64,
+      radius * 0.72
+    );
+  } else {
+    ctx.fillStyle = '#ffd8ef';
+    ctx.fillRect(-radius * 0.18, -radius * 0.18, radius * 0.36, radius * 0.56);
+  }
   ctx.restore();
   for (let index = 0; index < 3; index += 1) {
     const orbitAngle = timeMs * 0.004 + index * ((Math.PI * 2) / 3);
@@ -1821,8 +1906,10 @@ function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, lay
         break;
       case 'volley':
         if (secondary) {
-          drawLightningArc(ctx, secondary, center, 'rgba(255, 225, 161, 0.86)', Math.max(1.8, layout.hexSize * 0.06), 0.92, event.id * 6.3);
-          drawAfterimageTrail(ctx, secondary, center, 'rgba(255, 176, 92, 0.8)', 0.72);
+          const shot = pointLerp(secondary, center, easeOutCubic(clamp(progress / 0.82)));
+          drawLightningArc(ctx, secondary, shot, 'rgba(255, 225, 161, 0.86)', Math.max(1.8, layout.hexSize * 0.06), 0.92, event.id * 6.3);
+          drawAfterimageTrail(ctx, secondary, shot, 'rgba(255, 176, 92, 0.9)', 0.84);
+          drawGlowDisc(ctx, shot, layout.hexSize * 0.16, 'rgba(255,248,218,0.94)', 'rgba(255,168,83,0)', 0.94);
         }
         drawGlowDisc(ctx, center, layout.hexSize * (0.2 + progress * 0.16), 'rgba(255,240,198,0.76)', 'rgba(255,156,78,0)', 0.78);
         drawSparkBurst(ctx, center, layout.hexSize * (0.18 + progress * 0.16), '#ffe9bf', 0.72, 4, progress * Math.PI * 2.1);
@@ -1860,6 +1947,7 @@ function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, lay
       case 'hit':
       default:
         if (secondary) {
+          const shot = pointLerp(secondary, center, easeOutCubic(clamp(progress / 0.78)));
           const dir = {
             x: center.x - secondary.x,
             y: center.y - secondary.y
@@ -1869,6 +1957,8 @@ function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, lay
             x: center.x - (dir.x / len) * layout.hexSize * 0.12,
             y: center.y - (dir.y / len) * layout.hexSize * 0.12
           };
+          drawAfterimageTrail(ctx, secondary, shot, 'rgba(255, 198, 118, 0.86)', 0.76);
+          drawGlowDisc(ctx, shot, layout.hexSize * 0.12, 'rgba(255,245,216,0.9)', 'rgba(255,178,94,0)', 0.9);
           drawLightningArc(ctx, impact, center, 'rgba(255,224,162,0.42)', Math.max(1, layout.hexSize * 0.03), 0.5, event.id * 2.1);
         }
         drawGlowDisc(ctx, center, layout.hexSize * (0.22 + progress * 0.18), 'rgba(255,238,196,0.52)', 'rgba(255,183,92,0)', 0.7);
@@ -1938,6 +2028,21 @@ function drawBeerShopLandmark(
   selected: boolean,
   enabled: boolean
 ) {
+  const sprite = getProcessedBackdropSprite(getBeerShopSprite());
+  if (isDrawableImage(sprite)) {
+    drawWorldLandmarkShadow(ctx, center, size * 1.85, size * 0.94);
+    drawGlowDisc(
+      ctx,
+      { x: center.x, y: center.y - size * 0.1 },
+      size * (selected ? 1.08 : 0.9),
+      enabled ? 'rgba(255, 204, 112, 0.28)' : 'rgba(165, 165, 165, 0.18)',
+      'rgba(0,0,0,0)',
+      0.82
+    );
+    drawBaselineSprite(ctx, sprite, center, size * 2.45, size * 1.9, center.y + size * 0.5);
+    return;
+  }
+
   const width = size;
   const height = size * 0.86;
   drawWorldLandmarkShadow(ctx, center, width, height);
@@ -2276,12 +2381,7 @@ export function pickTileAtCanvasPoint(
   clientX: number,
   clientY: number
 ): AxialCoord | null {
-  const layout = getBoardLayout(rect.width, rect.height, snapshot.config.gridRadius);
-  const tile = pixelToAxial(clientX - rect.left, clientY - rect.top, layout);
-  if (hexDistance(tile, { q: 0, r: 0 }) > snapshot.config.gridRadius) {
-    return null;
-  }
-  return tile;
+  return pickTileAtCanvasPointFromModule(snapshot, rect, clientX, clientY);
 }
 
 export function pickDefenderAtCanvasPoint(
@@ -2290,24 +2390,24 @@ export function pickDefenderAtCanvasPoint(
   clientX: number,
   clientY: number
 ): string | null {
-  const layout = getBoardLayout(rect.width, rect.height, snapshot.config.gridRadius);
-  const pointer = { x: clientX - rect.left, y: clientY - rect.top };
-  const boardDefenders = snapshot.state.defenders
-    .filter((defender) => defender.location === 'board' && defender.tile)
-    .map((defender) => ({
-      id: defender.id,
-      center: axialFloatToPixel(
-        resolveAnimatedHexPosition(defender.tile as AxialCoord, defender.motion ?? null, snapshot.state.timeMs),
-        layout
-      ),
-      radius: layout.hexSize * 0.62
-    }))
-    .sort((left, right) => right.radius - left.radius);
-
-  const hit = boardDefenders.find((defender) => (
-    Math.hypot(defender.center.x - pointer.x, defender.center.y - pointer.y) <= defender.radius
-  ));
-  return hit?.id ?? null;
+  return pickDefenderAtCanvasPointFromModule(
+    snapshot,
+    rect,
+    clientX,
+    clientY,
+    (nextSnapshot, layout) =>
+      nextSnapshot.state.defenders
+        .filter((defender) => defender.location === 'board' && defender.tile)
+        .map((defender) => ({
+          value: defender.id,
+          center: axialFloatToPixel(
+            resolveAnimatedHexPosition(defender.tile as AxialCoord, defender.motion ?? null, nextSnapshot.state.timeMs),
+            layout
+          ),
+          radius: layout.hexSize * 0.62
+        }))
+        .sort((left, right) => right.radius - left.radius)
+  );
 }
 
 export function pickEnemyAtCanvasPoint(
@@ -2316,21 +2416,21 @@ export function pickEnemyAtCanvasPoint(
   clientX: number,
   clientY: number
 ): number | null {
-  const layout = getBoardLayout(rect.width, rect.height, snapshot.config.gridRadius);
-  const pointer = { x: clientX - rect.left, y: clientY - rect.top };
-  const enemies = snapshot.state.enemies
-    .map((enemy) => {
-      const resolved = resolveEnemyCanvasUnit(enemy, snapshot, layout);
-      return {
-        instanceId: enemy.instanceId,
-        center: resolved.center,
-        radius: resolved.bossProfile.presentation === 'boss_unit' ? resolved.radius * 1.18 : resolved.radius * 1.05
-      };
-    })
-    .sort((left, right) => right.radius - left.radius);
-
-  const hit = enemies.find((enemy) => (
-    Math.hypot(enemy.center.x - pointer.x, enemy.center.y - pointer.y) <= enemy.radius
-  ));
-  return hit?.instanceId ?? null;
+  return pickEnemyAtCanvasPointFromModule(
+    snapshot,
+    rect,
+    clientX,
+    clientY,
+    (nextSnapshot, layout) =>
+      nextSnapshot.state.enemies
+        .map((enemy) => {
+          const resolved = resolveEnemyCanvasUnit(enemy, nextSnapshot, layout);
+          return {
+            value: enemy.instanceId,
+            center: resolved.center,
+            radius: resolved.bossProfile.presentation === 'boss_unit' ? resolved.radius * 1.18 : resolved.radius * 1.05
+          };
+        })
+        .sort((left, right) => right.radius - left.radius)
+  );
 }

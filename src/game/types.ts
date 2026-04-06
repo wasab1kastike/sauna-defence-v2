@@ -571,7 +571,24 @@ export interface HudRosterEntry {
   location: DefenderLocation;
   benchRerollCount: number;
   benchRerollCost: number;
+  shortcutKey: string | null;
   selected: boolean;
+}
+
+export interface HudSaunaDockEntry {
+  occupantId: string | null;
+  occupantName: string | null;
+  occupantTitle: string | null;
+  occupantTemplateName: string | null;
+  occupantSubclassName: string | null;
+  occupantLore: string | null;
+  occupantHp: number | null;
+  occupantMaxHp: number | null;
+  selected: boolean;
+  canReroll: boolean;
+  rerollCost: number | null;
+  canSendSelectedBoardHero: boolean;
+  sendSelectedBoardHeroLabel: string | null;
 }
 
 export interface HudInventoryEntry {
@@ -640,14 +657,20 @@ export interface HudSelectedSubclassEntry {
 
 export interface HudSelectedSauna {
   occupancyLabel: string;
+  occupantId: string | null;
   occupantName: string | null;
   occupantTitle: string | null;
   occupantRole: string | null;
+  occupantSubclassName: string | null;
   occupantLore: string | null;
   occupantHp: number | null;
   occupantMaxHp: number | null;
   autoDeployUnlocked: boolean;
   slapSwapUnlocked: boolean;
+  canReroll: boolean;
+  rerollCost: number | null;
+  canSendSelectedBoardHero: boolean;
+  sendSelectedBoardHeroLabel: string | null;
 }
 
 export interface HudSelectedEnemy {
@@ -857,6 +880,8 @@ export interface HudViewModel {
   actionBody: string;
   readyBenchCount: number;
   freeRecruitSlots: number;
+  readyReserveEntries: HudRosterEntry[];
+  saunaReserve: HudSaunaDockEntry;
   rosterEntries: HudRosterEntry[];
   deathLogEntries: HudDeathLogEntry[];
   headerItemEntries: HudInventoryEntry[];
@@ -921,6 +946,7 @@ export type InputAction =
   | { type: 'draftGlobalModifier'; modifierId: GlobalModifierId }
   | { type: 'draftSubclassChoice'; subclassId: DefenderSubclassId }
   | { type: 'recallDefenderToSauna'; defenderId: string }
+  | { type: 'rerollSaunaDefender' }
   | { type: 'rerollBenchDefender'; defenderId: string }
   | { type: 'rerollRecruitOffers' }
   | { type: 'rerollRecruitOffer'; offerId: number }

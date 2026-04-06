@@ -1,10 +1,12 @@
 import {
   formatPatchNotesDate,
+  getHudUtilityButtons,
   getLandmarkPopupPlacement,
   getSelectionCardTitle,
+  resolveGameplayHotkeyAction,
   resolveBoardPointerAction,
   shouldAutoOpenPatchNotes
-} from '../App';
+} from '../uiHelpers';
 import { gameContent } from '../../content/gameContent';
 import { createDefaultMetaProgress, createInitialState, createSnapshot } from '../../game/logic';
 import { getTileViewportPosition } from '../../game/render';
@@ -77,5 +79,60 @@ describe('App popup helpers', () => {
   it('formats patch note dates to player-friendly Finnish date text', () => {
     expect(formatPatchNotesDate('2026-04-04')).toContain('2026');
     expect(formatPatchNotesDate('not-a-date')).toBe('not-a-date');
+  });
+
+  it('maps A, S and D to the first three ready reserve heroes', () => {
+    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(resolveGameplayHotkeyAction(snapshot, 'a', { guideStepActive: false, patchNotesOpen: false })).toEqual({
+      type: 'selectDefender',
+      defenderId: snapshot.hud.readyReserveEntries[0].id
+    });
+    expect(resolveGameplayHotkeyAction(snapshot, 's', { guideStepActive: false, patchNotesOpen: false })).toEqual({
+      type: 'selectDefender',
+      defenderId: snapshot.hud.readyReserveEntries[1].id
+    });
+    expect(resolveGameplayHotkeyAction(snapshot, 'd', { guideStepActive: false, patchNotesOpen: false })).toEqual({
+      type: 'selectDefender',
+      defenderId: snapshot.hud.readyReserveEntries[2].id
+    });
+  });
+
+  it('maps Q, W and E to recruit refresh, recruit level up, and sauna reroll', () => {
+    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+    state.sisu.current = 12;
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(resolveGameplayHotkeyAction(snapshot, 'q', { guideStepActive: false, patchNotesOpen: false })).toEqual({ type: 'rerollRecruitOffers' });
+    expect(resolveGameplayHotkeyAction(snapshot, 'w', { guideStepActive: false, patchNotesOpen: false })).toEqual({ type: 'levelUpRecruitment' });
+    expect(resolveGameplayHotkeyAction(snapshot, 'e', { guideStepActive: false, patchNotesOpen: false })).toEqual({ type: 'rerollSaunaDefender' });
+  });
+
+  it('blocks gameplay hotkeys while blocking overlays are active', () => {
+    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+    state.sisu.current = 12;
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(resolveGameplayHotkeyAction(snapshot, 'q', { guideStepActive: true, patchNotesOpen: false })).toBeNull();
+    expect(resolveGameplayHotkeyAction(snapshot, 'e', { guideStepActive: false, patchNotesOpen: true })).toBeNull();
+  });
+
+  it('keeps recruitment out of the right-side utility rail', () => {
+    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+    const snapshot = createSnapshot(state, gameContent);
+    const buttons = getHudUtilityButtons(snapshot, snapshot.hud.globalModifiers.length);
+
+    expect(buttons.map((button) => button.id)).toEqual(['modifiers', 'loot']);
+  });
+
+  it('blocks gameplay hotkeys during intermission', () => {
+    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+    state.phase = 'lost';
+    state.overlayMode = 'intermission';
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(resolveGameplayHotkeyAction(snapshot, 'a', { guideStepActive: false, patchNotesOpen: false })).toBeNull();
+    expect(resolveGameplayHotkeyAction(snapshot, 'q', { guideStepActive: false, patchNotesOpen: false })).toBeNull();
   });
 });

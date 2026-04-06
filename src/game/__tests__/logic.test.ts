@@ -1082,7 +1082,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.recruitOffers).toHaveLength(3);
   });
 
-  it('lets a new recruit join the bench even when the board is full if the roster still has space', () => {
+  it('sends a new recruit to the sauna when the board is full, the roster has space, and the sauna is empty', () => {
     let state = prepState();
     state.meta.upgrades.roster_capacity = 1;
     state.sisu.current = 30;
@@ -1107,8 +1107,124 @@ describe('Sauna Defense V2 logic', () => {
     state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
 
     const recruit = state.defenders.find((defender) => defender.id === offer.candidate.id);
+    expect(recruit?.location).toBe('sauna');
+    expect(state.saunaDefenderId).toBe(offer.candidate.id);
+  });
+
+  it('lets a new recruit join the reserve row when the board is full and the sauna is already occupied', () => {
+    let state = prepState();
+    state.meta.upgrades.roster_capacity = 1;
+    state.sisu.current = 30;
+
+    const living = state.defenders.filter((defender) => defender.location !== 'dead');
+    const boardTiles = [
+      { q: 0, r: -1 },
+      { q: 1, r: -1 },
+      { q: -1, r: 0 },
+      { q: 1, r: 0 },
+      { q: 0, r: 1 }
+    ];
+    living.filter((defender) => defender.location !== 'sauna').forEach((defender, index) => {
+      defender.location = 'board';
+      defender.tile = boardTiles[index] ?? boardTiles[0];
+    });
+
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
+    const offer = state.recruitOffers[0];
+
+    state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
+
+    const recruit = state.defenders.find((defender) => defender.id === offer.candidate.id);
     expect(recruit?.location).toBe('ready');
-    expect(state.saunaDefenderId).toBeNull();
+    expect(state.saunaDefenderId).not.toBe(offer.candidate.id);
+  });
+
+  it('sends a board hero to an empty sauna during prep', () => {
+    let state = prepState();
+    const boardHero = state.defenders.find((defender) => defender.location === 'ready');
+    const oldSaunaHero = state.defenders.find((defender) => defender.location === 'sauna');
+    expect(boardHero).toBeTruthy();
+    expect(oldSaunaHero).toBeTruthy();
+
+    boardHero!.location = 'board';
+    boardHero!.tile = { q: 0, r: -1 };
+    boardHero!.homeTile = { q: 0, r: -1 };
+    oldSaunaHero!.location = 'ready';
+    oldSaunaHero!.tile = null;
+    state.saunaDefenderId = null;
+
+    state = applyAction(state, { type: 'recallDefenderToSauna', defenderId: boardHero!.id }, gameContent);
+
+    const updatedBoardHero = state.defenders.find((defender) => defender.id === boardHero!.id);
+    expect(updatedBoardHero?.location).toBe('sauna');
+    expect(updatedBoardHero?.tile).toBeNull();
+    expect(state.saunaDefenderId).toBe(boardHero!.id);
+  });
+
+  it('swaps a board hero with the occupied sauna defender during prep', () => {
+    let state = prepState();
+    const boardHero = state.defenders.find((defender) => defender.location === 'ready');
+    const saunaHero = state.defenders.find((defender) => defender.location === 'sauna');
+    expect(boardHero).toBeTruthy();
+    expect(saunaHero).toBeTruthy();
+
+    boardHero!.location = 'board';
+    boardHero!.tile = { q: 1, r: -1 };
+    boardHero!.homeTile = { q: 1, r: -1 };
+
+    state = applyAction(state, { type: 'recallDefenderToSauna', defenderId: boardHero!.id }, gameContent);
+
+    const updatedBoardHero = state.defenders.find((defender) => defender.id === boardHero!.id);
+    const updatedSaunaHero = state.defenders.find((defender) => defender.id === saunaHero!.id);
+    expect(updatedBoardHero?.location).toBe('sauna');
+    expect(updatedBoardHero?.tile).toBeNull();
+    expect(updatedSaunaHero?.location).toBe('ready');
+    expect(updatedSaunaHero?.tile).toBeNull();
+    expect(state.saunaDefenderId).toBe(boardHero!.id);
+  });
+
+  it('rerolls the sauna hero identity and class while preserving progression and loadout', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'sauna');
+    expect(defender).toBeTruthy();
+
+    defender!.name = 'Before';
+    defender!.title = 'Old Title';
+    defender!.lore = 'Old lore';
+    defender!.stats = {
+      maxHp: 99,
+      damage: 99,
+      heal: 99,
+      range: 9,
+      attackCooldownMs: 999,
+      defense: 4,
+      regenHpPerSecond: 4
+    };
+    defender!.hp = 77;
+    defender!.level = 7;
+    defender!.xp = 70;
+    defender!.subclassIds = ['stonewall'];
+    defender!.items = ['iron_whisk'];
+    defender!.skills = ['steam_shield'];
+    defender!.kills = 3;
+    state.sisu.current = 10;
+
+    state = applyAction(state, { type: 'rerollSaunaDefender' }, gameContent);
+
+    const updated = state.defenders.find((entry) => entry.id === defender!.id)!;
+    expect(updated.location).toBe('sauna');
+    expect(updated.name).not.toBe('Before');
+    expect(updated.title).not.toBe('Old Title');
+    expect(updated.lore).not.toBe('Old lore');
+    expect(updated.stats.maxHp).not.toBe(99);
+    expect(updated.level).toBe(7);
+    expect(updated.xp).toBe(70);
+    expect(updated.subclassIds).toEqual([]);
+    expect(updated.items).toEqual(['iron_whisk']);
+    expect(updated.skills).toEqual(['steam_shield']);
+    expect(updated.kills).toBe(3);
+    expect(state.benchRerollCountsByDefenderId[defender!.id]).toBe(1);
+    expect(updated.hp).toBeLessThanOrEqual(createSnapshot(state, gameContent).hud.saunaReserve.occupantMaxHp!);
   });
 
   it('uses the scaling recruitment level up costs and keeps current offers unchanged', () => {
