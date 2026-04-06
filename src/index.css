@@ -689,7 +689,10 @@ button {
 }
 
 .patch-notes-card {
-  width: min(760px, 100%);
+  width: min(880px, 100%);
+  max-height: min(84vh, 880px);
+  overflow: hidden;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .patch-notes-head h2 {
@@ -697,11 +700,28 @@ button {
   font-size: 1.45rem;
 }
 
+.patch-notes-body {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding-right: 4px;
+}
+
 .patch-notes-meta {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.patch-notes-intro {
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 182, 97, 0.18);
+  background: rgba(255, 182, 97, 0.08);
+  color: var(--copy);
 }
 
 .version-badge {
@@ -717,11 +737,13 @@ button {
 
 .patch-notes-grid {
   display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .patch-notes-section {
+  min-width: 0;
+  align-content: start;
   gap: 10px;
 }
 
@@ -730,13 +752,27 @@ button {
   font-size: 1.02rem;
 }
 
+.patch-notes-section p,
+.patch-notes-section li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .patch-notes-section ul {
   margin: 0;
   padding-left: 18px;
   display: grid;
-  gap: 6px;
+  gap: 8px;
   color: var(--muted);
-  line-height: 1.45;
+  line-height: 1.5;
+}
+
+.patch-notes-empty {
+  color: var(--muted);
+}
+
+.patch-notes-actions {
+  justify-content: flex-end;
 }
 
 .panel-copy {
@@ -829,5 +865,28 @@ em {
 
   .landmark-chip {
     min-width: 92px;
+  }
+
+  .patch-notes-card {
+    width: min(720px, 100%);
+  }
+
+  .patch-notes-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .overlay-shell {
+    padding: 16px;
+  }
+
+  .patch-notes-card {
+    max-height: min(88vh, 880px);
+    padding: 18px;
+  }
+
+  .patch-notes-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
