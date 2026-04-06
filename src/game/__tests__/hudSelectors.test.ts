@@ -23,7 +23,7 @@ const selectorDeps = {
 };
 
 describe('hud selectors', () => {
-  it('assigns A, S and D to the first three ready reserve defenders', () => {
+  it('limits reserve shortcut keys to the first three ready defenders', () => {
     const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
 
     const shortcutMap = createReserveShortcutKeyMap(state.defenders);
@@ -57,6 +57,6 @@ describe('hud selectors', () => {
     expect(firstReadyIndex).toBeGreaterThan(firstSaunaIndex);
     expect(saunaReserve.canReroll).toBe(true);
     expect(saunaReserve.rerollCost).toBe(3);
-    expect(saunaReserve.sendSelectedBoardHeroLabel).toBe(`Swap ${boardHero.name} Into Sauna`);
+    expect(saunaReserve.sendSelectedBoardHeroLabel).toBe(`Replace Sauna Hero With ${boardHero.name}`);
   });
 });

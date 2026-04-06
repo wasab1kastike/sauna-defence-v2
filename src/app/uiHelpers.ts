@@ -29,7 +29,7 @@ export const GUIDE_STEPS = [
   },
   {
     title: 'Bottom Dock Runs The Roster',
-    body: 'The bottom dock is your TFT-style reserve line: recruit new heroes, inspect the sauna, and hotkey the first three reserves with A, S and D.'
+    body: 'The bottom dock is now a clean four-slot recruit market: refresh with Q, level up with W, and use the sauna itself as your reserve.'
   },
   {
     title: 'Map Buildings Matter',
@@ -213,11 +213,6 @@ export function resolveGameplayHotkeyAction(
   }
 
   const normalizedKey = key.toLowerCase();
-  if (normalizedKey === 'a' || normalizedKey === 's' || normalizedKey === 'd') {
-    const hotkeyIndex = { a: 0, s: 1, d: 2 }[normalizedKey];
-    const entry = snapshot.hud.readyReserveEntries[hotkeyIndex];
-    return entry ? { type: 'selectDefender', defenderId: entry.id } : null;
-  }
   if (normalizedKey === 'q') {
     return snapshot.hud.canRollRecruitOffers ? { type: 'rerollRecruitOffers' } : null;
   }

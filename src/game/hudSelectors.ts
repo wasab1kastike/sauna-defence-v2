@@ -104,7 +104,7 @@ export function createSaunaReserveEntry(
 ): HudSaunaDockEntry {
   const saunaSendLabel = selectedBoardDefender
     ? saunaDefender
-      ? `Swap ${selectedBoardDefender.name} Into Sauna`
+      ? `Replace Sauna Hero With ${selectedBoardDefender.name}`
       : `Send ${selectedBoardDefender.name} To Sauna`
     : null;
 

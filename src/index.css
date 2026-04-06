@@ -360,6 +360,8 @@ button {
   display: grid;
   gap: 12px;
   padding: 14px;
+  max-width: min(1280px, calc(100% - 36px));
+  margin: 0 auto;
   border-radius: 24px;
   backdrop-filter: blur(14px);
   background:
@@ -374,11 +376,6 @@ button {
   gap: 10px;
 }
 
-.dock-row-split {
-  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 2.1fr);
-  align-items: start;
-}
-
 .dock-head {
   display: flex;
   align-items: start;
@@ -389,10 +386,6 @@ button {
 .dock-head h2 {
   margin: 0;
   font-size: 0.98rem;
-}
-
-.reserve-row {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .reserve-card,
@@ -411,62 +404,33 @@ button {
   padding: 12px;
 }
 
-.market-dock-card {
-  padding: 12px;
-  display: grid;
-  gap: 10px;
-}
-
-.reserve-card {
-  display: grid;
-  gap: 8px;
-  text-align: left;
-}
-
-.reserve-card.selected,
-.sauna-dock-card.selected {
-  border-color: rgba(255, 205, 118, 0.42);
-  box-shadow: inset 0 0 0 1px rgba(255, 205, 118, 0.16);
-}
-
-.sauna-dock-card {
-  display: grid;
-  gap: 8px;
-  min-height: 100%;
-}
-
-.market-actions {
-  align-items: stretch;
-}
-
 .market-row {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .market-card {
   display: grid;
   gap: 8px;
+  min-width: 0;
+  min-height: 156px;
+  align-content: start;
+  overflow-wrap: anywhere;
 }
 
-.hotkey-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  height: 28px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #ffd479, #ff9b62);
-  color: #1a1712;
-  font-weight: 700;
-  font-size: 0.82rem;
-}
-
-.reserve-empty {
-  padding: 14px;
-  border-radius: 18px;
-  border: 1px dashed rgba(132, 230, 220, 0.18);
+.market-card-empty {
+  border-style: dashed;
   background: rgba(12, 26, 28, 0.6);
+  color: var(--muted);
+}
+
+.market-actions-inline {
+  align-items: center;
+}
+
+.popup-market-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .hint-copy {
@@ -833,9 +797,9 @@ em {
     overflow: auto;
   }
 
-  .dock-row-split,
-  .market-row {
-    grid-template-columns: 1fr;
+  .market-row,
+  .popup-market-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .hud-utility-rail {
@@ -888,5 +852,10 @@ em {
 
   .patch-notes-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .market-row,
+  .popup-market-grid {
+    grid-template-columns: 1fr;
   }
 }

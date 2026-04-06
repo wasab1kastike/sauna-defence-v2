@@ -515,9 +515,9 @@ export interface RunState {
   inventory: InventoryDrop[];
   selectedInventoryDropId: number | null;
   recentDropId: number | null;
-  recruitOffers: RecruitOffer[];
+  recruitMarketIsFree: boolean;
+  recruitOffers: Array<RecruitOffer | null>;
   benchRerollCountsByDefenderId: Record<string, number>;
-  recruitRerollCountsByOfferId: Record<number, number>;
   recruitLevelBonus: number;
   recruitLevelUpCount: number;
   beerShopOffers: BeerShopOffer[];
@@ -733,21 +733,16 @@ export interface HudDeathLogEntry {
 
 export interface HudRecruitOfferEntry {
   id: number;
+  slotIndex: number;
   price: number;
   quality: 'rough' | 'solid' | 'elite';
   name: string;
   title: string;
   roleName: string;
   subclassName: string;
-  roleSummary: string;
-  lore: string;
   level: number;
   hp: number;
   damage: number;
-  heal: number;
-  range: number;
-  rerollCount: number;
-  rerollCost: number;
 }
 
 export interface HudRecruitLevelOddsEntry {
@@ -863,7 +858,7 @@ export interface HudViewModel {
   hasRecruitOffers: boolean;
   boardFullButBenchAvailable: boolean;
   rosterFullNeedsReplacement: boolean;
-  recruitOffers: HudRecruitOfferEntry[];
+  recruitOffers: Array<HudRecruitOfferEntry | null>;
   steamEarned: number;
   bankedSteam: number;
   metaShopUnlockCost: number;
@@ -949,7 +944,6 @@ export type InputAction =
   | { type: 'rerollSaunaDefender' }
   | { type: 'rerollBenchDefender'; defenderId: string }
   | { type: 'rerollRecruitOffers' }
-  | { type: 'rerollRecruitOffer'; offerId: number }
   | { type: 'levelUpRecruitment' }
   | { type: 'rollRecruitOffers' }
   | { type: 'recruitOffer'; offerId: number }

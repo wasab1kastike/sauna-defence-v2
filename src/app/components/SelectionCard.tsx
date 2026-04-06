@@ -43,7 +43,7 @@ export function SelectionCard({
           <small>
             {selectedSauna.occupantRole
               ? `${selectedSauna.occupantRole} - ${selectedSauna.occupantSubclassName}`
-              : 'No reserve hero inside.'}
+              : 'No hero is warming up inside.'}
           </small>
           {selectedSauna.occupantName ? (
             <>
@@ -71,10 +71,13 @@ export function SelectionCard({
                   </button>
                 ) : null}
               </div>
+              {selectedSauna.canSendSelectedBoardHero && selectedDefender?.location === 'board' ? (
+                <p className="panel-copy small-copy">Sending the selected board hero here will replace the current sauna hero permanently.</p>
+              ) : null}
             </>
           ) : (
             <>
-              <p className="panel-copy small-copy">Send one board hero here during prep to create a reserve.</p>
+              <p className="panel-copy small-copy">Send one board hero here during prep to keep them in the sauna.</p>
               {selectedSauna.canSendSelectedBoardHero && selectedDefender?.location === 'board' ? (
                 <button
                   className="secondary-button small-button"
@@ -193,12 +196,17 @@ export function SelectionCard({
             </div>
           ) : null}
           {canSendSelectedDefenderToSauna ? (
-            <button
-              className="mini-button"
-              onClick={() => dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })}
-            >
-              Send To Sauna
-            </button>
+            <>
+              <p className="panel-copy small-copy">
+                Sending this hero to the sauna will either occupy the free sauna slot or replace the current sauna hero with no refund.
+              </p>
+              <button
+                className="mini-button"
+                onClick={() => dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })}
+              >
+                Send To Sauna
+              </button>
+            </>
           ) : null}
         </>
       ) : null}

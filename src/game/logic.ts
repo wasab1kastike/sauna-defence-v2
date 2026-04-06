@@ -71,7 +71,6 @@ import {
   canRerollSaunaDefender as canRerollSaunaDefenderFromModule,
   fillDefenderToMax as fillDefenderToMaxFromModule,
   recruitLevelUpCost as recruitLevelUpCostFromModule,
-  recruitOfferRerollCost as recruitOfferRerollCostFromModule,
   recruitRollCost as recruitRollCostFromModule,
   recruitmentStatusText as recruitmentStatusTextFromModule,
   saunaRerollCost as saunaRerollCostFromModule
@@ -151,6 +150,7 @@ const STEP_MOTION_DURATION_MS = 240;
 const PEBBLE_MOTION_DURATION_MS = 520;
 const BLINK_MOTION_DURATION_MS = 320;
 const SPAWN_SETTLE_DURATION_MS = 260;
+const RECRUIT_MARKET_SLOT_COUNT = 4;
 const PEBBLE_PATH_BASE: AxialCoord[] = [
   { q: 0, r: -6 },
   { q: 1, r: -5 },
@@ -643,6 +643,16 @@ function setActiveHudPanel(state: RunState, panel: HudPanelId | null, landmarkId
 function clearBoardSelection(state: RunState): void {
   state.selectedMapTarget = null;
   state.selectedDefenderId = null;
+  state.selectedEnemyInstanceId = null;
+}
+
+function selectFirstReadyDefender(state: RunState): void {
+  const nextReadyDefender = state.defenders.find((defender) => defender.location === 'ready') ?? null;
+  if (!nextReadyDefender) {
+    return;
+  }
+  state.selectedMapTarget = 'defender';
+  state.selectedDefenderId = nextReadyDefender.id;
   state.selectedEnemyInstanceId = null;
 }
 
@@ -1381,10 +1391,6 @@ function benchRerollCost(state: RunState, defenderId: string): number {
   return benchRerollCostFromModule(state, defenderId);
 }
 
-function recruitOfferRerollCost(state: RunState, offerId: number): number {
-  return recruitOfferRerollCostFromModule(state, offerId);
-}
-
 function recruitLevelUpCost(levelUpCount: number): number {
   return recruitLevelUpCostFromModule(levelUpCount);
 }
@@ -1503,10 +1509,11 @@ function recruitReplacementTarget(state: RunState): DefenderInstance | null {
 
 function canBuyAnyRecruitOffer(state: RunState, content: GameContent): boolean {
   const rosterFull = livingDefenders(state).length >= rosterCap(state, content);
+  const liveOffers = state.recruitOffers.filter((offer): offer is RecruitOffer => offer !== null);
   return (
     canAccessRecruitment(state) &&
-    (!rosterFull || recruitReplacementTarget(state) !== null) &&
-    state.recruitOffers.some((offer) => state.sisu.current >= offer.price)
+    (!rosterFull || state.saunaDefenderId !== null || recruitReplacementTarget(state) !== null) &&
+    liveOffers.some((offer) => state.sisu.current >= offer.price)
   );
 }
 
@@ -1578,7 +1585,10 @@ function setDefenderStartingLevel(defender: DefenderInstance, level: number): vo
   defender.xp = xpForLevel(level);
 }
 
-function recruitOfferPrice(defender: DefenderInstance, content: GameContent): number {
+function recruitOfferPrice(defender: DefenderInstance, content: GameContent, freeMarket: boolean): number {
+  if (freeMarket) {
+    return 0;
+  }
   const score = recruitScore(defender, content);
   const qualityTax = score >= 1.12 ? 2 : score >= 0.96 ? 1 : 0;
   const statTax = Math.max(0, Math.round((score - 0.82) * 6));
@@ -1686,7 +1696,7 @@ function createRecruitOffer(state: RunState, content: GameContent): RecruitOffer
   setDefenderStartingLevel(candidate, recruitStartingLevel(state));
   const score = recruitScore(candidate, content);
   const quality = recruitQuality(score);
-  const price = recruitOfferPrice(candidate, content);
+  const price = recruitOfferPrice(candidate, content, state.recruitMarketIsFree);
   return {
     offerId: state.nextRecruitOfferId++,
     price,
@@ -1696,8 +1706,15 @@ function createRecruitOffer(state: RunState, content: GameContent): RecruitOffer
 }
 
 function rollRecruitOffersIntoState(state: RunState, content: GameContent): void {
-  state.recruitOffers = Array.from({ length: 3 }, () => createRecruitOffer(state, content));
-  state.recruitRerollCountsByOfferId = Object.fromEntries(state.recruitOffers.map((offer) => [offer.offerId, 0]));
+  state.recruitOffers = Array.from({ length: RECRUIT_MARKET_SLOT_COUNT }, () => createRecruitOffer(state, content));
+}
+
+function clearRecruitOffersIntoState(state: RunState): void {
+  state.recruitOffers = Array.from({ length: RECRUIT_MARKET_SLOT_COUNT }, () => null);
+}
+
+function liveRecruitOffers(state: RunState): RecruitOffer[] {
+  return state.recruitOffers.filter((offer): offer is RecruitOffer => offer !== null);
 }
 
 function createBeerShopOffer(state: RunState, alcoholId: AlcoholId): BeerShopOffer {
@@ -3500,15 +3517,22 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
         : `${content.enemyArchetypes[selectedEnemy.archetypeId].name} is selected. Read its stats and lore, then decide which lane needs help first.`
     };
   }
-  if (state.recruitOffers.length > 0) {
+  const liveOffers = liveRecruitOffers(state);
+  if (liveOffers.length > 0) {
     return {
       title: 'Recruit Market Live',
       body:
-        freeSlots > 0
-          ? 'Three candidates are on the towel rack. Compare prices, stats and vibes, then sign one before the market cools off.'
-          : replacement
-            ? `Three candidates are ready. Buying one will replace ${replacement.name} immediately.`
-            : 'Three candidates are ready, but your roster is full. Select the hero you want to replace before buying.'
+          state.recruitMarketIsFree
+            ? state.saunaDefenderId
+              ? 'The opening batch is free, but buying one will replace the hero currently in the sauna.'
+              : 'The opening batch is free. Pick one recruit for the sauna, or refresh the market when you want priced offers instead.'
+            : state.saunaDefenderId
+              ? 'Four candidates are on the towel rack. Buying one now replaces the current sauna reserve immediately.'
+              : freeSlots > 0
+                ? 'Four candidates are on the towel rack. Compare the prices, then buy one into the sauna reserve.'
+                : replacement
+                  ? `Four candidates are ready. Buying one will replace ${replacement.name} immediately.`
+                  : 'Four candidates are ready, but your roster is full. Select the hero you want to replace before buying.'
     };
   }
   if (selectedDefender && selectedDefender.location !== 'board') {
@@ -3587,9 +3611,9 @@ export function createInitialState(
     inventory: [],
     selectedInventoryDropId: null,
     recentDropId: null,
+    recruitMarketIsFree: true,
     recruitOffers: [],
     benchRerollCountsByDefenderId: {},
-    recruitRerollCountsByOfferId: {},
     recruitLevelBonus: 0,
     recruitLevelUpCount: 0,
     beerShopOffers: [],
@@ -3619,6 +3643,9 @@ export function createInitialState(
   };
   state.defenders = buildRoster(state, content);
   state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
+  rollRecruitOffersIntoState(state, content);
+  state.selectedDefenderId = state.defenders.find((defender) => defender.location === 'ready')?.id ?? null;
+  state.selectedMapTarget = state.selectedDefenderId ? 'defender' : null;
   if (beerShopUnlocked(state)) {
     rollBeerShopOffersIntoState(state, content);
   }
@@ -3799,6 +3826,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     case 'closeSaunaPopup':
     case 'clearSelection':
       clearBoardSelection(next);
+      if (next.phase === 'prep' && next.overlayMode === 'none') {
+        selectFirstReadyDefender(next);
+      }
       return next;
     case 'selectInventoryDrop': {
       const drop = getInventoryDrop(next, action.dropId);
@@ -3874,6 +3904,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       defender.attackReadyAtMs = next.timeMs + derivedStats(next, defender, content).attackCooldownMs;
       if (next.saunaDefenderId === defender.id) next.saunaDefenderId = null;
       clearBoardSelection(next);
+      if (next.phase === 'prep' && next.overlayMode === 'none') {
+        selectFirstReadyDefender(next);
+      }
       const movedToSauna = autoFillSaunaFromBench(next, content);
       next.message = movedToSauna
         ? `${defender.name} entered the fight. ${movedToSauna.name} moved into the empty sauna reserve.`
@@ -3886,16 +3919,15 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       if (!defender || defender.location !== 'board') return next;
       const currentSaunaDefender = getDefender(next, next.saunaDefenderId);
       if (currentSaunaDefender && currentSaunaDefender.location === 'sauna') {
-        currentSaunaDefender.location = 'ready';
-        currentSaunaDefender.tile = null;
-        clearUnitMotion(currentSaunaDefender);
+        next.defenders = next.defenders.filter((entry) => entry.id !== currentSaunaDefender.id);
+        delete next.benchRerollCountsByDefenderId[currentSaunaDefender.id];
       }
       defender.location = 'sauna';
       defender.tile = null;
       clearUnitMotion(defender);
       next.saunaDefenderId = defender.id;
-      next.message = currentSaunaDefender && currentSaunaDefender.location === 'ready'
-        ? `${defender.name} took the sauna seat and ${currentSaunaDefender.name} moved back to the reserve row.`
+      next.message = currentSaunaDefender && currentSaunaDefender.location === 'sauna'
+        ? `${defender.name} took the sauna seat and ${currentSaunaDefender.name} left the roster.`
         : `${defender.name} went to recover in the sauna.`;
       return next;
     }
@@ -3949,11 +3981,14 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         return next;
       }
       next.sisu.current -= cost;
+      next.recruitMarketIsFree = false;
       rollRecruitOffersIntoState(next, content);
-      setActiveHudPanel(next, 'recruit');
+      const offers = liveRecruitOffers(next);
       next.message =
-        next.recruitOffers.length > 0
-          ? `The market rerolled. Three new recruits are up for sale, starting at ${Math.min(...next.recruitOffers.map((offer) => offer.price))} SISU.`
+        offers.length > 0
+          ? next.recruitMarketIsFree
+            ? 'The free opening market is ready.'
+            : `The market rerolled. Four new recruits are up for sale, starting at ${Math.min(...offers.map((offer) => offer.price))} SISU.`
           : 'No recruits showed up.';
       return next;
     }
@@ -3974,26 +4009,6 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.message = `${previousName} rerolled into ${defender.name} ${defender.title} for ${cost} SISU.`;
       return next;
     }
-    case 'rerollRecruitOffer': {
-      if (!canAccessRecruitment(next)) return next;
-      const offer = next.recruitOffers.find((entry) => entry.offerId === action.offerId);
-      if (!offer) return next;
-      const cost = recruitOfferRerollCost(next, offer.offerId);
-      if (next.sisu.current < cost) {
-        next.message = `Not enough SISU to reroll ${offer.candidate.name}.`;
-        return next;
-      }
-      const previousName = offer.candidate.name;
-      next.sisu.current -= cost;
-      rerollDefenderIdentityAndStats(next, offer.candidate, content, 'fill');
-      const score = recruitScore(offer.candidate, content);
-      offer.quality = recruitQuality(score);
-      offer.price = recruitOfferPrice(offer.candidate, content);
-      next.recruitRerollCountsByOfferId[offer.offerId] = (next.recruitRerollCountsByOfferId[offer.offerId] ?? 0) + 1;
-      setActiveHudPanel(next, 'recruit');
-      next.message = `${previousName} rerolled into ${offer.candidate.name} ${offer.candidate.title} for ${cost} SISU.`;
-      return next;
-    }
     case 'levelUpRecruitment': {
       if (!canAccessRecruitment(next)) return next;
       const cost = recruitLevelUpCost(next.recruitLevelUpCount);
@@ -4004,16 +4019,21 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.sisu.current -= cost;
       next.recruitLevelBonus += 1;
       next.recruitLevelUpCount += 1;
-      setActiveHudPanel(next, 'recruit');
       next.message = `Recruitment leveled up. Future rerolls now favor stronger starting levels.`;
       return next;
     }
     case 'recruitOffer': {
       if (!canAccessRecruitment(next)) return next;
-      const offer = next.recruitOffers.find((entry) => entry.offerId === action.offerId);
+      const offerIndex = next.recruitOffers.findIndex((entry) => entry?.offerId === action.offerId);
+      const offer = offerIndex >= 0 ? next.recruitOffers[offerIndex] : null;
       if (!offer) return next;
       const rosterFull = livingDefenders(next).length >= rosterCap(next, content);
-      const replacement = rosterFull ? recruitReplacementTarget(next) : null;
+      const saunaReplacement = getDefender(next, next.saunaDefenderId);
+      const replacement = saunaReplacement && saunaReplacement.location === 'sauna'
+        ? saunaReplacement
+        : rosterFull
+          ? recruitReplacementTarget(next)
+          : null;
       if (rosterFull && !replacement) {
         next.message = 'Roster is full. Select a hero from the roster, or click the sauna, to choose who gets replaced.';
         return next;
@@ -4028,21 +4048,19 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       } else {
         addRecruitToReserve(next, offer.candidate, content);
       }
-      delete next.recruitRerollCountsByOfferId[offer.offerId];
-      next.recruitOffers = [];
-      next.recruitRerollCountsByOfferId = {};
-      clearActiveHudPanel(next);
+      next.recruitOffers[offerIndex] = null;
+      const purchasedForFree = offer.price === 0;
       next.message = replacement
         ? `${offer.candidate.name} ${offer.candidate.title} replaced ${replacement.name} for ${offer.price} SISU.`
-        : offer.candidate.location === 'sauna'
-          ? `${offer.candidate.name} ${offer.candidate.title} took the sauna reserve for ${offer.price} SISU.`
-          : `${offer.candidate.name} ${offer.candidate.title} joined your reserve row for ${offer.price} SISU.`;
+        : `${offer.candidate.name} ${offer.candidate.title} took the sauna reserve for ${offer.price} SISU.`;
+      if (purchasedForFree) {
+        next.message = next.message.replace(' for 0 SISU.', ' for free.');
+      }
       return next;
     }
     case 'clearRecruitOffers':
       if (!canAccessRecruitment(next)) return next;
-      next.recruitOffers = [];
-      next.recruitRerollCountsByOfferId = {};
+      clearRecruitOffersIntoState(next);
       clearActiveHudPanel(next);
       next.message = 'Recruit offers dismissed.';
       return next;
@@ -4264,11 +4282,12 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const boardCount = boardDefenders(state).length;
   const readyBenchCount = readyReserveDefenders.length;
   const freeRecruitSlots = Math.max(0, rosterCap(state, content) - livingDefenders(state).length);
+  const liveOffers = liveRecruitOffers(state);
   const beerTier = beerShopTier(state);
   const selectedBoardDefender = selected && selected.location === 'board' ? selected : null;
   const saunaSendLabel = selectedBoardDefender
     ? saunaDefender
-      ? `Swap ${selectedBoardDefender.name} Into Sauna`
+      ? `Replace Sauna Hero With ${selectedBoardDefender.name}`
       : `Send ${selectedBoardDefender.name} To Sauna`
     : null;
   const readyReserveEntries = createReadyReserveEntries(
@@ -4365,28 +4384,26 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     recruitLevelOdds: recruitLevelOdds(state.recruitLevelBonus),
     canRollRecruitOffers: canRollRecruitOffers(state),
     canLevelUpRecruitment: canAccessRecruitment(state) && state.sisu.current >= recruitLevelUpCost(state.recruitLevelUpCount),
-    hasRecruitOffers: state.recruitOffers.length > 0,
+    hasRecruitOffers: liveOffers.length > 0,
     boardFullButBenchAvailable: boardFullButBenchAvailable(state, content),
     rosterFullNeedsReplacement: livingDefenders(state).length >= rosterCap(state, content),
-    recruitOffers: state.recruitOffers.map((offer) => {
+    recruitOffers: state.recruitOffers.map((offer, slotIndex) => {
+      if (!offer) {
+        return null;
+      }
       const roleStats = derivedStats(state, offer.candidate, content, false);
       return {
         id: offer.offerId,
+        slotIndex,
         price: offer.price,
         quality: offer.quality,
         name: offer.candidate.name,
         title: offer.candidate.title,
         roleName: content.defenderTemplates[offer.candidate.templateId].name,
         subclassName: subclassSummary(offer.candidate, content),
-        roleSummary: content.defenderTemplates[offer.candidate.templateId].role,
-        lore: offer.candidate.lore,
         level: offer.candidate.level,
         hp: roleStats.maxHp,
-        damage: roleStats.damage,
-        heal: roleStats.heal,
-        range: roleStats.range,
-        rerollCount: state.recruitRerollCountsByOfferId[offer.offerId] ?? 0,
-        rerollCost: recruitOfferRerollCost(state, offer.offerId)
+        damage: roleStats.damage
       };
     }),
     steamEarned: state.steamEarned,

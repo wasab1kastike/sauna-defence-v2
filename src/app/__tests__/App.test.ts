@@ -81,22 +81,13 @@ describe('App popup helpers', () => {
     expect(formatPatchNotesDate('not-a-date')).toBe('not-a-date');
   });
 
-  it('maps A, S and D to the first three ready reserve heroes', () => {
+  it('ignores the old A, S and D reserve hotkeys', () => {
     const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
     const snapshot = createSnapshot(state, gameContent);
 
-    expect(resolveGameplayHotkeyAction(snapshot, 'a', { guideStepActive: false, patchNotesOpen: false })).toEqual({
-      type: 'selectDefender',
-      defenderId: snapshot.hud.readyReserveEntries[0].id
-    });
-    expect(resolveGameplayHotkeyAction(snapshot, 's', { guideStepActive: false, patchNotesOpen: false })).toEqual({
-      type: 'selectDefender',
-      defenderId: snapshot.hud.readyReserveEntries[1].id
-    });
-    expect(resolveGameplayHotkeyAction(snapshot, 'd', { guideStepActive: false, patchNotesOpen: false })).toEqual({
-      type: 'selectDefender',
-      defenderId: snapshot.hud.readyReserveEntries[2].id
-    });
+    expect(resolveGameplayHotkeyAction(snapshot, 'a', { guideStepActive: false, patchNotesOpen: false })).toBeNull();
+    expect(resolveGameplayHotkeyAction(snapshot, 's', { guideStepActive: false, patchNotesOpen: false })).toBeNull();
+    expect(resolveGameplayHotkeyAction(snapshot, 'd', { guideStepActive: false, patchNotesOpen: false })).toBeNull();
   });
 
   it('maps Q, W and E to recruit refresh, recruit level up, and sauna reroll', () => {

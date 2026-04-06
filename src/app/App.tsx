@@ -11,6 +11,7 @@ import { GuideOverlay } from './components/GuideOverlay';
 import { HudUtilityRail } from './components/HudUtilityRail';
 import { IntroOverlay } from './components/IntroOverlay';
 import { PatchNotesOverlay } from './components/PatchNotesOverlay';
+import { RecruitOfferSlots } from './components/RecruitOfferSlots';
 import { SelectionCard } from './components/SelectionCard';
 import {
   assetUrl,
@@ -268,8 +269,6 @@ export function App() {
   const showModifierDraft = snapshot?.hud.showGlobalModifierDraft ?? false;
   const showSubclassDraft = snapshot?.hud.showSubclassDraft ?? false;
 
-  const readyEntries = snapshot?.hud.readyReserveEntries ?? [];
-  const saunaReserve = snapshot?.hud.saunaReserve ?? null;
   const deathLogEntries = snapshot?.hud.deathLogEntries ?? [];
   const headerItemEntries = snapshot?.hud.headerItemEntries ?? [];
   const headerSkillEntries = snapshot?.hud.headerSkillEntries ?? [];
@@ -365,18 +364,10 @@ export function App() {
   };
 
   const renderBottomDock = () => {
-    if (!snapshot || !saunaReserve) {
+    if (!snapshot) {
       return null;
     }
-    return (
-      <BottomDock
-        snapshot={snapshot}
-        readyEntries={readyEntries}
-        saunaReserve={saunaReserve}
-        selectedDefender={selectedDefender}
-        dispatch={dispatch}
-      />
-    );
+    return <BottomDock snapshot={snapshot} dispatch={dispatch} />;
   };
 
   const renderSelectionCard = () => {
@@ -392,7 +383,6 @@ export function App() {
           selectedDefender
           && selectedDefender.location === 'board'
           && snapshot.state.phase === 'prep'
-          && !snapshot.state.saunaDefenderId
         )}
         dispatch={dispatch}
       />
@@ -546,12 +536,12 @@ export function App() {
           <section className="popup-section">
             <div className="mini-tag-row">
               <span className="mini-tag">Board {snapshot.hud.boardCount}/{snapshot.hud.boardCap}</span>
-                <span className="mini-tag">Reserve {snapshot.hud.readyBenchCount}</span>
+                <span className="mini-tag">{snapshot.hud.saunaOccupantName ? `Sauna: ${snapshot.hud.saunaOccupantName}` : 'Sauna empty'}</span>
               <span className="mini-tag">SISU {snapshot.hud.sisu}</span>
               <span className="mini-tag">Recruit Lvl +{snapshot.hud.recruitLevelBonus}</span>
             </div>
             <p className="panel-copy small-copy">
-              Targeted rerolls keep the main class and level, but reroll the hero identity and base attributes.
+              This mirrors the bottom dock: four fixed slots, free opening heroes, then normal prices after the first refresh.
             </p>
             <div className="button-row tight">
               <button
@@ -559,7 +549,7 @@ export function App() {
                 disabled={!snapshot.hud.canRollRecruitOffers}
                 onClick={() => dispatch({ type: 'rerollRecruitOffers' })}
               >
-                {snapshot.hud.hasRecruitOffers ? 'Reroll 3 Offers' : 'Roll 3 Offers'} ({snapshot.hud.recruitRollCost} SISU)
+                Refresh Market ({snapshot.hud.recruitRollCost} SISU)
               </button>
               <button
                 className="secondary-button"
@@ -568,50 +558,14 @@ export function App() {
               >
                 Recruit Level Up ({snapshot.hud.recruitLevelUpCost} SISU)
               </button>
-              {snapshot.hud.hasRecruitOffers ? (
-                <button className="ghost-button" onClick={() => dispatch({ type: 'clearRecruitOffers' })}>
-                  Clear Offers
-                </button>
-              ) : null}
             </div>
           </section>
           <section className="popup-section">
             <div className="section-head">
-              <strong>Current Offers</strong>
-              <span>{snapshot.hud.recruitOffers.length}</span>
+              <strong>Current Slots</strong>
+              <span>{snapshot.hud.recruitOffers.filter(Boolean).length}/4</span>
             </div>
-            {snapshot.hud.recruitOffers.length > 0 ? (
-              <div className="popup-list">
-                {snapshot.hud.recruitOffers.map((offer) => (
-                  <div key={offer.id} className={`popup-card offer-card offer-${offer.quality}`}>
-                    <div className="unit-row-top">
-                      <strong>
-                        {offer.name} <em>{offer.title}</em>
-                      </strong>
-                      <span className="mini-tag">{offer.quality}</span>
-                    </div>
-                    <small>{offer.roleName} Â· {offer.subclassName}</small>
-                    <small>{offer.lore}</small>
-                    <div className="mini-tag-row">
-                      <span className="mini-tag">Lvl {offer.level}</span>
-                      <span className="mini-tag">HP {offer.hp}</span>
-                      <span className="mini-tag">ATK {offer.damage}</span>
-                      <span className="mini-tag">Heal {offer.heal}</span>
-                      <span className="mini-tag">Range {offer.range}</span>
-                      <span className="mini-tag">Rerolls {offer.rerollCount}</span>
-                    </div>
-                    <div className="button-row tight">
-                      <button className="mini-button" onClick={() => dispatch({ type: 'recruitOffer', offerId: offer.id })}>
-                        Recruit For {offer.price} SISU
-                      </button>
-                      <button className="ghost-button small-ghost" onClick={() => dispatch({ type: 'rerollRecruitOffer', offerId: offer.id })}>
-                        Reroll ({offer.rerollCost} SISU)
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : <p className="panel-copy small-copy">No candidates waiting. Roll the market to scout three new heroes.</p>}
+            <RecruitOfferSlots offers={snapshot.hud.recruitOffers} dispatch={dispatch} className="popup-market-grid" />
           </section>
         </div>
       );
@@ -829,8 +783,8 @@ export function App() {
                 <p className="panel-copy small-copy hint-copy">{hintBody}</p>
                 <div className="mini-tag-row">
                   <span className="mini-tag">{snapshot.hud.nextWaveThreat}</span>
-                  <span className="mini-tag">Reserve {snapshot.hud.readyBenchCount}</span>
-                  <span className="mini-tag">Recruit Slots {snapshot.hud.freeRecruitSlots}</span>
+                  <span className="mini-tag">{snapshot.hud.saunaOccupantName ? `Sauna: ${snapshot.hud.saunaOccupantName}` : 'Sauna empty'}</span>
+                  <span className="mini-tag">{snapshot.hud.hasRecruitOffers ? `${snapshot.hud.recruitOffers.filter(Boolean).length}/4 offers up` : 'Market waiting for refresh'}</span>
                 </div>
               </div>
               <div className="hud-main-actions hud-action-buttons">

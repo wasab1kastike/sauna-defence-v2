@@ -13,6 +13,10 @@ function prepState() {
   return createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
 }
 
+function liveRecruitOffers(state: ReturnType<typeof prepState>) {
+  return state.recruitOffers.filter((offer): offer is NonNullable<(typeof state.recruitOffers)[number]> => offer !== null);
+}
+
 describe('Sauna Defense V2 logic', () => {
   it('builds a steeper early pacing curve and keeps the first boss on wave five', () => {
     const waves = [1, 2, 3, 4, 5].map((index) => createWaveDefinition(index, gameContent));
@@ -447,12 +451,13 @@ describe('Sauna Defense V2 logic', () => {
     let state = prepState();
     state.selectedMapTarget = 'enemy';
     state.selectedEnemyInstanceId = 7;
+    const firstReadyHero = state.defenders.find((defender) => defender.location === 'ready');
 
     state = applyAction(state, { type: 'clearSelection' }, gameContent);
 
-    expect(state.selectedMapTarget).toBeNull();
+    expect(state.selectedMapTarget).toBe('defender');
     expect(state.selectedEnemyInstanceId).toBeNull();
-    expect(state.selectedDefenderId).toBeNull();
+    expect(state.selectedDefenderId).toBe(firstReadyHero?.id ?? null);
   });
 
   it('surfaces selected enemy stats, description and lore in the HUD snapshot', () => {
@@ -1234,19 +1239,22 @@ describe('Sauna Defense V2 logic', () => {
     expect(next.currentWave.isBoss).toBe(true);
   });
 
-  it('rerolls three visible recruit offers for a fixed 2 SISU with prices and lore', () => {
+  it('starts with a free four-slot recruit market and refreshes into paid offers', () => {
     let state = prepState();
-    state.defenders = state.defenders.filter((defender) => defender.location !== 'dead').slice(0, 4);
-    state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
     state.sisu.current = 20;
+
+    const openingOffers = state.recruitOffers.filter((offer): offer is NonNullable<(typeof state.recruitOffers)[number]> => offer !== null);
+    expect(openingOffers).toHaveLength(4);
+    expect(openingOffers.every((offer) => offer.price === 0)).toBe(true);
+    expect(openingOffers.every((offer) => offer.candidate.lore.length > 0)).toBe(true);
 
     const before = state.sisu.current;
     state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
 
-    expect(state.recruitOffers).toHaveLength(3);
+    const refreshedOffers = state.recruitOffers.filter((offer): offer is NonNullable<(typeof state.recruitOffers)[number]> => offer !== null);
+    expect(refreshedOffers).toHaveLength(4);
     expect(state.sisu.current).toBe(before - 2);
-    expect(state.recruitOffers.every((offer) => offer.price >= 3)).toBe(true);
-    expect(state.recruitOffers.every((offer) => offer.candidate.lore.length > 0)).toBe(true);
+    expect(refreshedOffers.every((offer) => offer.price >= 3)).toBe(true);
   });
 
   it('rerolls a bench hero identity and base stats without touching progression or loadout', () => {
@@ -1303,70 +1311,22 @@ describe('Sauna Defense V2 logic', () => {
     expect(state).toEqual(before);
   });
 
-  it('rerolls one recruit offer in place and tracks per-offer reroll cost', () => {
+  it('recruits one chosen offer and clears only that slot', () => {
     let state = prepState();
-    state.sisu.current = 20;
-    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
-    const offer = state.recruitOffers[0];
-
-    offer.candidate.name = 'Before';
-    offer.candidate.title = 'Old Title';
-    offer.candidate.lore = 'Old lore';
-    offer.candidate.stats = {
-      maxHp: 99,
-      damage: 99,
-      heal: 99,
-      range: 9,
-      attackCooldownMs: 999,
-      defense: 4,
-      regenHpPerSecond: 4
-    };
-    offer.price = 17;
-    offer.quality = 'elite';
-
-    state = applyAction(state, { type: 'rerollRecruitOffer', offerId: offer.offerId }, gameContent);
-
-    const updated = state.recruitOffers.find((entry) => entry.offerId === offer.offerId)!;
-    expect(updated.offerId).toBe(offer.offerId);
-    expect(updated.candidate.templateId).toBe(offer.candidate.templateId);
-    expect(updated.candidate.level).toBe(offer.candidate.level);
-    expect(updated.candidate.name).not.toBe('Before');
-    expect(updated.candidate.title).not.toBe('Old Title');
-    expect(updated.candidate.lore).not.toBe('Old lore');
-    expect(updated.price).not.toBe(17);
-    expect(state.recruitRerollCountsByOfferId[offer.offerId]).toBe(1);
-    expect(createSnapshot(state, gameContent).hud.recruitOffers.find((entry) => entry.id === offer.offerId)?.rerollCost).toBe(2);
-  });
-
-  it('resets per-offer reroll counters when the whole market rerolls', () => {
-    let state = prepState();
-    state.sisu.current = 20;
-    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
-    const offerId = state.recruitOffers[0].offerId;
-
-    state = applyAction(state, { type: 'rerollRecruitOffer', offerId }, gameContent);
-    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
-
-    expect(state.recruitOffers).toHaveLength(3);
-    expect(Object.values(state.recruitRerollCountsByOfferId).every((count) => count === 0)).toBe(true);
-    expect(state.recruitOffers.every((offer) => offer.offerId !== offerId)).toBe(true);
-  });
-
-  it('recruits one chosen offer and clears the rest', () => {
-    let state = prepState();
-    state.defenders = state.defenders.filter((defender) => defender.location !== 'dead').slice(0, 4);
-    state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
+    const saunaHero = state.defenders.find((defender) => defender.location === 'sauna');
     state.sisu.current = 30;
 
     state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
-    const offer = state.recruitOffers[1];
-    const rosterBefore = state.defenders.length;
+    const liveOffers = state.recruitOffers.filter((offer): offer is NonNullable<(typeof state.recruitOffers)[number]> => offer !== null);
+    const offer = liveOffers[1]!;
+    const offerIndex = state.recruitOffers.findIndex((entry) => entry?.offerId === offer.offerId);
 
     state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
 
-    expect(state.defenders).toHaveLength(rosterBefore + 1);
+    expect(state.defenders.some((defender) => defender.id === saunaHero?.id)).toBe(false);
     expect(state.defenders.some((defender) => defender.id === offer.candidate.id)).toBe(true);
-    expect(state.recruitOffers).toHaveLength(0);
+    expect(state.recruitOffers[offerIndex]).toBeNull();
+    expect(state.recruitOffers.filter((entry) => entry !== null)).toHaveLength(3);
   });
 
   it('still rerolls recruit offers when the roster is full', () => {
@@ -1375,30 +1335,20 @@ describe('Sauna Defense V2 logic', () => {
 
     state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
 
-    expect(state.recruitOffers).toHaveLength(3);
+    expect(state.recruitOffers).toHaveLength(4);
   });
 
-  it('sends a new recruit to the sauna when the board is full, the roster has space, and the sauna is empty', () => {
+  it('sends a new recruit to the sauna when the sauna is empty', () => {
     let state = prepState();
-    state.meta.upgrades.roster_capacity = 1;
     state.sisu.current = 30;
+    const oldSaunaHero = state.defenders.find((defender) => defender.location === 'sauna');
+    oldSaunaHero!.location = 'dead';
+    oldSaunaHero!.hp = 0;
+    oldSaunaHero!.tile = null;
     state.saunaDefenderId = null;
 
-    const living = state.defenders.filter((defender) => defender.location !== 'dead');
-    const boardTiles = [
-      { q: 0, r: -1 },
-      { q: 1, r: -1 },
-      { q: -1, r: 0 },
-      { q: 1, r: 0 },
-      { q: 0, r: 1 }
-    ];
-    living.forEach((defender, index) => {
-      defender.location = 'board';
-      defender.tile = boardTiles[index] ?? boardTiles[0];
-    });
-
     state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
-    const offer = state.recruitOffers[0];
+    const offer = state.recruitOffers.find((entry): entry is NonNullable<(typeof state.recruitOffers)[number]> => entry !== null)!;
 
     state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
 
@@ -1407,32 +1357,20 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.saunaDefenderId).toBe(offer.candidate.id);
   });
 
-  it('lets a new recruit join the reserve row when the board is full and the sauna is already occupied', () => {
+  it('replaces the current sauna hero when buying a recruit into an occupied sauna', () => {
     let state = prepState();
-    state.meta.upgrades.roster_capacity = 1;
     state.sisu.current = 30;
-
-    const living = state.defenders.filter((defender) => defender.location !== 'dead');
-    const boardTiles = [
-      { q: 0, r: -1 },
-      { q: 1, r: -1 },
-      { q: -1, r: 0 },
-      { q: 1, r: 0 },
-      { q: 0, r: 1 }
-    ];
-    living.filter((defender) => defender.location !== 'sauna').forEach((defender, index) => {
-      defender.location = 'board';
-      defender.tile = boardTiles[index] ?? boardTiles[0];
-    });
+    const saunaHero = state.defenders.find((defender) => defender.location === 'sauna');
 
     state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
-    const offer = state.recruitOffers[0];
+    const offer = state.recruitOffers.find((entry): entry is NonNullable<(typeof state.recruitOffers)[number]> => entry !== null)!;
 
     state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
 
     const recruit = state.defenders.find((defender) => defender.id === offer.candidate.id);
-    expect(recruit?.location).toBe('ready');
-    expect(state.saunaDefenderId).not.toBe(offer.candidate.id);
+    expect(state.defenders.some((defender) => defender.id === saunaHero?.id)).toBe(false);
+    expect(recruit?.location).toBe('sauna');
+    expect(state.saunaDefenderId).toBe(offer.candidate.id);
   });
 
   it('sends a board hero to an empty sauna during prep', () => {
@@ -1457,7 +1395,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.saunaDefenderId).toBe(boardHero!.id);
   });
 
-  it('swaps a board hero with the occupied sauna defender during prep', () => {
+  it('replaces the occupied sauna defender with a board hero during prep', () => {
     let state = prepState();
     const boardHero = state.defenders.find((defender) => defender.location === 'ready');
     const saunaHero = state.defenders.find((defender) => defender.location === 'sauna');
@@ -1474,8 +1412,7 @@ describe('Sauna Defense V2 logic', () => {
     const updatedSaunaHero = state.defenders.find((defender) => defender.id === saunaHero!.id);
     expect(updatedBoardHero?.location).toBe('sauna');
     expect(updatedBoardHero?.tile).toBeNull();
-    expect(updatedSaunaHero?.location).toBe('ready');
-    expect(updatedSaunaHero?.tile).toBeNull();
+    expect(updatedSaunaHero).toBeUndefined();
     expect(state.saunaDefenderId).toBe(boardHero!.id);
   });
 
@@ -1529,8 +1466,8 @@ describe('Sauna Defense V2 logic', () => {
     const costs: number[] = [];
 
     state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
-    const beforeOfferIds = state.recruitOffers.map((offer) => offer.offerId);
-    const beforeOfferLevels = state.recruitOffers.map((offer) => offer.candidate.level);
+    const beforeOfferIds = liveRecruitOffers(state).map((offer) => offer.offerId);
+    const beforeOfferLevels = liveRecruitOffers(state).map((offer) => offer.candidate.level);
 
     for (let index = 0; index < 4; index += 1) {
       const snapshot = createSnapshot(state, gameContent);
@@ -1540,8 +1477,8 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(costs).toEqual([2, 4, 7, 11]);
     expect(state.recruitLevelBonus).toBe(4);
-    expect(state.recruitOffers.map((offer) => offer.offerId)).toEqual(beforeOfferIds);
-    expect(state.recruitOffers.map((offer) => offer.candidate.level)).toEqual(beforeOfferLevels);
+    expect(liveRecruitOffers(state).map((offer) => offer.offerId)).toEqual(beforeOfferIds);
+    expect(liveRecruitOffers(state).map((offer) => offer.candidate.level)).toEqual(beforeOfferLevels);
   });
 
   it('rolls higher starting levels after recruitment level ups', () => {
@@ -1558,8 +1495,8 @@ describe('Sauna Defense V2 logic', () => {
     baseState = applyAction(baseState, { type: 'rerollRecruitOffers' }, gameContent);
     leveledState = applyAction(leveledState, { type: 'rerollRecruitOffers' }, gameContent);
 
-    const baseBestLevel = Math.max(...baseState.recruitOffers.map((offer) => offer.candidate.level));
-    const leveledBestLevel = Math.max(...leveledState.recruitOffers.map((offer) => offer.candidate.level));
+    const baseBestLevel = Math.max(...liveRecruitOffers(baseState).map((offer) => offer.candidate.level));
+    const leveledBestLevel = Math.max(...liveRecruitOffers(leveledState).map((offer) => offer.candidate.level));
 
     expect(leveledBestLevel).toBeGreaterThan(baseBestLevel);
   });
@@ -1578,9 +1515,9 @@ describe('Sauna Defense V2 logic', () => {
     first = applyAction(first, { type: 'rerollRecruitOffers' }, gameContent);
     second = applyAction(second, { type: 'rerollRecruitOffers' }, gameContent);
 
-    expect(first.recruitOffers.map((offer) => offer.price)).toEqual(second.recruitOffers.map((offer) => offer.price));
-    expect(first.recruitOffers.map((offer) => offer.candidate.level)).toEqual(second.recruitOffers.map((offer) => offer.candidate.level));
-    expect(first.recruitOffers.map((offer) => offer.candidate.stats)).toEqual(second.recruitOffers.map((offer) => offer.candidate.stats));
+    expect(liveRecruitOffers(first).map((offer) => offer.price)).toEqual(liveRecruitOffers(second).map((offer) => offer.price));
+    expect(liveRecruitOffers(first).map((offer) => offer.candidate.level)).toEqual(liveRecruitOffers(second).map((offer) => offer.candidate.level));
+    expect(liveRecruitOffers(first).map((offer) => offer.candidate.stats)).toEqual(liveRecruitOffers(second).map((offer) => offer.candidate.stats));
   });
 
   it('marks every fifth wave as a boss wave', () => {
@@ -1863,36 +1800,45 @@ describe('Sauna Defense V2 logic', () => {
     state.sisu.current = 20;
 
     state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
-    expect(state.recruitOffers).toHaveLength(3);
+    expect(liveRecruitOffers(state)).toHaveLength(4);
 
-    const offer = state.recruitOffers[0];
+    const offer = liveRecruitOffers(state)[0]!;
     state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
 
     expect(state.defenders.some((defender) => defender.id === offer.candidate.id)).toBe(true);
-    expect(state.recruitOffers).toHaveLength(0);
+    expect(liveRecruitOffers(state)).toHaveLength(3);
   });
 
-  it('requires a replacement target when buying with a full roster', () => {
+  it('requires a replacement target when the roster is full and the sauna is empty', () => {
     let state = prepState();
     state.sisu.current = 30;
+    const saunaDefender = state.defenders.find((defender) => defender.location === 'sauna');
+    saunaDefender!.location = 'ready';
+    state.saunaDefenderId = null;
+    state.selectedDefenderId = null;
+    state.selectedMapTarget = null;
 
     state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
-    const offer = state.recruitOffers[0];
+    const offer = liveRecruitOffers(state)[0]!;
 
     state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
 
-    expect(state.recruitOffers).toHaveLength(3);
+    expect(liveRecruitOffers(state)).toHaveLength(4);
     expect(state.message).toContain('replace');
   });
 
-  it('replaces the selected ready hero when recruiting with a full roster', () => {
+  it('replaces the selected ready hero when recruiting with a full roster and an empty sauna', () => {
     let state = prepState();
     state.sisu.current = 30;
+    const saunaDefender = state.defenders.find((defender) => defender.location === 'sauna');
     const outgoing = state.defenders.find((defender) => defender.location === 'ready');
     expect(outgoing).toBeTruthy();
+    expect(saunaDefender).toBeTruthy();
+    saunaDefender!.location = 'ready';
+    state.saunaDefenderId = null;
 
     state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
-    const offer = state.recruitOffers[0];
+    const offer = liveRecruitOffers(state)[0]!;
     const rosterBefore = state.defenders.length;
 
     state = applyAction(state, { type: 'selectDefender', defenderId: outgoing!.id }, gameContent);
@@ -1912,7 +1858,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(saunaDefender).toBeTruthy();
 
     state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
-    const offer = state.recruitOffers[0];
+    const offer = liveRecruitOffers(state)[0]!;
 
     state = applyAction(state, { type: 'selectSauna' }, gameContent);
     state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
