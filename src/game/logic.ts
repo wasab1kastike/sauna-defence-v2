@@ -119,6 +119,8 @@ const META_IDS: MetaUpgradeId[] = [
 const CENTER: AxialCoord = { q: 0, r: 0 };
 const WORLD_LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'beer_shop'];
 const BLINK_STEP_COOLDOWN_MS = 12000;
+const BATTLE_HYMN_COOLDOWN_MS = 15000;
+const BATTLE_HYMN_BUFF_MS = 3000;
 const FIREBALL_COOLDOWN_MS = 12000;
 const FIREBALL_DELAY_MS = 1000;
 const FIREBALL_RADIUS = 2;
@@ -966,18 +968,26 @@ function derivedStats(
   const globalBonus = globalModifierTotals(state, content);
   const alcoholBonus = alcoholTotals(state, content);
   const auraBonus = subclassAuras(state, defender);
+  const attackCooldownMs = Math.max(
+    360,
+    base.attackCooldownMs + globalBonus.attackCooldownMs + (alcoholBonus.attackCooldownMs ?? 0) + auraBonus.attackCooldownMs
+  );
   return {
     maxHp: Math.max(6, base.maxHp + globalBonus.maxHp + (alcoholBonus.maxHp ?? 0) + auraBonus.maxHp),
     damage: Math.max(1, base.damage + globalBonus.damage + (alcoholBonus.damage ?? 0) + auraBonus.damage),
     heal: Math.max(0, base.heal + globalBonus.heal + (alcoholBonus.heal ?? 0) + auraBonus.heal),
     range: Math.max(1, base.range + globalBonus.range + (alcoholBonus.range ?? 0) + auraBonus.range),
-    attackCooldownMs: Math.max(360, base.attackCooldownMs + globalBonus.attackCooldownMs + (alcoholBonus.attackCooldownMs ?? 0) + auraBonus.attackCooldownMs),
+    attackCooldownMs: defender.battleHymnBuffExpiresAtMs > state.timeMs
+      ? Math.max(360, Math.round((attackCooldownMs * 2) / 3))
+      : attackCooldownMs,
     defense: Math.max(0, base.defense + globalBonus.defense + (alcoholBonus.defense ?? 0) + auraBonus.defense),
     regenHpPerSecond: Math.max(0, base.regenHpPerSecond + globalBonus.regenHpPerSecond + (alcoholBonus.regenHpPerSecond ?? 0) + auraBonus.regenHpPerSecond)
   };
 }
 
 function normalizeDefender(state: RunState, defender: DefenderInstance, content: GameContent): void {
+  defender.battleHymnReadyAtMs ??= 0;
+  defender.battleHymnBuffExpiresAtMs ??= 0;
   defender.hp = Math.min(defender.hp, derivedStats(state, defender, content).maxHp);
 }
 
@@ -1063,6 +1073,8 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
     motion: null,
     attackReadyAtMs: 0,
     blinkReadyAtMs: 0,
+    battleHymnReadyAtMs: 0,
+    battleHymnBuffExpiresAtMs: 0,
     fireballReadyAtMs: 0,
     items: [],
     skills: [],
@@ -1866,28 +1878,69 @@ function tryBlink(state: RunState, defender: DefenderInstance, content: GameCont
   const buildRadius = currentBuildRadius(state, content);
   const spawnLanes = currentSpawnLanes(state, content);
   const hpRatio = defender.hp / Math.max(1, derivedStats(state, defender, content).maxHp);
-  if (hpRatio <= 0.5 && defender.homeTile) {
-    const canRetreat =
-      isBuildable(defender.homeTile, buildRadius, spawnLanes) &&
-      !occupied(state, defender.homeTile) &&
-      (defender.homeTile.q !== defender.tile.q || defender.homeTile.r !== defender.tile.r);
-    if (canRetreat) {
-      moveDefenderToTile(state, defender, defender.homeTile, 'blink', 420, from);
-      defender.blinkReadyAtMs = state.timeMs + BLINK_STEP_COOLDOWN_MS;
-      pushFx(state, 'blink', defender.tile, 420, from);
-      return true;
+  if (hpRatio >= 0.5) return false;
+
+  const canUseBlinkTile = (tile: AxialCoord | null): tile is AxialCoord => {
+    if (!tile) return false;
+    return isBuildable(tile, buildRadius, spawnLanes) &&
+      !occupied(state, tile) &&
+      !sameCoord(tile, defender.tile as AxialCoord);
+  };
+
+  let retreatTile = canUseBlinkTile(defender.homeTile) ? cloneCoord(defender.homeTile) : null;
+  if (!retreatTile) {
+    const healer = boardDefenders(state)
+      .filter((ally) => ally.id !== defender.id && ally.tile)
+      .filter((ally) => ally.hp > 0 && derivedStats(state, ally, content).heal > 0)
+      .sort((left, right) =>
+        (hexDistance(defender.tile as AxialCoord, left.tile as AxialCoord) - hexDistance(defender.tile as AxialCoord, right.tile as AxialCoord)) ||
+        (hexDistance(left.tile as AxialCoord, CENTER) - hexDistance(right.tile as AxialCoord, CENTER)) ||
+        left.id.localeCompare(right.id)
+      )[0] ?? null;
+    if (healer?.tile) {
+      retreatTile = DIRS
+        .map((dir) => add(healer.tile as AxialCoord, dir))
+        .filter((tile) => canUseBlinkTile(tile))
+        .sort((left, right) =>
+          (hexDistance(defender.tile as AxialCoord, left) - hexDistance(defender.tile as AxialCoord, right)) ||
+          (hexDistance(left, CENTER) - hexDistance(right, CENTER)) ||
+          (left.r - right.r) ||
+          (left.q - right.q)
+        )[0] ?? null;
     }
-    return false;
   }
-  const enemy = nearestEnemy(state, defender.tile);
-  if (!enemy) return false;
-  const tile = DIRS.map((dir) => add(defender.tile as AxialCoord, dir))
-    .filter((next) => isBuildable(next, buildRadius, spawnLanes) && !occupied(state, next))
-    .sort((left, right) => hexDistance(left, enemy.tile) - hexDistance(right, enemy.tile))[0];
-  if (!tile) return false;
-  moveDefenderToTile(state, defender, tile, 'blink', BLINK_MOTION_DURATION_MS, from);
+  if (!retreatTile) return false;
+
+  moveDefenderToTile(state, defender, retreatTile, 'blink', BLINK_MOTION_DURATION_MS, from);
   defender.blinkReadyAtMs = state.timeMs + BLINK_STEP_COOLDOWN_MS;
-  pushFx(state, 'blink', tile, 320, from);
+  pushFx(state, 'blink', defender.tile, 420, from);
+  return true;
+}
+
+function tryBlinkTowardEnemy(state: RunState, defender: DefenderInstance, stats: UnitStats, content: GameContent): boolean {
+  if (!defender.tile || !defender.skills.includes('blink_step') || state.timeMs < defender.blinkReadyAtMs) return false;
+  const targetEnemy = nearestEnemy(state, defender.tile);
+  if (!targetEnemy) return false;
+
+  const buildRadius = currentBuildRadius(state, content);
+  const spawnLanes = currentSpawnLanes(state, content);
+  const from = cloneCoord(defender.tile);
+  const destination = createHexGrid(currentGridRadius(state, content))
+    .filter((tile) => isBuildable(tile, buildRadius, spawnLanes))
+    .filter((tile) => !occupied(state, tile))
+    .filter((tile) => !sameCoord(tile, defender.tile as AxialCoord))
+    .filter((tile) => hexDistance(tile, targetEnemy.tile) <= stats.range)
+    .sort((left, right) =>
+      (hexDistance(left, targetEnemy.tile) - hexDistance(right, targetEnemy.tile)) ||
+      (hexDistance(left, CENTER) - hexDistance(right, CENTER)) ||
+      (left.r - right.r) ||
+      (left.q - right.q)
+    )[0];
+  if (!destination) return false;
+
+  moveDefenderToTile(state, defender, destination, 'blink', BLINK_MOTION_DURATION_MS, from);
+  defender.blinkReadyAtMs = state.timeMs + BLINK_STEP_COOLDOWN_MS;
+  pushFx(state, 'blink', destination, 320, from);
   return true;
 }
 
@@ -2077,6 +2130,9 @@ function resolveEnemyDeaths(state: RunState, content: GameContent): void {
         killer.kills += 1;
         if (killer.skills.includes('blink_step')) {
           killer.blinkReadyAtMs = state.timeMs;
+        }
+        if (killer.skills.includes('battle_hymn')) {
+          killer.battleHymnReadyAtMs = Math.max(state.timeMs, killer.battleHymnReadyAtMs - 1000);
         }
         const levelMessage = grantXp(state, killer, xpForEnemy(enemy.archetypeId), content);
         if (levelMessage) {
@@ -2391,61 +2447,34 @@ function applySubclassRetaliationEffects(
   }
 }
 
-function defenderAttack(state: RunState, defender: DefenderInstance, content: GameContent): void {
-  if (!defender.tile || defender.location !== 'board' || state.timeMs < defender.attackReadyAtMs) return;
-  const stats = derivedStats(state, defender, content);
-  const dmgMult = state.timeMs < state.sisu.activeUntilMs ? content.config.sisuDamageMultiplier : 1;
-  const cdMult = state.timeMs < state.sisu.activeUntilMs ? content.config.sisuAttackMultiplier : 1;
-  const originTile = { ...defender.tile };
-  const lowHp = defender.skills.includes('blink_step') && defender.hp / Math.max(1, stats.maxHp) <= 0.5;
-  if (lowHp && tryBlink(state, defender, content)) {
-    defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
-    return;
-  }
-
-  const healTargets = stats.heal > 0 ? alliesToHeal(state, defender, stats, content) : [];
-  const ally = healTargets[0] ?? null;
-  if (ally) {
-    const calmWhisperMultiplier = hasSubclass(defender, 'calm_whisper') ? 0.8 : 1;
-    applyHealToDefender(
-      state,
-      defender,
-      ally,
-      Math.round(stats.heal * dmgMult * calmWhisperMultiplier) + subclassHealBonusAmount(state, defender, ally, content),
-      content,
-      'heal',
-      defender.tile
-    );
-    applySubclassHealEffects(state, defender, ally, stats, healTargets, content);
-    grantCombatXp(state, defender, 1, content);
-    defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
-    return;
-  }
-
-  let target = preferredEnemiesInRange(state, defender, defender.tile, stats.range)[0] ?? null;
-  if (!target && tryBlink(state, defender, content)) {
-    const retreatedHome =
-      defender.homeTile &&
-      defender.tile.q === defender.homeTile.q &&
-      defender.tile.r === defender.homeTile.r &&
-      (originTile.q !== defender.tile.q || originTile.r !== defender.tile.r);
-    if (retreatedHome) {
-      defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
-      return;
+function triggerBattleHymn(state: RunState, defender: DefenderInstance): void {
+  if (!defender.tile || !defender.skills.includes('battle_hymn') || state.timeMs < defender.battleHymnReadyAtMs) return;
+  const recipients = [defender, ...boardAlliesWithin(state, defender.tile, 1, defender.id)];
+  for (const ally of recipients) {
+    ally.battleHymnBuffExpiresAtMs = state.timeMs + BATTLE_HYMN_BUFF_MS;
+    if (ally.tile) {
+      pushFx(state, 'pulse', ally.tile, 260, defender.tile);
     }
-    target = preferredEnemiesInRange(state, defender, defender.tile, stats.range)[0] ?? null;
   }
+  defender.battleHymnReadyAtMs = state.timeMs + BATTLE_HYMN_COOLDOWN_MS;
+}
 
-  if (!target) {
-    moveDefenderTowardSaunaThreat(state, defender, stats, content, cdMult);
-    return;
-  }
+function performDefenderBasicAttack(
+  state: RunState,
+  defender: DefenderInstance,
+  stats: UnitStats,
+  damageMultiplier: number,
+  content: GameContent
+): boolean {
+  if (!defender.tile) return false;
+  const target = preferredEnemiesInRange(state, defender, defender.tile, stats.range)[0] ?? null;
+  if (!target) return false;
 
   const benchOakSpin = hasSubclass(defender, 'bench_oak')
     ? state.enemies.filter((enemy) => hexDistance(enemy.tile, defender.tile as AxialCoord) <= 1)
     : [];
 
-  let hitDamage = Math.round(stats.damage * dmgMult);
+  let hitDamage = Math.round(stats.damage * damageMultiplier);
   if (hasSubclass(defender, 'bucket_sniper') && hexDistance(defender.tile, target.tile) === stats.range) {
     hitDamage += 2;
   }
@@ -2492,14 +2521,55 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
     defender.hp = Math.min(stats.maxHp, defender.hp + 3);
     pushFx(state, 'heal', defender.tile, 220);
   }
-  if (defender.skills.includes('battle_hymn')) {
-    const allyPulse = alliesToHeal(state, defender, { ...stats, range: 1 }, content)[0];
-    if (allyPulse?.tile) {
-      allyPulse.hp = Math.min(derivedStats(state, allyPulse, content).maxHp, allyPulse.hp + 2);
-      pushFx(state, 'heal', allyPulse.tile, 240, defender.tile);
-    }
+  triggerBattleHymn(state, defender);
+  return true;
+}
+
+function defenderAttack(state: RunState, defender: DefenderInstance, content: GameContent): void {
+  if (!defender.tile || defender.location !== 'board' || state.timeMs < defender.attackReadyAtMs) return;
+  const stats = derivedStats(state, defender, content);
+  const dmgMult = state.timeMs < state.sisu.activeUntilMs ? content.config.sisuDamageMultiplier : 1;
+  const cdMult = state.timeMs < state.sisu.activeUntilMs ? content.config.sisuAttackMultiplier : 1;
+  const lowHp = defender.skills.includes('blink_step') && defender.hp / Math.max(1, stats.maxHp) < 0.5;
+  if (lowHp && tryBlink(state, defender, content)) {
+    defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
+    return;
   }
-  defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
+
+  const inRangeTarget = preferredEnemiesInRange(state, defender, defender.tile, stats.range)[0] ?? null;
+  if (!lowHp && !inRangeTarget && tryBlinkTowardEnemy(state, defender, stats, content)) {
+    performDefenderBasicAttack(state, defender, derivedStats(state, defender, content), dmgMult, content);
+    defender.attackReadyAtMs = state.timeMs + derivedStats(state, defender, content).attackCooldownMs / cdMult;
+    return;
+  }
+
+  const healTargets = stats.heal > 0 ? alliesToHeal(state, defender, stats, content) : [];
+  const ally = healTargets[0] ?? null;
+  if (ally) {
+    const calmWhisperMultiplier = hasSubclass(defender, 'calm_whisper') ? 0.8 : 1;
+    applyHealToDefender(
+      state,
+      defender,
+      ally,
+      Math.round(stats.heal * dmgMult * calmWhisperMultiplier) + subclassHealBonusAmount(state, defender, ally, content),
+      content,
+      'heal',
+      defender.tile
+    );
+    applySubclassHealEffects(state, defender, ally, stats, healTargets, content);
+    grantCombatXp(state, defender, 1, content);
+    defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
+    return;
+  }
+
+  const target = inRangeTarget ?? preferredEnemiesInRange(state, defender, defender.tile, stats.range)[0] ?? null;
+
+  if (!target) {
+    moveDefenderTowardSaunaThreat(state, defender, stats, content, cdMult);
+    return;
+  }
+  performDefenderBasicAttack(state, defender, stats, dmgMult, content);
+  defender.attackReadyAtMs = state.timeMs + derivedStats(state, defender, content).attackCooldownMs / cdMult;
 }
 
 function pebblePathForLane(laneIndex: number): AxialCoord[] {

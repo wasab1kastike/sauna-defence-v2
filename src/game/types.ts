@@ -342,6 +342,8 @@ export interface DefenderInstance {
   motion?: UnitMotionState | null;
   attackReadyAtMs: number;
   blinkReadyAtMs: number;
+  battleHymnReadyAtMs: number;
+  battleHymnBuffExpiresAtMs: number;
   fireballReadyAtMs: number;
   items: ItemId[];
   skills: SkillId[];

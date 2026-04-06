@@ -810,7 +810,7 @@ describe('Sauna Defense V2 logic', () => {
     const boardBlinker = state.defenders.find((defender) => defender.id === blinker!.id)!;
     boardBlinker.skills.push('blink_step');
     boardBlinker.tile = { q: 1, r: -1 };
-    boardBlinker.hp = Math.floor(boardBlinker.hp * 0.5);
+    boardBlinker.hp = Math.max(1, Math.floor(boardBlinker.hp * 0.4));
     boardBlinker.attackReadyAtMs = 0;
     state.phase = 'wave';
     state.pendingSpawns = [];
@@ -853,7 +853,7 @@ describe('Sauna Defense V2 logic', () => {
     const boardBlinker = state.defenders.find((defender) => defender.id === blinker!.id)!;
     boardBlinker.skills.push('blink_step');
     boardBlinker.tile = { q: 1, r: -1 };
-    boardBlinker.hp = Math.floor(boardBlinker.hp * 0.5);
+    boardBlinker.hp = Math.max(1, Math.floor(boardBlinker.hp * 0.4));
     boardBlinker.attackReadyAtMs = 0;
     state.phase = 'wave';
     state.pendingSpawns = [];
@@ -875,6 +875,46 @@ describe('Sauna Defense V2 logic', () => {
     const updated = state.defenders.find((defender) => defender.id === blinker!.id)!;
     expect(updated.tile).not.toEqual({ q: 0, r: -2 });
     expect(updated.blinkReadyAtMs).toBe(0);
+  });
+
+  it('makes Blink Step blink into range and fire one attack when healthy', () => {
+    let state = prepState();
+    const blinker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(blinker).toBeTruthy();
+
+    state = applyAction(state, { type: 'selectDefender', defenderId: blinker!.id }, gameContent);
+    state = applyAction(state, { type: 'placeSelectedDefender', tile: { q: 0, r: -2 } }, gameContent);
+
+    const boardBlinker = state.defenders.find((defender) => defender.id === blinker!.id)!;
+    boardBlinker.skills.push('blink_step');
+    boardBlinker.stats.range = 1;
+    boardBlinker.stats.damage = 4;
+    boardBlinker.tile = { q: 1, r: -1 };
+    boardBlinker.hp = boardBlinker.stats.maxHp;
+    boardBlinker.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 4, r: -2 },
+        hp: 9,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      }
+    ];
+
+    state = stepState(state, 16, gameContent);
+
+    const updated = state.defenders.find((defender) => defender.id === blinker!.id)!;
+    expect(updated.tile).toEqual({ q: 3, r: -2 });
+    expect(updated.motion?.style).toBe('blink');
+    expect(updated.blinkReadyAtMs).toBe(state.timeMs + 12000);
+    expect(state.enemies[0]?.hp).toBe(5);
+    expect(state.enemies[0]?.lastHitByDefenderId).toBe(blinker!.id);
   });
 
   it('resets Blink Step cooldown on kill', () => {
@@ -910,6 +950,491 @@ describe('Sauna Defense V2 logic', () => {
     const updated = state.defenders.find((defender) => defender.id === blinker!.id)!;
     expect(updated.kills).toBe(1);
     expect(updated.blinkReadyAtMs).toBe(state.timeMs);
+  });
+
+  it('does not consume Blink Step when no valid engage tile exists', () => {
+    let state = prepState();
+    const [blinker, blockerA, blockerB, blockerC, blockerD] = state.defenders;
+    expect(blinker && blockerA && blockerB && blockerC && blockerD).toBeTruthy();
+
+    blinker!.location = 'board';
+    blinker!.tile = { q: 1, r: -1 };
+    blinker!.homeTile = { q: 0, r: -2 };
+    blinker!.skills = ['blink_step'];
+    blinker!.stats.range = 1;
+    blinker!.attackReadyAtMs = 0;
+
+    blockerA!.location = 'board';
+    blockerA!.tile = { q: 5, r: -2 };
+    blockerA!.homeTile = { q: 5, r: -2 };
+    blockerA!.attackReadyAtMs = 999999;
+
+    blockerB!.location = 'board';
+    blockerB!.tile = { q: 4, r: -1 };
+    blockerB!.homeTile = { q: 4, r: -1 };
+    blockerB!.attackReadyAtMs = 999999;
+
+    blockerC!.location = 'board';
+    blockerC!.tile = { q: 4, r: 0 };
+    blockerC!.homeTile = { q: 4, r: 0 };
+    blockerC!.attackReadyAtMs = 999999;
+
+    blockerD!.location = 'board';
+    blockerD!.tile = { q: 5, r: 0 };
+    blockerD!.homeTile = { q: 5, r: 0 };
+    blockerD!.attackReadyAtMs = 999999;
+
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 5, r: -1 },
+      hp: 9,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    const updated = state.defenders.find((defender) => defender.id === blinker!.id)!;
+    expect(updated.blinkReadyAtMs).toBe(0);
+    expect(updated.motion?.style).not.toBe('blink');
+  });
+
+  it('falls back to a healer-adjacent retreat tile when home is blocked', () => {
+    let state = prepState();
+    const [blinker, healer, blockerA, blockerB] = state.defenders.filter((defender) => defender.location === 'ready');
+    expect(blinker && healer && blockerA && blockerB).toBeTruthy();
+
+    blinker!.location = 'board';
+    blinker!.tile = { q: 1, r: -1 };
+    blinker!.homeTile = { q: 0, r: -2 };
+    blinker!.skills = ['blink_step'];
+    blinker!.hp = Math.max(1, Math.floor(blinker!.hp * 0.4));
+    blinker!.attackReadyAtMs = 0;
+
+    healer!.location = 'board';
+    healer!.tile = { q: 5, r: 0 };
+    healer!.homeTile = { q: 5, r: 0 };
+    healer!.stats.heal = 3;
+    healer!.attackReadyAtMs = 999999;
+
+    blockerA!.location = 'board';
+    blockerA!.tile = { q: 5, r: -1 };
+    blockerA!.homeTile = { q: 5, r: -1 };
+    blockerA!.attackReadyAtMs = 999999;
+
+    blockerB!.location = 'board';
+    blockerB!.tile = { q: 4, r: 1 };
+    blockerB!.homeTile = { q: 4, r: 1 };
+    blockerB!.attackReadyAtMs = 999999;
+
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 0, r: -2 },
+        hp: 12,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      },
+      {
+        instanceId: 2,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 4, r: -2 },
+        hp: 12,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      }
+    ];
+
+    state = stepState(state, 16, gameContent);
+
+    const updated = state.defenders.find((defender) => defender.id === blinker!.id)!;
+    expect(updated.tile).toEqual({ q: 4, r: 0 });
+    expect(updated.motion?.style).toBe('blink');
+    expect(updated.blinkReadyAtMs).toBeGreaterThan(state.timeMs);
+  });
+
+  it('does not blink when both home and healer fallback tiles are unavailable', () => {
+    let state = prepState();
+    const [blinker, healer, blockerA, blockerB, blockerC] = state.defenders;
+    expect(blinker && healer && blockerA && blockerB && blockerC).toBeTruthy();
+
+    blinker!.location = 'board';
+    blinker!.tile = { q: 1, r: -1 };
+    blinker!.homeTile = { q: 0, r: -2 };
+    blinker!.skills = ['blink_step'];
+    blinker!.hp = Math.max(1, Math.floor(blinker!.hp * 0.4));
+    blinker!.attackReadyAtMs = 0;
+
+    healer!.location = 'board';
+    healer!.tile = { q: 5, r: 0 };
+    healer!.homeTile = { q: 5, r: 0 };
+    healer!.stats.heal = 3;
+    healer!.attackReadyAtMs = 999999;
+
+    const occupiedTiles = [{ q: 5, r: -1 }, { q: 4, r: 0 }, { q: 4, r: 1 }];
+    [blockerA!, blockerB!, blockerC!].forEach((blocker, index) => {
+      blocker.location = 'board';
+      blocker.tile = occupiedTiles[index];
+      blocker.homeTile = occupiedTiles[index];
+      blocker.attackReadyAtMs = 999999;
+    });
+
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 0, r: -2 },
+        hp: 12,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      },
+      {
+        instanceId: 2,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 4, r: -2 },
+        hp: 12,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      }
+    ];
+
+    state = stepState(state, 16, gameContent);
+
+    const updated = state.defenders.find((defender) => defender.id === blinker!.id)!;
+    expect(updated.blinkReadyAtMs).toBe(0);
+    expect(updated.motion?.style).not.toBe('blink');
+  });
+
+  it('does not grant the free blink attack on a defensive retreat', () => {
+    let state = prepState();
+    const blinker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(blinker).toBeTruthy();
+
+    blinker!.location = 'board';
+    blinker!.tile = { q: 1, r: -1 };
+    blinker!.homeTile = { q: 0, r: -2 };
+    blinker!.skills = ['blink_step'];
+    blinker!.stats.range = 1;
+    blinker!.stats.damage = 20;
+    blinker!.hp = Math.max(1, Math.floor(blinker!.hp * 0.4));
+    blinker!.attackReadyAtMs = 0;
+
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -1 },
+      hp: 9,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.defenders.find((defender) => defender.id === blinker!.id)?.tile).toEqual({ q: 0, r: -2 });
+    expect(state.enemies[0]?.hp).toBe(9);
+  });
+
+  it('resets Blink Step cooldown when the blink engage attack gets a kill', () => {
+    let state = prepState();
+    const blinker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(blinker).toBeTruthy();
+
+    blinker!.location = 'board';
+    blinker!.tile = { q: 1, r: -1 };
+    blinker!.homeTile = { q: 0, r: -2 };
+    blinker!.skills = ['blink_step'];
+    blinker!.stats.range = 1;
+    blinker!.stats.damage = 20;
+    blinker!.attackReadyAtMs = 0;
+    blinker!.blinkReadyAtMs = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 4, r: -2 },
+      hp: 1,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    const updated = state.defenders.find((defender) => defender.id === blinker!.id)!;
+    expect(updated.kills).toBe(1);
+    expect(updated.blinkReadyAtMs).toBe(state.timeMs);
+  });
+
+  it('buffs self and adjacent allies with Battle Hymn, but not distant allies', () => {
+    let state = prepState();
+    const [attacker, adjacent, distant] = state.defenders.filter((defender) => defender.location === 'ready');
+    expect(attacker && adjacent && distant).toBeTruthy();
+
+    attacker!.location = 'board';
+    attacker!.tile = { q: 0, r: -1 };
+    attacker!.homeTile = { q: 0, r: -1 };
+    attacker!.skills = ['battle_hymn'];
+    attacker!.stats.damage = 4;
+    attacker!.stats.range = 1;
+    attacker!.stats.attackCooldownMs = 900;
+    attacker!.attackReadyAtMs = 0;
+
+    adjacent!.location = 'board';
+    adjacent!.tile = { q: 1, r: -1 };
+    adjacent!.homeTile = { q: 1, r: -1 };
+    adjacent!.stats.attackCooldownMs = 900;
+    adjacent!.attackReadyAtMs = 999999;
+
+    distant!.location = 'board';
+    distant!.tile = { q: 3, r: -1 };
+    distant!.homeTile = { q: 3, r: -1 };
+    distant!.stats.attackCooldownMs = 900;
+    distant!.attackReadyAtMs = 999999;
+
+    state.selectedDefenderId = attacker!.id;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 0 },
+      hp: 12,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    const updatedAttacker = state.defenders.find((defender) => defender.id === attacker!.id)!;
+    const updatedAdjacent = state.defenders.find((defender) => defender.id === adjacent!.id)!;
+    const updatedDistant = state.defenders.find((defender) => defender.id === distant!.id)!;
+
+    expect(updatedAttacker.battleHymnReadyAtMs).toBe(state.timeMs + 15000);
+    expect(updatedAttacker.battleHymnBuffExpiresAtMs).toBe(state.timeMs + 3000);
+    expect(updatedAttacker.attackReadyAtMs).toBe(state.timeMs + 600);
+    expect(updatedAdjacent.battleHymnBuffExpiresAtMs).toBe(state.timeMs + 3000);
+    expect(updatedDistant.battleHymnBuffExpiresAtMs).toBe(0);
+    expect(createSnapshot(state, gameContent).hud.selectedDefender?.attackCooldownMs).toBe(600);
+
+    state.selectedDefenderId = adjacent!.id;
+    expect(createSnapshot(state, gameContent).hud.selectedDefender?.attackCooldownMs).toBe(600);
+
+    state.selectedDefenderId = distant!.id;
+    expect(createSnapshot(state, gameContent).hud.selectedDefender?.attackCooldownMs).toBe(900);
+  });
+
+  it('lets the Battle Hymn buff expire after exactly three seconds', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(attacker).toBeTruthy();
+
+    attacker!.location = 'board';
+    attacker!.tile = { q: 0, r: -1 };
+    attacker!.homeTile = { q: 0, r: -1 };
+    attacker!.skills = ['battle_hymn'];
+    attacker!.stats.damage = 4;
+    attacker!.stats.range = 1;
+    attacker!.stats.attackCooldownMs = 900;
+    attacker!.attackReadyAtMs = 0;
+    state.selectedDefenderId = attacker!.id;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 0 },
+      hp: 12,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+    expect(createSnapshot(state, gameContent).hud.selectedDefender?.attackCooldownMs).toBe(600);
+
+    state.timeMs = state.defenders.find((defender) => defender.id === attacker!.id)!.battleHymnBuffExpiresAtMs;
+    expect(createSnapshot(state, gameContent).hud.selectedDefender?.attackCooldownMs).toBe(900);
+  });
+
+  it('reduces Battle Hymn cooldown only from the owner kill', () => {
+    let state = prepState();
+    const [owner, ally] = state.defenders.filter((defender) => defender.location === 'ready');
+    expect(owner && ally).toBeTruthy();
+
+    owner!.location = 'board';
+    owner!.tile = { q: 0, r: -1 };
+    owner!.homeTile = { q: 0, r: -1 };
+    owner!.skills = ['battle_hymn'];
+    owner!.stats.damage = 20;
+    owner!.stats.range = 1;
+    owner!.attackReadyAtMs = 0;
+
+    ally!.location = 'board';
+    ally!.tile = { q: 1, r: -1 };
+    ally!.homeTile = { q: 1, r: -1 };
+    ally!.stats.damage = 20;
+    ally!.stats.range = 1;
+    ally!.attackReadyAtMs = 0;
+
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: -1, r: 0 },
+        hp: 1,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      },
+      {
+        instanceId: 2,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 2, r: -1 },
+        hp: 1,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      }
+    ];
+
+    state = stepState(state, 16, gameContent);
+
+    const updatedOwner = state.defenders.find((defender) => defender.id === owner!.id)!;
+    expect(updatedOwner.kills).toBe(1);
+    expect(updatedOwner.battleHymnReadyAtMs).toBe(state.timeMs + 14000);
+  });
+
+  it('does not reduce Battle Hymn cooldown from ally kills while the buff is active', () => {
+    let state = prepState();
+    const [owner, ally] = state.defenders.filter((defender) => defender.location === 'ready');
+    expect(owner && ally).toBeTruthy();
+
+    owner!.location = 'board';
+    owner!.tile = { q: 0, r: -1 };
+    owner!.homeTile = { q: 0, r: -1 };
+    owner!.skills = ['battle_hymn'];
+    owner!.stats.damage = 2;
+    owner!.stats.range = 1;
+    owner!.attackReadyAtMs = 0;
+
+    ally!.location = 'board';
+    ally!.tile = { q: 1, r: -1 };
+    ally!.homeTile = { q: 1, r: -1 };
+    ally!.stats.damage = 20;
+    ally!.stats.range = 1;
+    ally!.attackReadyAtMs = 0;
+
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: -1, r: 0 },
+        hp: 12,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      },
+      {
+        instanceId: 2,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 2, r: -1 },
+        hp: 1,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      }
+    ];
+
+    state = stepState(state, 16, gameContent);
+
+    const updatedOwner = state.defenders.find((defender) => defender.id === owner!.id)!;
+    expect(updatedOwner.kills).toBe(0);
+    expect(updatedOwner.battleHymnReadyAtMs).toBe(state.timeMs + 15000);
+  });
+
+  it('refreshes Battle Hymn duration and restarts its cooldown on the next ready attack', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(attacker).toBeTruthy();
+
+    attacker!.location = 'board';
+    attacker!.tile = { q: 0, r: -1 };
+    attacker!.homeTile = { q: 0, r: -1 };
+    attacker!.skills = ['battle_hymn'];
+    attacker!.stats.damage = 4;
+    attacker!.stats.range = 1;
+    attacker!.attackReadyAtMs = 0;
+
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 0 },
+      hp: 20,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+    const afterFirst = state.defenders.find((defender) => defender.id === attacker!.id)!;
+    const firstExpiry = afterFirst.battleHymnBuffExpiresAtMs;
+
+    state.timeMs = afterFirst.battleHymnReadyAtMs;
+    afterFirst.attackReadyAtMs = state.timeMs;
+    state.enemies = [{
+      instanceId: 2,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 0 },
+      hp: 20,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    const updated = state.defenders.find((defender) => defender.id === attacker!.id)!;
+    expect(updated.battleHymnBuffExpiresAtMs).toBeGreaterThan(firstExpiry);
+    expect(updated.battleHymnReadyAtMs).toBe(state.timeMs + 15000);
   });
 
   it('freezes combat timers while paused', () => {
@@ -1694,7 +2219,7 @@ describe('Sauna Defense V2 logic', () => {
       definitionId: 'blink_step',
       rarity: 'rare',
       name: 'Blink Step',
-      effectText: 'If no target is in range, blink one hex closer to danger.',
+      effectText: 'If no target is in range, blink in for one attack. Below 50% HP, retreat home or near a healer. Kills reset this 12s cooldown.',
       flavorText: 'A deeply unwise technique for entering rooms dramatically.',
       artPath: 'loot/blink-step.svg',
       waveFound: 1,
