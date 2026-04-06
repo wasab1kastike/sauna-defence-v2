@@ -885,7 +885,7 @@ export function App() {
             {renderSelectionCard()}
             {renderPanelPopup()}
             <footer className="hud-footer-version">
-              <span className="mini-tag">App {APP_VERSION}</span>
+              <span className="build-badge">v{APP_VERSION}</span>
             </footer>
             </>
           ) : (
