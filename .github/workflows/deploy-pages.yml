@@ -58,6 +58,16 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Verify Pages artifact
+        run: |
+          set -euo pipefail
+
+          test -f dist/index.html
+          test -d dist/assets
+          test -f dist/CNAME
+          grep -Fq '/assets/' dist/index.html
+          grep -Fxq 'artobest.com' dist/CNAME
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
@@ -76,3 +86,13 @@ jobs:
       - name: Deploy To Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Smoke check deployed site
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+
+          echo "Smoke checking $PAGE_URL"
+          curl -fsSLI "$PAGE_URL"
+          curl -fsSL "$PAGE_URL" | grep -Eiq '<!doctype html|<html'

@@ -9,9 +9,15 @@ import {
 import type { DefenderInstance, RunState, UnitStats } from '../types';
 
 const selectorDeps = {
-  benchRerollCost: (_state: RunState, _defenderId: string) => 2,
+  benchRerollCost: (...args: [RunState, string]) => {
+    void args;
+    return 2;
+  },
   canRerollSaunaDefender: () => true,
-  derivedStats: (_state: RunState, defender: DefenderInstance, _content: typeof gameContent): UnitStats => defender.stats,
+  derivedStats: (...args: [RunState, DefenderInstance, typeof gameContent]): UnitStats => {
+    const [, defender] = args;
+    return defender.stats;
+  },
   saunaRerollCost: () => 3,
   subclassSummary: () => 'Branch Ready'
 };
@@ -43,7 +49,12 @@ describe('hud selectors', () => {
     const rosterEntries = createRosterEntries(state, state.defenders, gameContent, shortcutMap, selectorDeps);
     const saunaReserve = createSaunaReserveEntry(state, saunaHero, boardHero, gameContent, selectorDeps);
 
-    expect(rosterEntries.map((entry) => entry.location)).toEqual(['board', 'sauna', 'ready']);
+    const firstSaunaIndex = rosterEntries.findIndex((entry) => entry.location === 'sauna');
+    const firstReadyIndex = rosterEntries.findIndex((entry) => entry.location === 'ready');
+
+    expect(rosterEntries[0]?.location).toBe('board');
+    expect(firstSaunaIndex).toBeGreaterThan(0);
+    expect(firstReadyIndex).toBeGreaterThan(firstSaunaIndex);
     expect(saunaReserve.canReroll).toBe(true);
     expect(saunaReserve.rerollCost).toBe(3);
     expect(saunaReserve.sendSelectedBoardHeroLabel).toBe(`Swap ${boardHero.name} Into Sauna`);

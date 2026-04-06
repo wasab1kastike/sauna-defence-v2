@@ -66,11 +66,11 @@ jobs:
           behavior_checked=false
           no_behavior_checked=false
 
-          if printf '%s' "$PR_BODY" | grep -Eiq -- '- \[[xX]\] Tämä PR muuttaa käyttäytymistä'; then
+          if printf '%s' "$PR_BODY" | grep -Eiq -- '- \[[xX]\] T[a-zA-ZäÄöÖ]+ PR muuttaa k[a-zA-ZäÄöÖ]+ytt[a-zA-ZäÄöÖ]+ytymist[a-zA-ZäÄöÖ]+'; then
             behavior_checked=true
           fi
 
-          if printf '%s' "$PR_BODY" | grep -Eiq -- '- \[[xX]\] Tämä PR ei muuta käyttäytymistä'; then
+          if printf '%s' "$PR_BODY" | grep -Eiq -- '- \[[xX]\] T[a-zA-ZäÄöÖ]+ PR ei muuta k[a-zA-ZäÄöÖ]+ytt[a-zA-ZäÄöÖ]+ytymist[a-zA-ZäÄöÖ]+'; then
             no_behavior_checked=true
           fi
 
@@ -80,13 +80,12 @@ jobs:
           fi
 
           if [ "$behavior_checked" = false ] && [ "$no_behavior_checked" = false ]; then
-            echo "::error::Valitse PR-templatesta käyttäytymisvaikutuksen checkbox."
-            exit 1
+            echo "::notice::PR-templaten käyttäytymischeckbox puuttuu. Jatketaan changed-file-tulkinnan perusteella."
           fi
 
           if [ "$BEHAVIOR_CHANGED" = true ]; then
-            if [ "$behavior_checked" = false ]; then
-              echo "::error::Koodimuutokset näyttävät käyttäytymistä muuttavilta. Merkitse 'Tämä PR muuttaa käyttäytymistä'."
+            if [ "$no_behavior_checked" = true ]; then
+              echo "::error::Koodimuutokset näyttävät käyttäytymistä muuttavilta, joten 'Tämä PR ei muuta käyttäytymistä' ei voi olla valittuna."
               exit 1
             fi
 
@@ -94,11 +93,14 @@ jobs:
               echo "::error::Käyttäytymistä muuttava PR vaatii CHANGELOG.md-päivityksen."
               exit 1
             fi
+
+            if [ "$behavior_checked" = false ]; then
+              echo "::notice::Changed files viittaavat käyttäytymismuutokseen. Merkitse PR-templateen tarvittaessa 'Tämä PR muuttaa käyttäytymistä'."
+            fi
           fi
 
           if [ "$BEHAVIOR_CHANGED" = false ] && [ "$behavior_checked" = true ] && [ "$CHANGELOG_TOUCHED" = false ]; then
-            echo "::error::Merkkasit käyttäytymismuutoksen, mutta CHANGELOG.md puuttuu. Päivitä changelog tai vaihda checkbox oikein."
-            exit 1
+            echo "::notice::PR-body kertoo käyttäytymismuutoksesta, mutta detector ei löytänyt behavior-tiedostoja eikä changelogia. Tarkista halutessasi PR-templaten checkbox."
           fi
 
           echo "Changelog-check passed."

@@ -11,7 +11,6 @@ import type {
   DefenderInstance,
   DefenderSubclassId,
   DefenderSubclassDefinition,
-  DefenderLocation,
   DefenderTemplateId,
   EnemyBehavior,
   EnemyInstance,
@@ -52,7 +51,6 @@ import {
   coordKey as coordKeyFromGeometry,
   createHexGrid as createHexGridFromGeometry,
   hexDistance as hexDistanceFromGeometry,
-  rotateClockwise as rotateClockwiseFromGeometry,
   rotateCoord as rotateCoordFromGeometry
 } from './geometry';
 import {
@@ -332,10 +330,6 @@ function clearExpiredMotions(state: RunState): void {
   for (const enemy of state.enemies) clearIfExpired(enemy);
 }
 
-function rotateClockwise(coord: AxialCoord): AxialCoord {
-  return rotateClockwiseFromGeometry(coord);
-}
-
 function rotateCoord(coord: AxialCoord, times: number): AxialCoord {
   return rotateCoordFromGeometry(coord, times);
 }
@@ -416,10 +410,6 @@ function defeatedBossCountForWave(index: number, content: GameContent): number {
 
 function gridRadiusForWave(index: number, content: GameContent): number {
   return content.config.gridRadius + defeatedBossCountForWave(index, content);
-}
-
-function buildRadiusForWave(index: number, content: GameContent): number {
-  return content.config.buildRadius + defeatedBossCountForWave(index, content);
 }
 
 function currentGridRadius(state: RunState, content: GameContent): number {
@@ -2376,8 +2366,7 @@ function applySubclassAttackEffects(
 function applySubclassRetaliationEffects(
   state: RunState,
   enemy: EnemyInstance,
-  target: DefenderInstance,
-  _content: GameContent
+  target: DefenderInstance
 ): void {
   if (!target.tile) return;
   if (hasSubclass(target, 'stonewall') && hexDistance(enemy.tile, target.tile) <= 1) {
@@ -2547,7 +2536,7 @@ function applyEnemyDamageToDefender(
   if (target.tile) {
     pushFx(state, enemyImpactFxKind(enemy), target.tile, isBossThreat(enemy) ? 240 : 190, enemy.tile);
   }
-  applySubclassRetaliationEffects(state, enemy, target, content);
+      applySubclassRetaliationEffects(state, enemy, target);
   maybeSaunaSlapSwap(state, target, content);
   if (isBossThreat(enemy)) {
     addHitStop(state, 32);

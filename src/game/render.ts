@@ -108,12 +108,12 @@ const ENEMY_ROLE_PORTRAITS: Record<EnemyUnitId, number[]> = {
 let defenderPortraits: Array<HTMLImageElement | null | undefined> | undefined;
 let enemyPortraits: Array<HTMLImageElement | null | undefined> | undefined;
 let defenderSpriteSheet: HTMLImageElement | null | undefined;
-let processedPortraits = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
+const processedPortraits = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 let pebbleHeadSprite: HTMLImageElement | null | undefined;
 let pebbleBodySprite: HTMLImageElement | null | undefined;
-let processedPebbleSprites = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
+const processedPebbleSprites = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 let beerShopSprite: HTMLImageElement | null | undefined;
-let processedBackdropSprites = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
+const processedBackdropSprites = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 
 export function collectFireballTelegraphTiles(snapshot: GameSnapshot): AxialCoord[] {
   const tiles = new Map<string, AxialCoord>();

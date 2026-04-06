@@ -53,7 +53,8 @@ Tallennusskeeman canonical-versio tulee vakiosta `SAVE_SCHEMA_VERSION` (`src/gam
 
 1. Päivitä versionumero tiedostoon `package.json` (semver: patch/minor/major).
 2. Varmista että mahdolliset breaking-muutokset on merkitty myös changelogiin kohdassa `Breaking`.
-3. Buildissä Vite injektoi `__APP_VERSION__`-globaalin arvosta `process.env.npm_package_version` (`vite.config.ts`), ja peli näyttää sen HUD-footerissa (`App x.y.z`). Tämä tarkoittaa, että pelissä näkyvä versio päivittyy automaattisesti aina `package.json` version bumpin yhteydessä.
+3. Buildissä Vite injektoi `__APP_VERSION__`-globaalin arvosta `process.env.npm_package_version` (`vite.config.ts`), ja peli näyttää sen HUDin pienessä build-badgessa muodossa `vX.Y.Z`. Tämä tarkoittaa, että pelissä näkyvä versio päivittyy automaattisesti aina `package.json` version bumpin yhteydessä.
+4. Jos haluat pelaajille näkyvän uuden build-tunnisteen julkaisuun, bumpaa `package.json` versionumero ennen mergeä tai pushia `main`iin. Badge on tarkoituksella version-only eikä sisällä commit hashia.
 
 ### 2) Changelogin päivitys
 
@@ -80,12 +81,15 @@ Jos PR muuttaa käyttäytymistä (`src/`, `public/`, build- tai runtime-konfigur
 
 1. Avaa GitHub Actions ja varmista että workflow **Deploy To GitHub Pages** on onnistunut (`lint -> typecheck -> test -> build:patch-notes -> build -> deploy`).
 2. Tarkista workflow-ajon `deploy`-jobista julkaistu `page_url`.
-3. Varmista että tuotanto-URL vastaa odotettua osoitetta: `https://artobest.com/`.
+3. Varmista että build-jobin artifact-tarkistus meni läpi (`dist/index.html`, `dist/assets/`, `dist/CNAME`).
+4. Varmista että deploy-jobin smoke check vastaa onnistuneesti julkaistuun Pages-URLiin.
+5. Varmista että tuotanto-URL vastaa odotettua osoitetta: `https://artobest.com/`.
 
 ### 5) Domain-varmistus (GitHub Pages)
 
 - `public/CNAME` täytyy sisältää custom domain: `artobest.com`.
 - GitHub repository settings → Pages: varmista että custom domain on `artobest.com` ja HTTPS on käytössä.
+- GitHub Pages voi custom-domainin takana palvella vanhaa HTML:ää vielä hetken deployn jälkeen. `artobest.com` palauttaa tyypillisesti `Cache-Control: max-age=600`, joten odota tarvittaessa noin 10 minuuttia ennen kuin tulkitset julkaisun jääneen vanhaan buildiin.
 - Julkaisun jälkeen validoi sekä:
   - `https://artobest.com/`
   - GitHub Pages -ympäristön URL workflow-ajosta (deploy-jobin `page_url`)

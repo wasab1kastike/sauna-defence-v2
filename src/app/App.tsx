@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 
 import { latestPatchNotes } from '../content/patchNotes';
@@ -26,8 +26,7 @@ import {
 } from './uiHelpers';
 import type {
   GameRuntime,
-  GameSnapshot,
-  InputAction
+  GameSnapshot
 } from '../game/types';
 
 const GUIDE_STORAGE_KEY = `${STORAGE_KEY_PREFIX}-guide-seen`;
@@ -53,7 +52,7 @@ export function App() {
   const [patchNotesOpen, setPatchNotesOpen] = useState(false);
   const [patchNotesChecked, setPatchNotesChecked] = useState(false);
 
-  const markPatchNotesSeen = () => {
+  const markPatchNotesSeen = useCallback(() => {
     if (typeof window === 'undefined') {
       return;
     }
@@ -62,7 +61,7 @@ export function App() {
     } catch {
       // Ignore localStorage failures.
     }
-  };
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -151,19 +150,6 @@ export function App() {
   }, [guideStep, patchNotesChecked, snapshot]);
 
   useEffect(() => {
-    if (!patchNotesOpen) {
-      return;
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        closePatchNotes();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [patchNotesOpen]);
-
-  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const action = resolveGameplayHotkeyAction(snapshot, event.key, {
         guideStepActive: guideStep !== null,
@@ -210,10 +196,23 @@ export function App() {
     setPatchNotesOpen(true);
   };
 
-  const closePatchNotes = () => {
+  const closePatchNotes = useCallback(() => {
     setPatchNotesOpen(false);
     markPatchNotesSeen();
-  };
+  }, [markPatchNotesSeen]);
+
+  useEffect(() => {
+    if (!patchNotesOpen) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closePatchNotes();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [closePatchNotes, patchNotesOpen]);
 
   const pickLandmarkAtPointer = (
     nextSnapshot: GameSnapshot,
@@ -269,7 +268,6 @@ export function App() {
   const showModifierDraft = snapshot?.hud.showGlobalModifierDraft ?? false;
   const showSubclassDraft = snapshot?.hud.showSubclassDraft ?? false;
 
-  const rosterEntries = snapshot?.hud.rosterEntries ?? [];
   const readyEntries = snapshot?.hud.readyReserveEntries ?? [];
   const saunaReserve = snapshot?.hud.saunaReserve ?? null;
   const deathLogEntries = snapshot?.hud.deathLogEntries ?? [];
