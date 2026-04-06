@@ -1,7 +1,9 @@
 import {
+  canRenderEndUserHordeSprites,
   collectFireballTelegraphTiles,
   getTileViewportPosition,
   pickEnemyAtCanvasPoint,
+  resolveEndUserHordeSpriteIndexes,
   resolveAnimatedHexPosition,
   resolveBossVisualProfile
 } from '../render';
@@ -70,6 +72,11 @@ describe('render helpers', () => {
     expect(resolveBossVisualProfile(pebbleWave, 'pebble').presentation).toBe('boss_unit');
     expect(resolveBossVisualProfile(hordeWave, 'thirsty_user').presentation).toBe('boss_horde_member');
     expect(resolveBossVisualProfile(hordeWave, 'brute').presentation).toBe('normal');
+  });
+
+  it('exposes deterministic horde sprite picks and reports fallback when custom sprites are unavailable', () => {
+    expect(resolveEndUserHordeSpriteIndexes(7)).toEqual([1, 3, 5]);
+    expect(canRenderEndUserHordeSprites(7)).toBe(false);
   });
 
   it('hit-tests enemies at their rendered position, including bosses', () => {

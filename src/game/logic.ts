@@ -151,8 +151,21 @@ const RARITY_WEIGHT_BY_WAVE: Record<number, Record<Rarity, number>> = {
 };
 const ELECTRIC_BATHER_ABILITY_COOLDOWN_MS = 5200;
 const ESCALATION_MANAGER_ABILITY_COOLDOWN_MS = 6000;
+const END_USER_HORDE_START_MOMENTUM = 3;
+const END_USER_HORDE_MAX_MOMENTUM = 12;
+const END_USER_HORDE_TIER_ONE_MIN = 4;
+const END_USER_HORDE_TIER_TWO_MIN = 8;
+const END_USER_HORDE_TIER_ONE_MOVE_BONUS_MS = 140;
+const END_USER_HORDE_TIER_TWO_MOVE_BONUS_MS = 220;
+const END_USER_HORDE_TIER_TWO_SWARM_CAP = 7;
+const END_USER_HORDE_BASE_SWARM_CAP = 5;
+const END_USER_HORDE_SURGE_COOLDOWN_MS = 4200;
+const END_USER_HORDE_SURGE_MOVE_READY_MS = 120;
 const STEP_MOTION_DURATION_MS = 240;
 const PEBBLE_MOTION_DURATION_MS = 520;
+const PEBBLE_DEVOUR_STACK_CAP = 6;
+const PEBBLE_DEVOUR_DAMAGE_PER_STACK = 2;
+const PEBBLE_DEVOUR_HEAL_RATIO = 0.35;
 const BLINK_MOTION_DURATION_MS = 320;
 const SPAWN_SETTLE_DURATION_MS = 260;
 const PEBBLE_PATH_BASE: AxialCoord[] = [
@@ -356,6 +369,40 @@ function bossDisplayName(bossId: BossId | null): string | null {
 
 function bossHint(bossId: BossId | null): string | null {
   return bossRotation.find((entry) => entry.bossId === bossId)?.hint ?? null;
+}
+
+function isEndUserHordeBossWave(wave: WaveDefinition): boolean {
+  return wave.isBoss && wave.bossId === 'end_user_horde';
+}
+
+function endUserHordeTierForMomentum(momentum: number): number {
+  if (momentum >= END_USER_HORDE_TIER_TWO_MIN) return 2;
+  if (momentum >= END_USER_HORDE_TIER_ONE_MIN) return 1;
+  return 0;
+}
+
+function endUserHordeTierLabel(tier: number): string {
+  switch (tier) {
+    case 2:
+      return 'Stampeding';
+    case 1:
+      return 'Pressuring';
+    case 0:
+    default:
+      return 'Building';
+  }
+}
+
+function setEndUserHordeMomentum(state: RunState, momentum: number): void {
+  const clamped = Math.max(0, Math.min(END_USER_HORDE_MAX_MOMENTUM, momentum));
+  state.endUserHordeMomentum = clamped;
+  state.endUserHordeTier = endUserHordeTierForMomentum(clamped);
+}
+
+function resetEndUserHordeState(state: RunState): void {
+  state.endUserHordeMomentum = 0;
+  state.endUserHordeTier = 0;
+  state.endUserHordeNextSurgeAtMs = 0;
 }
 
 function isWaveBossEnemy(currentWave: WaveDefinition, enemy: EnemyInstance): boolean {
@@ -2140,6 +2187,9 @@ function resolveEnemyDeaths(state: RunState, content: GameContent): void {
         }
       }
     }
+    if (isEndUserHordeBossWave(state.currentWave) && enemy.archetypeId === 'thirsty_user') {
+      setEndUserHordeMomentum(state, state.endUserHordeMomentum - 3);
+    }
     maybeDrop(state, enemy.archetypeId, content);
   }
   state.enemies = living;
@@ -2576,14 +2626,53 @@ function pebblePathForLane(laneIndex: number): AxialCoord[] {
   return PEBBLE_PATH_BASE.map((coord) => rotateCoord(coord, laneIndex));
 }
 
+function hordeEnemies(state: RunState): EnemyInstance[] {
+  return state.enemies.filter((enemy) => enemy.archetypeId === 'thirsty_user');
+}
+
 function swarmDamageBonus(state: RunState): number {
-  return Math.min(5, state.enemies.filter((enemy) => enemy.archetypeId === 'thirsty_user').length);
+  const cap = isEndUserHordeBossWave(state.currentWave) && state.endUserHordeTier >= 2
+    ? END_USER_HORDE_TIER_TWO_SWARM_CAP
+    : END_USER_HORDE_BASE_SWARM_CAP;
+  return Math.min(cap, hordeEnemies(state).length);
+}
+
+function hordeMoveCooldownMs(state: RunState, baseCooldownMs: number): number {
+  if (!isEndUserHordeBossWave(state.currentWave)) return baseCooldownMs;
+  if (state.endUserHordeTier >= 2) {
+    return Math.max(120, baseCooldownMs - END_USER_HORDE_TIER_TWO_MOVE_BONUS_MS);
+  }
+  if (state.endUserHordeTier >= 1) {
+    return Math.max(120, baseCooldownMs - END_USER_HORDE_TIER_ONE_MOVE_BONUS_MS);
+  }
+  return baseCooldownMs;
+}
+
+function enemyMoveCooldownMsForEnemy(state: RunState, enemy: EnemyInstance, content: GameContent): number {
+  const baseCooldownMs = content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+  return enemy.archetypeId === 'thirsty_user' ? hordeMoveCooldownMs(state, baseCooldownMs) : baseCooldownMs;
+}
+
+function enemyMoveCooldownMsForSpawn(state: RunState, enemyId: EnemyUnitId, content: GameContent): number {
+  const baseCooldownMs = content.enemyArchetypes[enemyId].moveCooldownMs;
+  return enemyId === 'thirsty_user' ? hordeMoveCooldownMs(state, baseCooldownMs) : baseCooldownMs;
+}
+
+function pebbleDevourStacks(enemy: EnemyInstance): number {
+  return enemy.archetypeId === 'pebble' ? Math.min(PEBBLE_DEVOUR_STACK_CAP, enemy.pebbleDevourStacks ?? 0) : 0;
+}
+
+function pebbleDamageBonus(enemy: EnemyInstance): number {
+  return pebbleDevourStacks(enemy) * PEBBLE_DEVOUR_DAMAGE_PER_STACK;
 }
 
 function enemyAttackDamage(state: RunState, enemy: EnemyInstance, content: GameContent): number {
   const archetype = content.enemyArchetypes[enemy.archetypeId];
   if (archetype.behavior === 'swarm') {
     return archetype.damage + swarmDamageBonus(state);
+  }
+  if (archetype.behavior === 'pebble') {
+    return archetype.damage + pebbleDamageBonus(enemy);
   }
   return archetype.damage;
 }
@@ -2610,9 +2699,11 @@ function applyEnemyDamageToDefender(
   target: DefenderInstance,
   baseDamage: number,
   content: GameContent
-): void {
+): number {
   const defense = derivedStats(state, target, content).defense;
-  target.hp -= Math.max(1, baseDamage - defense);
+  const finalDamage = Math.max(1, baseDamage - defense);
+  const actualDamage = Math.min(target.hp, finalDamage);
+  target.hp -= finalDamage;
   target.lastHitByEnemyId = enemy.archetypeId;
   if (target.tile) {
     pushFx(state, enemyImpactFxKind(enemy), target.tile, isBossThreat(enemy) ? 240 : 190, enemy.tile);
@@ -2622,6 +2713,7 @@ function applyEnemyDamageToDefender(
   if (isBossThreat(enemy)) {
     addHitStop(state, 32);
   }
+  return actualDamage;
 }
 
 function enemyTarget(state: RunState, enemy: EnemyInstance, content: GameContent): DefenderInstance | 'sauna' | null {
@@ -2640,7 +2732,7 @@ function moveEnemyTowardCenter(state: RunState, enemy: EnemyInstance, content: G
     .sort((left, right) => (hexDistance(left, CENTER) - hexDistance(right, CENTER)) || (left.r - right.r) || (left.q - right.q))[0];
   if (!tile) return false;
   moveEnemyToTile(state, enemy, tile, 'step', STEP_MOTION_DURATION_MS);
-  enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+  enemy.moveReadyAtMs = state.timeMs + enemyMoveCooldownMsForEnemy(state, enemy, content);
   return true;
 }
 
@@ -2650,6 +2742,9 @@ function stepStandardEnemy(state: RunState, enemy: EnemyInstance, content: GameC
     const target = enemyTarget(state, enemy, content);
     if (target === 'sauna') {
       applyEnemyDamageToSauna(state, enemy, enemyAttackDamage(state, enemy, content));
+      if (enemy.archetypeId === 'thirsty_user' && isEndUserHordeBossWave(state.currentWave)) {
+        setEndUserHordeMomentum(state, state.endUserHordeMomentum + 2);
+      }
       enemy.attackReadyAtMs = state.timeMs + archetype.attackCooldownMs;
       return;
     }
@@ -2667,10 +2762,41 @@ function stepSwarmUser(state: RunState, enemy: EnemyInstance, content: GameConte
   stepStandardEnemy(state, enemy, content);
 }
 
+function stepPebbleGrind(state: RunState, enemy: EnemyInstance, blockedTile: AxialCoord, content: GameContent): void {
+  const damage = enemyAttackDamage(state, enemy, content);
+  const splashDamage = Math.max(1, Math.floor(damage * 0.5));
+  const impacted = boardDefenders(state)
+    .filter((defender) => defender.tile && (sameCoord(defender.tile, blockedTile) || hexDistance(defender.tile, blockedTile) === 1))
+    .sort((left, right) => {
+      const leftIsPrimary = left.tile && sameCoord(left.tile, blockedTile) ? 0 : 1;
+      const rightIsPrimary = right.tile && sameCoord(right.tile, blockedTile) ? 0 : 1;
+      return leftIsPrimary - rightIsPrimary || left.hp - right.hp;
+    });
+
+  if (impacted.length === 0) {
+    enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+    return;
+  }
+
+  let totalDamage = 0;
+  for (const defender of impacted) {
+    const isPrimary = defender.tile && sameCoord(defender.tile, blockedTile);
+    totalDamage += applyEnemyDamageToDefender(state, enemy, defender, isPrimary ? damage : splashDamage, content);
+  }
+
+  if (totalDamage > 0) {
+    enemy.pebbleDevourStacks = Math.min(PEBBLE_DEVOUR_STACK_CAP, pebbleDevourStacks(enemy) + 1);
+    const restored = Math.max(1, Math.round(totalDamage * PEBBLE_DEVOUR_HEAL_RATIO));
+    enemy.hp = Math.min(enemyMaxHp(enemy, content), enemy.hp + restored);
+  }
+
+  enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+}
+
 function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent): void {
   const archetype = content.enemyArchetypes[enemy.archetypeId];
   if (state.timeMs >= enemy.attackReadyAtMs && hexDistance(enemy.tile, CENTER) <= archetype.range) {
-    applyEnemyDamageToSauna(state, enemy, archetype.damage);
+    applyEnemyDamageToSauna(state, enemy, enemyAttackDamage(state, enemy, content));
     enemy.attackReadyAtMs = state.timeMs + archetype.attackCooldownMs;
     return;
   }
@@ -2680,7 +2806,7 @@ function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent)
   const nextTile = path[nextPathIndex] ?? null;
   if (!nextTile) return;
   if (occupied(state, nextTile)) {
-    enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
+    stepPebbleGrind(state, enemy, nextTile, content);
     return;
   }
   moveEnemyToTile(state, enemy, nextTile, 'slither', PEBBLE_MOTION_DURATION_MS);
@@ -2749,6 +2875,40 @@ function stepEscalationManager(state: RunState, enemy: EnemyInstance, content: G
   stepStandardEnemy(state, enemy, content);
 }
 
+function queueEndUserHordeSurgeSpawns(state: RunState, content: GameContent): void {
+  const spawnLanes = currentSpawnLanes(state, content);
+  const laneCount = spawnLanes.length;
+  const baseLane = bossBaseLane(state.currentWave.index, content);
+  const preferredLanes = [1, -1, 2, -2, 3, -3]
+    .map((delta) => wrapLane(baseLane + delta, laneCount))
+    .filter((laneIndex, index, values) => values.indexOf(laneIndex) === index);
+  const freeLanes = preferredLanes.filter((laneIndex) => !occupied(state, spawnLanes[laneIndex]));
+  const lanes = (freeLanes.length >= 3 ? freeLanes : preferredLanes).slice(0, 3);
+
+  lanes.forEach((laneIndex, index) => {
+    state.pendingSpawns.push({
+      atMs: state.waveElapsedMs + END_USER_HORDE_SURGE_MOVE_READY_MS + index * 120,
+      enemyId: 'thirsty_user',
+      laneIndex
+    });
+  });
+
+  state.pendingSpawns.sort((left, right) => left.atMs - right.atMs);
+}
+
+function maybeTriggerEndUserHordeSurge(state: RunState, content: GameContent): void {
+  if (!isEndUserHordeBossWave(state.currentWave) || state.endUserHordeTier < 2 || state.timeMs < state.endUserHordeNextSurgeAtMs) {
+    return;
+  }
+
+  queueEndUserHordeSurgeSpawns(state, content);
+  for (const enemy of hordeEnemies(state)) {
+    enemy.moveReadyAtMs = Math.min(enemy.moveReadyAtMs, state.timeMs + END_USER_HORDE_SURGE_MOVE_READY_MS);
+  }
+  setEndUserHordeMomentum(state, state.endUserHordeMomentum - 4);
+  state.endUserHordeNextSurgeAtMs = state.timeMs + END_USER_HORDE_SURGE_COOLDOWN_MS;
+}
+
 function enemyStep(state: RunState, enemy: EnemyInstance, content: GameContent): void {
   const behavior = content.enemyArchetypes[enemy.archetypeId].behavior;
   switch (behavior) {
@@ -2799,7 +2959,7 @@ function spawnEnemies(state: RunState, content: GameContent): void {
       hp: archetype.maxHp,
       lastHitByDefenderId: null,
       attackReadyAtMs: state.timeMs + archetype.attackCooldownMs,
-      moveReadyAtMs: state.timeMs + archetype.moveCooldownMs,
+      moveReadyAtMs: state.timeMs + enemyMoveCooldownMsForSpawn(state, spawn.enemyId, content),
       nextAbilityAtMs:
         archetype.behavior === 'electric'
           ? state.timeMs + ELECTRIC_BATHER_ABILITY_COOLDOWN_MS
@@ -2807,6 +2967,7 @@ function spawnEnemies(state: RunState, content: GameContent): void {
             ? state.timeMs + ESCALATION_MANAGER_ABILITY_COOLDOWN_MS
             : Number.POSITIVE_INFINITY,
       pathIndex: archetype.behavior === 'pebble' ? 0 : null,
+      pebbleDevourStacks: archetype.behavior === 'pebble' ? 0 : undefined,
       spawnLaneIndex: spawn.laneIndex,
       spawnedByEnemyInstanceId: spawn.spawnedByEnemyInstanceId ?? null
     });
@@ -2832,12 +2993,19 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, message: strin
   state.autoplayReadyAtMs = state.timeMs + AUTOPLAY_DELAY_MS;
   state.currentWave = waveDef;
   state.pendingSpawns = waveDef.spawns.map((spawn) => ({ ...spawn }));
+  if (isEndUserHordeBossWave(waveDef)) {
+    setEndUserHordeMomentum(state, END_USER_HORDE_START_MOMENTUM);
+    state.endUserHordeNextSurgeAtMs = state.timeMs + END_USER_HORDE_SURGE_COOLDOWN_MS;
+  } else {
+    resetEndUserHordeState(state);
+  }
   state.message = message;
 }
 
 function awardWave(state: RunState, content: GameContent): void {
   const clearedWave = state.currentWave;
   state.pendingFireballs = [];
+  resetEndUserHordeState(state);
   state.waveIndex += 1;
   const upcomingWave = createWaveDefinition(state.waveIndex, content);
   const alcoholBonus = alcoholTotals(state, content);
@@ -2879,6 +3047,9 @@ function applyGlobalRegenTick(state: RunState, content: GameContent): void {
     const stats = derivedStats(state, defender, content);
     if (stats.regenHpPerSecond <= 0) continue;
     defender.hp = Math.min(stats.maxHp, defender.hp + stats.regenHpPerSecond);
+  }
+  if (isEndUserHordeBossWave(state.currentWave)) {
+    setEndUserHordeMomentum(state, state.endUserHordeMomentum + hordeEnemies(state).length);
   }
 }
 
@@ -3688,6 +3859,9 @@ export function createInitialState(
     saunaHp: content.config.saunaHp,
     waveSwapUsed: false,
     nextRegenTickAtMs: 1000,
+    endUserHordeMomentum: 0,
+    endUserHordeTier: 0,
+    endUserHordeNextSurgeAtMs: 0,
     autoAssignEnabled: preferences.autoAssignEnabled,
     autoUpgradeEnabled: preferences.autoUpgradeEnabled,
     autoplayEnabled: preferences.autoplayEnabled,
@@ -4299,6 +4473,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     next.nextRegenTickAtMs += 1000;
   }
   spawnEnemies(next, content);
+  maybeTriggerEndUserHordeSurge(next, content);
   resolvePendingFireballs(next);
   for (const defender of boardDefenders(next)) defenderAttack(next, defender, content);
   for (const enemy of next.enemies) enemyStep(next, enemy, content);
@@ -4381,6 +4556,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const worldLandmarks = WORLD_LANDMARK_IDS
     .map((landmarkId) => hudWorldLandmarkEntry(state, landmarkId, content))
     .filter((entry) => entry.visible);
+  const showEndUserHordeBossStatus = state.phase === 'wave' && isEndUserHordeBossWave(currentWave);
   const hud: HudViewModel = {
     phaseLabel:
       state.overlayMode === 'intermission'
@@ -4409,6 +4585,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     isBossWave: currentWave.isBoss,
     bossName: bossDisplayName(currentWave.bossId),
     bossHint: bossHint(currentWave.bossId),
+    bossMomentumLabel: showEndUserHordeBossStatus ? `${state.endUserHordeMomentum}/${END_USER_HORDE_MAX_MOMENTUM}` : null,
+    bossMomentumTierLabel: showEndUserHordeBossStatus ? endUserHordeTierLabel(state.endUserHordeTier) : null,
     nextWaveThreat: `${pressureLabel(currentWave.pressure)} pressure`,
     nextWavePattern: patternLabel(currentWave),
     pressureSignals: pressureSignals(state, content),
@@ -4652,7 +4830,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         isBoss,
         hp: selectedEnemy.hp,
         maxHp: archetype.maxHp,
-        damage: archetype.damage,
+        damage: enemyAttackDamage(state, selectedEnemy, content),
         range: archetype.range,
         attackCooldownMs: archetype.attackCooldownMs,
         moveCooldownMs: archetype.moveCooldownMs,

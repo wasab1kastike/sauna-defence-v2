@@ -363,6 +363,7 @@ export interface EnemyInstance {
   moveReadyAtMs: number;
   nextAbilityAtMs?: number;
   pathIndex?: number | null;
+  pebbleDevourStacks?: number;
   spawnLaneIndex?: number;
   spawnedByEnemyInstanceId?: number | null;
 }
@@ -537,6 +538,9 @@ export interface RunState {
   saunaHp: number;
   waveSwapUsed: boolean;
   nextRegenTickAtMs: number;
+  endUserHordeMomentum: number;
+  endUserHordeTier: number;
+  endUserHordeNextSurgeAtMs: number;
   autoAssignEnabled: boolean;
   autoUpgradeEnabled: boolean;
   autoplayEnabled: boolean;
@@ -825,6 +829,8 @@ export interface HudViewModel {
   isBossWave: boolean;
   bossName: string | null;
   bossHint: string | null;
+  bossMomentumLabel: string | null;
+  bossMomentumTierLabel: string | null;
   nextWaveThreat: string;
   nextWavePattern: string;
   pressureSignals: string[];

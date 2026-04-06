@@ -86,6 +86,14 @@ const ENEMY_PORTRAIT_URLS = [
   `${import.meta.env.BASE_URL}enemies/enemy_steamhog4.png`,
   `${import.meta.env.BASE_URL}enemies/enemy_undead3.png`
 ];
+const END_USER_HORDE_SPRITE_URLS = [
+  `${import.meta.env.BASE_URL}enemies/end_user_horde_01.png`,
+  `${import.meta.env.BASE_URL}enemies/end_user_horde_02.png`,
+  `${import.meta.env.BASE_URL}enemies/end_user_horde_03.png`,
+  `${import.meta.env.BASE_URL}enemies/end_user_horde_04.png`,
+  `${import.meta.env.BASE_URL}enemies/end_user_horde_05.png`,
+  `${import.meta.env.BASE_URL}enemies/end_user_horde_06.png`
+];
 const PEBBLE_HEAD_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_head.png`;
 const PEBBLE_BODY_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_body.png`;
 const BEER_SHOP_SPRITE_URL = `${import.meta.env.BASE_URL}Buildings/olutkauppa.png`;
@@ -107,6 +115,7 @@ const ENEMY_ROLE_PORTRAITS: Record<EnemyUnitId, number[]> = {
 
 let defenderPortraits: Array<HTMLImageElement | null | undefined> | undefined;
 let enemyPortraits: Array<HTMLImageElement | null | undefined> | undefined;
+let endUserHordeSprites: Array<HTMLImageElement | null | undefined> | undefined;
 let defenderSpriteSheet: HTMLImageElement | null | undefined;
 let processedPortraits = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 let pebbleHeadSprite: HTMLImageElement | null | undefined;
@@ -567,6 +576,33 @@ function getEnemyPortrait(index: number): HTMLImageElement | null {
     });
   }
   return enemyPortraits[index % enemyPortraits.length] ?? null;
+}
+
+function getEndUserHordeSprite(index: number): HTMLImageElement | null {
+  if (typeof Image === 'undefined') {
+    return null;
+  }
+  if (!endUserHordeSprites) {
+    endUserHordeSprites = END_USER_HORDE_SPRITE_URLS.map((url) => {
+      const image = new Image();
+      image.src = url;
+      return image;
+    });
+  }
+  return endUserHordeSprites[index % END_USER_HORDE_SPRITE_URLS.length] ?? null;
+}
+
+export function resolveEndUserHordeSpriteIndexes(instanceId: number): [number, number, number] {
+  const baseIndex = Math.abs(instanceId) % END_USER_HORDE_SPRITE_URLS.length;
+  return [
+    baseIndex,
+    (baseIndex + 2) % END_USER_HORDE_SPRITE_URLS.length,
+    (baseIndex + 4) % END_USER_HORDE_SPRITE_URLS.length
+  ];
+}
+
+export function canRenderEndUserHordeSprites(instanceId: number): boolean {
+  return resolveEndUserHordeSpriteIndexes(instanceId).every((index) => isDrawableImage(getEndUserHordeSprite(index)));
 }
 
 function getDefenderSpriteSheet(): HTMLImageElement | null {
@@ -1664,29 +1700,25 @@ function drawHordeMemberBoss(
   center: { x: number; y: number },
   radius: number,
   timeMs: number,
-  hordeCount: number
-) {
+  hordeCount: number,
+  instanceId: number
+): boolean {
+  if (!canRenderEndUserHordeSprites(instanceId)) {
+    return false;
+  }
+
+  const [frontIndex, leftIndex, rightIndex] = resolveEndUserHordeSpriteIndexes(instanceId);
+  const frontSprite = getEndUserHordeSprite(frontIndex);
+  const leftSprite = getEndUserHordeSprite(leftIndex);
+  const rightSprite = getEndUserHordeSprite(rightIndex);
   const intensity = clamp(hordeCount / 10, 0.35, 1);
   drawGroundShadow(ctx, { x: center.x, y: center.y + radius * 0.85 }, radius * 0.9, radius * 0.28, 'rgba(11, 8, 6, 0.35)');
   drawGlowDisc(ctx, center, radius * (1.5 + intensity * 0.4), 'rgba(255, 182, 126, 0.28)', 'rgba(183, 48, 24, 0)', 0.76);
-  for (let index = 0; index < 3; index += 1) {
-    const angle = timeMs * 0.002 + index * 2.1;
-    const offset = index === 0 ? 0 : radius * 0.26;
-    const memberCenter = {
-      x: center.x + Math.cos(angle) * offset,
-      y: center.y + Math.sin(angle * 1.3) * offset * 0.55
-    };
-    ctx.save();
-    ctx.translate(memberCenter.x, memberCenter.y);
-    ctx.fillStyle = index === 0 ? '#f1b082' : '#d98063';
-    ctx.beginPath();
-    ctx.arc(0, 0, radius * (index === 0 ? 0.4 : 0.28), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(84, 28, 16, 0.82)';
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-    ctx.restore();
-  }
+  const sway = Math.sin(timeMs * 0.003 + instanceId) * radius * 0.05;
+  drawBaselineSprite(ctx, leftSprite!, { x: center.x - radius * 0.34 + sway * 0.45, y: center.y + radius * 0.04 }, radius * 1.7, radius * 2.35, center.y + radius * 0.78, true);
+  drawBaselineSprite(ctx, rightSprite!, { x: center.x + radius * 0.32 - sway * 0.4, y: center.y + radius * 0.08 }, radius * 1.62, radius * 2.25, center.y + radius * 0.8, true);
+  drawBaselineSprite(ctx, frontSprite!, { x: center.x, y: center.y - radius * 0.02 + sway }, radius * 2.05, radius * 2.8, center.y + radius * 0.82, true);
+  return true;
 }
 
 function drawEnemyBossNameplate(
@@ -2300,7 +2332,15 @@ export function paintSnapshot(
       }
       drawEnemyBossNameplate(ctx, center, bossProfile.label ?? archetype.name, radius, bossProfile);
     } else if (bossProfile.presentation === 'boss_horde_member') {
-      drawHordeMemberBoss(ctx, center, radius, snapshot.state.timeMs, hordeCount);
+      const renderedHordeSprites = drawHordeMemberBoss(ctx, center, radius, snapshot.state.timeMs, hordeCount, enemy.instanceId);
+      if (!renderedHordeSprites) {
+        const hasPortrait = drawEnemyPortrait(ctx, center, radius, enemy.archetypeId, enemy.tokenStyleId);
+        if (!hasPortrait) {
+          drawTokenBase(ctx, center, radius, style, archetype.fill);
+          drawGlyph(ctx, center, radius, style.glyph, style.accent);
+          drawTokenLabel(ctx, center, radius, archetype.label, '#fff0e8');
+        }
+      }
     } else {
       const hasPortrait = drawEnemyPortrait(ctx, center, radius, enemy.archetypeId, enemy.tokenStyleId);
       if (!hasPortrait) {

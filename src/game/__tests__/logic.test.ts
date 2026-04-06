@@ -81,6 +81,166 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.enemies[0]?.motion?.toTile).toEqual({ q: 1, r: -5 });
   });
 
+  it('makes Pebble grind through blockers, splash adjacent defenders, heal, and gain devour stacks', () => {
+    let state = prepState();
+    const defenders = state.defenders.filter((entry) => entry.location === 'ready').slice(0, 3);
+    expect(defenders).toHaveLength(3);
+    const [primary, side, far] = defenders;
+
+    primary.location = 'board';
+    primary.tile = { q: 1, r: -5 };
+    primary.homeTile = { q: 1, r: -5 };
+    primary.hp = 30;
+    primary.stats.defense = 0;
+    primary.attackReadyAtMs = 999999;
+
+    side.location = 'board';
+    side.tile = { q: 1, r: -4 };
+    side.homeTile = { q: 1, r: -4 };
+    side.hp = 30;
+    side.stats.defense = 0;
+    side.attackReadyAtMs = 999999;
+
+    far.location = 'board';
+    far.tile = { q: 3, r: -3 };
+    far.homeTile = { q: 3, r: -3 };
+    far.hp = 30;
+    far.stats.defense = 0;
+    far.attackReadyAtMs = 999999;
+
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: 200,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      pebbleDevourStacks: 0,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies[0]?.tile).toEqual({ q: 0, r: -6 });
+    expect(state.enemies[0]?.pathIndex).toBe(0);
+    expect(state.enemies[0]?.hp).toBe(209);
+    expect(state.enemies[0]?.pebbleDevourStacks).toBe(1);
+    expect(state.defenders.find((entry) => entry.id === primary.id)?.hp).toBe(12);
+    expect(state.defenders.find((entry) => entry.id === side.id)?.hp).toBe(21);
+    expect(state.defenders.find((entry) => entry.id === far.id)?.hp).toBe(30);
+    expect(state.fxEvents.some((event) => event.kind === 'boss_hit')).toBe(true);
+  });
+
+  it('resumes Pebble pathing after it grinds down the blocking defender', () => {
+    let state = prepState();
+    const blocker = state.defenders.find((entry) => entry.location === 'ready');
+    expect(blocker).toBeTruthy();
+
+    blocker!.location = 'board';
+    blocker!.tile = { q: 1, r: -5 };
+    blocker!.homeTile = { q: 1, r: -5 };
+    blocker!.hp = 18;
+    blocker!.stats.defense = 0;
+    blocker!.attackReadyAtMs = 999999;
+
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: 220,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      pebbleDevourStacks: 0,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.defenders.find((entry) => entry.id === blocker!.id)?.location).toBe('dead');
+    expect(state.enemies[0]?.pebbleDevourStacks).toBe(1);
+
+    state = stepState(state, gameContent.enemyArchetypes.pebble.moveCooldownMs, gameContent);
+
+    expect(state.enemies[0]?.tile).toEqual({ q: 1, r: -5 });
+    expect(state.enemies[0]?.pathIndex).toBe(1);
+    expect(state.enemies[0]?.motion?.style).toBe('slither');
+  });
+
+  it('scales Pebble damage from repeated devours in both the HUD and sauna hits', () => {
+    let state = prepState();
+    const defenders = state.defenders.filter((entry) => entry.location === 'ready').slice(0, 2);
+    expect(defenders).toHaveLength(2);
+    const [primary, side] = defenders;
+
+    primary.location = 'board';
+    primary.tile = { q: 1, r: -5 };
+    primary.homeTile = { q: 1, r: -5 };
+    primary.hp = 60;
+    primary.stats.defense = 0;
+    primary.attackReadyAtMs = 999999;
+
+    side.location = 'board';
+    side.tile = { q: 1, r: -4 };
+    side.homeTile = { q: 1, r: -4 };
+    side.hp = 60;
+    side.stats.defense = 0;
+    side.attackReadyAtMs = 999999;
+
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: 180,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      pebbleDevourStacks: 0,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+    state = stepState(state, gameContent.enemyArchetypes.pebble.moveCooldownMs, gameContent);
+
+    expect(state.enemies[0]?.pebbleDevourStacks).toBe(2);
+    expect(state.enemies[0]?.hp).toBe(200);
+
+    state.selectedMapTarget = 'enemy';
+    state.selectedEnemyInstanceId = 1;
+    let snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.selectedEnemy?.damage).toBe(22);
+
+    state.enemies[0]!.tile = { q: 0, r: -1 };
+    state.enemies[0]!.attackReadyAtMs = state.timeMs;
+    state.enemies[0]!.moveReadyAtMs = Number.POSITIVE_INFINITY;
+    const saunaHpBefore = state.saunaHp;
+
+    state = stepState(state, 16, gameContent);
+    snapshot = createSnapshot(state, gameContent);
+
+    expect(state.saunaHp).toBe(saunaHpBefore - 22);
+    expect(snapshot.hud.selectedEnemy?.damage).toBe(22);
+  });
+
   it('creates step motion metadata when a standard enemy advances', () => {
     let state = prepState();
     state.phase = 'wave';
@@ -178,6 +338,188 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(heavy.defenders.find((entry) => entry.location === 'board')?.hp).toBe(16);
     expect(light.defenders.find((entry) => entry.location === 'board')?.hp).toBe(17);
+  });
+
+  it('builds end-user horde momentum from living horde units over time', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.currentWave = createWaveDefinition(10, gameContent);
+    state.endUserHordeMomentum = 3;
+    state.endUserHordeTier = 0;
+    state.endUserHordeNextSurgeAtMs = 999999;
+    state.nextRegenTickAtMs = 1000;
+    state.pendingSpawns = [];
+    state.enemies = Array.from({ length: 2 }, (_, index) => ({
+      instanceId: index + 1,
+      archetypeId: 'thirsty_user' as const,
+      tokenStyleId: 0,
+      tile: [{ q: 4, r: -4 }, { q: -4, r: 4 }][index],
+      hp: gameContent.enemyArchetypes.thirsty_user.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: null,
+      spawnLaneIndex: index,
+      spawnedByEnemyInstanceId: null
+    }));
+
+    state = stepState(state, 1000, gameContent);
+
+    expect(state.endUserHordeMomentum).toBe(5);
+    expect(state.endUserHordeTier).toBe(1);
+  });
+
+  it('adds end-user horde momentum when a horde unit hits the sauna', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.currentWave = createWaveDefinition(10, gameContent);
+    state.endUserHordeMomentum = 3;
+    state.endUserHordeTier = 0;
+    state.endUserHordeNextSurgeAtMs = 999999;
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'thirsty_user',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 1 },
+      hp: gameContent.enemyArchetypes.thirsty_user.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 0,
+      moveReadyAtMs: 999999,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: null,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.endUserHordeMomentum).toBe(5);
+    expect(state.endUserHordeTier).toBe(1);
+  });
+
+  it('drops end-user horde momentum when a horde unit dies', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready');
+    expect(defender).toBeTruthy();
+    defender!.location = 'board';
+    defender!.tile = { q: 0, r: -1 };
+    defender!.homeTile = { q: 0, r: -1 };
+    defender!.stats.damage = 20;
+    defender!.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.currentWave = createWaveDefinition(10, gameContent);
+    state.endUserHordeMomentum = 6;
+    state.endUserHordeTier = 1;
+    state.endUserHordeNextSurgeAtMs = 999999;
+    state.pendingSpawns = [{ atMs: 999999, enemyId: 'raider', laneIndex: 0 }];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'thirsty_user',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 0 },
+      hp: 7,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: null,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies).toHaveLength(0);
+    expect(state.endUserHordeMomentum).toBe(3);
+    expect(state.endUserHordeTier).toBe(0);
+  });
+
+  it('applies the end-user horde move cooldown bonuses at tier 1 and tier 2', () => {
+    const buildState = (momentum: number, tier: number) => {
+      const state = prepState();
+      state.phase = 'wave';
+      state.currentWave = createWaveDefinition(10, gameContent);
+      state.endUserHordeMomentum = momentum;
+      state.endUserHordeTier = tier;
+      state.endUserHordeNextSurgeAtMs = 999999;
+      state.pendingSpawns = [];
+      state.enemies = [{
+        instanceId: 1,
+        archetypeId: 'thirsty_user' as const,
+        tokenStyleId: 0,
+        tile: { q: 0, r: -4 },
+        hp: gameContent.enemyArchetypes.thirsty_user.maxHp,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 0,
+        nextAbilityAtMs: Number.POSITIVE_INFINITY,
+        pathIndex: null,
+        spawnLaneIndex: 0,
+        spawnedByEnemyInstanceId: null
+      }];
+      return state;
+    };
+
+    const tierOne = stepState(buildState(4, 1), 16, gameContent);
+    const tierTwo = stepState(buildState(8, 2), 16, gameContent);
+
+    expect((tierOne.enemies[0]?.moveReadyAtMs ?? 0) - tierOne.timeMs).toBe(580);
+    expect((tierTwo.enemies[0]?.moveReadyAtMs ?? 0) - tierTwo.timeMs).toBe(500);
+  });
+
+  it('fires an end-user horde surge at tier 2, refreshing movement and adding reinforcements', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.currentWave = createWaveDefinition(10, gameContent);
+    state.endUserHordeMomentum = 9;
+    state.endUserHordeTier = 2;
+    state.endUserHordeNextSurgeAtMs = 0;
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'thirsty_user',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -4 },
+      hp: gameContent.enemyArchetypes.thirsty_user.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: null,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.pendingSpawns).toHaveLength(3);
+    expect(state.pendingSpawns.every((spawn) => spawn.enemyId === 'thirsty_user')).toBe(true);
+    expect(state.enemies[0]?.moveReadyAtMs).toBe(136);
+    expect(state.endUserHordeMomentum).toBe(5);
+    expect(state.endUserHordeTier).toBe(1);
+    expect(state.endUserHordeNextSurgeAtMs).toBe(4216);
+  });
+
+  it('shows end-user horde momentum in the HUD only during the live horde boss wave', () => {
+    const hordeState = prepState();
+    hordeState.phase = 'wave';
+    hordeState.currentWave = createWaveDefinition(10, gameContent);
+    hordeState.endUserHordeMomentum = 9;
+    hordeState.endUserHordeTier = 2;
+
+    const hordeSnapshot = createSnapshot(hordeState, gameContent);
+    expect(hordeSnapshot.hud.bossMomentumLabel).toBe('9/12');
+    expect(hordeSnapshot.hud.bossMomentumTierLabel).toBe('Stampeding');
+
+    const pebbleState = prepState();
+    pebbleState.phase = 'wave';
+    pebbleState.currentWave = createWaveDefinition(5, gameContent);
+    const pebbleSnapshot = createSnapshot(pebbleState, gameContent);
+
+    expect(pebbleSnapshot.hud.bossMomentumLabel).toBeNull();
+    expect(pebbleSnapshot.hud.bossMomentumTierLabel).toBeNull();
   });
 
   it('lets the electric boss chain shock multiple defenders', () => {

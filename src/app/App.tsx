@@ -831,6 +831,8 @@ export function App() {
                 <p className="panel-copy small-copy hint-copy">{hintBody}</p>
                 <div className="mini-tag-row">
                   <span className="mini-tag">{snapshot.hud.nextWaveThreat}</span>
+                  {snapshot.hud.bossMomentumLabel ? <span className="mini-tag">Horde {snapshot.hud.bossMomentumLabel}</span> : null}
+                  {snapshot.hud.bossMomentumTierLabel ? <span className="mini-tag">{snapshot.hud.bossMomentumTierLabel}</span> : null}
                   <span className="mini-tag">Reserve {snapshot.hud.readyBenchCount}</span>
                   <span className="mini-tag">Recruit Slots {snapshot.hud.freeRecruitSlots}</span>
                 </div>

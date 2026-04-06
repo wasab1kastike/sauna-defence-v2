@@ -27,13 +27,13 @@ export const bossRotation: BossRotationEntry[] = [
     bossId: 'pebble',
     bossCategory: 'breach',
     name: 'Pebble',
-    hint: 'Massive beer worm. Ignores heroes and tunnels straight for the sauna.'
+    hint: 'Massive beer worm. Ignores heroes, grinds through blockers, and grows meaner every time it feeds.'
   },
   {
     bossId: 'end_user_horde',
     bossCategory: 'pressure',
     name: 'End-User Horde',
-    hint: 'Weak alone, lethal in a crowd. Kill the swarm fast to collapse the ramping damage.'
+    hint: 'Momentum builds while the crowd stays alive. Trim the mob early or it stamps into surge reinforcements.'
   },
   {
     bossId: 'electric_bather',
