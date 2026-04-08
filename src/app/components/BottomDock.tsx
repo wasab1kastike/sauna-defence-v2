@@ -21,24 +21,30 @@ export function BottomDock({ snapshot, dispatch }: BottomDockProps) {
         <span>{snapshot.hud.freeRecruitSlots}/4 live slots</span>
       </div>
 
-      <div className="button-row tight market-actions">
-        <button
-          className="mini-button"
-          disabled={!snapshot.hud.canRollRecruitOffers}
-          onClick={() => dispatch({ type: 'rerollRecruitOffers' })}
-        >
-          Refresh (Q - {snapshot.hud.recruitRollCost} SISU)
-        </button>
-        <button
-          className="secondary-button"
-          disabled={!snapshot.hud.canLevelUpRecruitment}
-          onClick={() => dispatch({ type: 'levelUpRecruitment' })}
-        >
-          Level Up (W - {snapshot.hud.recruitLevelUpCost} SISU)
-        </button>
-      </div>
+      <div className="market-layout">
+        <RecruitOfferSlots
+          offers={snapshot.hud.recruitOffers}
+          dispatch={dispatch}
+          className="market-row market-row-four market-row-offers"
+        />
 
-      <RecruitOfferSlots offers={snapshot.hud.recruitOffers} dispatch={dispatch} className="market-row market-row-four" />
+        <div className="market-action-stack">
+          <button
+            className="mini-button"
+            disabled={!snapshot.hud.canRollRecruitOffers}
+            onClick={() => dispatch({ type: 'rerollRecruitOffers' })}
+          >
+            Refresh (Q - {snapshot.hud.recruitRollCost} SISU)
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!snapshot.hud.canLevelUpRecruitment}
+            onClick={() => dispatch({ type: 'levelUpRecruitment' })}
+          >
+            Level Up (W - {snapshot.hud.recruitLevelUpCost} SISU)
+          </button>
+        </div>
+      </div>
     </section>
   );
 }

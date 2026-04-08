@@ -12,6 +12,7 @@ import { GuideOverlay } from './components/GuideOverlay';
 import { HudUtilityRail } from './components/HudUtilityRail';
 import { IntroOverlay } from './components/IntroOverlay';
 import { PatchNotesOverlay } from './components/PatchNotesOverlay';
+import { RecruitOfferSlots } from './components/RecruitOfferSlots';
 import { SelectionCard } from './components/SelectionCard';
 import {
   assetUrl,
@@ -632,57 +633,35 @@ export function App() {
               <span className="mini-tag">SISU {snapshot.hud.sisu}</span>
               <span className="mini-tag">Recruit Lvl +{snapshot.hud.recruitLevelBonus}</span>
             </div>
-            <div className="button-row tight">
-              <button
-                className="mini-button"
-                disabled={!snapshot.hud.canRollRecruitOffers}
-                onClick={() => dispatch({ type: 'rerollRecruitOffers' })}
-              >
-                Refresh 4 Slots ({snapshot.hud.recruitRollCost} SISU)
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!snapshot.hud.canLevelUpRecruitment}
-                onClick={() => dispatch({ type: 'levelUpRecruitment' })}
-              >
-                Recruit Level Up ({snapshot.hud.recruitLevelUpCost} SISU)
-              </button>
-            </div>
           </section>
           <section className="popup-section">
             <div className="section-head">
               <strong>Current Offers</strong>
               <span>{snapshot.hud.freeRecruitSlots}/4</span>
             </div>
-            {snapshot.hud.hasRecruitOffers ? (
-              <div className="popup-list">
-                {snapshot.hud.recruitOffers.map((offer) => (
-                  <div key={`offer-${offer.slotIndex}`} className={offer.empty ? 'popup-card offer-card offer-empty' : `popup-card offer-card offer-${offer.quality ?? 'rough'}`}>
-                    <div className="unit-row-top">
-                      <strong>
-                        {offer.empty ? 'Empty Slot' : offer.name} {!offer.empty && offer.title ? <em>{offer.title}</em> : null}
-                      </strong>
-                      {offer.hotkeyKey ? <span className="mini-tag">{offer.hotkeyKey}</span> : null}
-                    </div>
-                    <small>{offer.roleName} Â· {offer.subclassName}</small>
-                    <div className="mini-tag-row">
-                      <span className="mini-tag">Lvl {offer.level}</span>
-                      <span className="mini-tag">HP {offer.hp}</span>
-                      <span className="mini-tag">ATK {offer.damage}</span>
-                    </div>
-                    <div className="button-row tight">
-                      <button
-                        className="mini-button"
-                        disabled={offer.id === null || !offer.canBuy}
-                        onClick={() => offer.id !== null && dispatch({ type: 'recruitOffer', offerId: offer.id })}
-                      >
-                        {offer.isFree ? 'Recruit Free' : `Recruit ${offer.price} SISU`}
-                      </button>
-                    </div>
-                  </div>
-                ))}
+            <div className="market-layout market-layout-popup">
+              <RecruitOfferSlots
+                offers={snapshot.hud.recruitOffers}
+                dispatch={dispatch}
+                className="market-row market-row-popup"
+              />
+              <div className="market-action-stack market-action-stack-popup">
+                <button
+                  className="mini-button"
+                  disabled={!snapshot.hud.canRollRecruitOffers}
+                  onClick={() => dispatch({ type: 'rerollRecruitOffers' })}
+                >
+                  Refresh 4 Slots ({snapshot.hud.recruitRollCost} SISU)
+                </button>
+                <button
+                  className="secondary-button"
+                  disabled={!snapshot.hud.canLevelUpRecruitment}
+                  onClick={() => dispatch({ type: 'levelUpRecruitment' })}
+                >
+                  Recruit Level Up ({snapshot.hud.recruitLevelUpCost} SISU)
+                </button>
               </div>
-            ) : <p className="panel-copy small-copy">No candidates waiting. Refresh the market to scout four new heroes.</p>}
+            </div>
           </section>
         </div>
       );
