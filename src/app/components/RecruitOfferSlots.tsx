@@ -15,7 +15,7 @@ export function RecruitOfferSlots({
     <div className={className}>
       {offers.map((offer, slotIndex) => (
         offer ? (
-          <div key={offer.id} className={`market-card offer-${offer.quality}`}>
+          <div key={offer.id} className={`market-card offer-${offer.quality ?? 'common'}`}>
             <div className="unit-row-top">
               <strong>
                 {offer.name} <em>{offer.title}</em>
@@ -28,7 +28,16 @@ export function RecruitOfferSlots({
               <span className="mini-tag">HP {offer.hp}</span>
               <span className="mini-tag">ATK {offer.damage}</span>
             </div>
-            <button className="mini-button" onClick={() => dispatch({ type: 'recruitOffer', offerId: offer.id })}>
+            <button
+              className="mini-button"
+              disabled={offer.id === null || !offer.canBuy}
+              onClick={() => {
+                if (offer.id === null) {
+                  return;
+                }
+                dispatch({ type: 'recruitOffer', offerId: offer.id });
+              }}
+            >
               {offer.price === 0 ? 'Take Free Hero' : `Buy ${offer.price} SISU`}
             </button>
           </div>

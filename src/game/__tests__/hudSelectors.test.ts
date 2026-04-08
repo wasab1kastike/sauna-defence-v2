@@ -63,6 +63,6 @@ describe('hud selectors', () => {
     expect(rosterEntries.map((entry) => entry.location)).toEqual(['board', 'sauna', 'ready']);
     expect(saunaReserve.canReroll).toBe(true);
     expect(saunaReserve.rerollCost).toBe(3);
-    expect(saunaReserve.sendSelectedBoardHeroLabel).toBe(`Swap ${boardHero.name} Into Sauna`);
+    expect(saunaReserve.sendSelectedBoardHeroLabel).toBe(`Replace Sauna Hero With ${boardHero.name}`);
   });
 });
