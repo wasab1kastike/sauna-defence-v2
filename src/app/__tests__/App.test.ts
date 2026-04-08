@@ -9,6 +9,7 @@ import {
 } from '../uiHelpers';
 import { gameContent } from '../../content/gameContent';
 import { createDefaultMetaProgress, createInitialState, createSnapshot } from '../../game/logic';
+import { DEFAULT_BOARD_CAMERA } from '../../game/render/layout';
 import { getTileViewportPosition } from '../../game/render';
 
 describe('App popup helpers', () => {
@@ -47,7 +48,8 @@ describe('App popup helpers', () => {
 
   it('keeps defender selection above enemy selection when their hit areas overlap', () => {
     const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
-    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    const defender = state.recruitOffers.find((entry) => entry !== null)!.candidate;
+    state.defenders.push(defender);
     defender.location = 'board';
     defender.tile = { q: 0, r: -1 };
     defender.homeTile = { q: 0, r: -1 };
@@ -65,7 +67,7 @@ describe('App popup helpers', () => {
     const snapshot = createSnapshot(state, gameContent);
     const rect = { left: 0, top: 0, width: 900, height: 700 } as DOMRect;
     const point = getTileViewportPosition(snapshot, rect.width, rect.height, defender.tile!);
-    const action = resolveBoardPointerAction(snapshot, rect, point.x, point.y, () => null);
+    const action = resolveBoardPointerAction(snapshot, rect, point.x, point.y, DEFAULT_BOARD_CAMERA, () => null);
 
     expect(action).toEqual({ type: 'selectDefender', defenderId: defender.id });
   });
@@ -81,18 +83,36 @@ describe('App popup helpers', () => {
     expect(formatPatchNotesDate('not-a-date')).toBe('not-a-date');
   });
 
-  it('ignores the old A, S and D reserve hotkeys', () => {
+  it('maps A, S, D and F to the four recruit market slots', () => {
     const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
     const snapshot = createSnapshot(state, gameContent);
 
-    expect(resolveGameplayHotkeyAction(snapshot, 'a', { guideStepActive: false, patchNotesOpen: false })).toBeNull();
-    expect(resolveGameplayHotkeyAction(snapshot, 's', { guideStepActive: false, patchNotesOpen: false })).toBeNull();
-    expect(resolveGameplayHotkeyAction(snapshot, 'd', { guideStepActive: false, patchNotesOpen: false })).toBeNull();
+    expect(resolveGameplayHotkeyAction(snapshot, 'a', { guideStepActive: false, patchNotesOpen: false })).toEqual({
+      type: 'recruitOffer',
+      offerId: snapshot.hud.recruitOffers[0].id
+    });
+    expect(resolveGameplayHotkeyAction(snapshot, 's', { guideStepActive: false, patchNotesOpen: false })).toEqual({
+      type: 'recruitOffer',
+      offerId: snapshot.hud.recruitOffers[1].id
+    });
+    expect(resolveGameplayHotkeyAction(snapshot, 'd', { guideStepActive: false, patchNotesOpen: false })).toEqual({
+      type: 'recruitOffer',
+      offerId: snapshot.hud.recruitOffers[2].id
+    });
+    expect(resolveGameplayHotkeyAction(snapshot, 'f', { guideStepActive: false, patchNotesOpen: false })).toEqual({
+      type: 'recruitOffer',
+      offerId: snapshot.hud.recruitOffers[3].id
+    });
   });
 
   it('maps Q, W and E to recruit refresh, recruit level up, and sauna reroll', () => {
     const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
     state.sisu.current = 12;
+    const saunaHero = state.recruitOffers.find((entry) => entry !== null)!.candidate;
+    saunaHero.location = 'sauna';
+    saunaHero.tile = null;
+    state.defenders.push(saunaHero);
+    state.saunaDefenderId = saunaHero.id;
     const snapshot = createSnapshot(state, gameContent);
 
     expect(resolveGameplayHotkeyAction(snapshot, 'q', { guideStepActive: false, patchNotesOpen: false })).toEqual({ type: 'rerollRecruitOffers' });

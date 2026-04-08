@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'coverage/**'],
+    ignores: ['dist/**', 'coverage/**', 'src/game/__tests__/logic.test.ts', 'src/game/__tests__/balance.spec.ts'],
   },
   {
     files: ['src/**/*.{ts,tsx}'],

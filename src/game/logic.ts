@@ -115,7 +115,11 @@ const META_IDS: MetaUpgradeId[] = [
 ];
 const CENTER: AxialCoord = { q: 0, r: 0 };
 const WORLD_LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'beer_shop'];
+const RECRUIT_MARKET_SLOT_COUNT = 4;
+const RECRUIT_SLOT_HOTKEYS = ['A', 'S', 'D', 'F'] as const;
 const BLINK_STEP_COOLDOWN_MS = 12000;
+const BATTLE_HYMN_COOLDOWN_MS = 15000;
+const BATTLE_HYMN_BUFF_MS = 3000;
 const FIREBALL_COOLDOWN_MS = 12000;
 const FIREBALL_DELAY_MS = 1000;
 const FIREBALL_RADIUS = 2;
@@ -150,7 +154,6 @@ const STEP_MOTION_DURATION_MS = 240;
 const PEBBLE_MOTION_DURATION_MS = 520;
 const BLINK_MOTION_DURATION_MS = 320;
 const SPAWN_SETTLE_DURATION_MS = 260;
-const RECRUIT_MARKET_SLOT_COUNT = 4;
 const PEBBLE_PATH_BASE: AxialCoord[] = [
   { q: 0, r: -6 },
   { q: 1, r: -5 },
@@ -218,7 +221,6 @@ const recruitmentDeps = {
   derivedMaxHp: (state: RunState, defender: DefenderInstance, content: GameContent) => derivedStats(state, defender, content).maxHp,
   getDefender,
   livingDefenders,
-  recruitReplacementTarget,
   rosterCap
 };
 
@@ -646,16 +648,6 @@ function clearBoardSelection(state: RunState): void {
   state.selectedEnemyInstanceId = null;
 }
 
-function selectFirstReadyDefender(state: RunState): void {
-  const nextReadyDefender = state.defenders.find((defender) => defender.location === 'ready') ?? null;
-  if (!nextReadyDefender) {
-    return;
-  }
-  state.selectedMapTarget = 'defender';
-  state.selectedDefenderId = nextReadyDefender.id;
-  state.selectedEnemyInstanceId = null;
-}
-
 function boardDefenders(state: RunState): DefenderInstance[] {
   return state.defenders.filter((defender) => defender.location === 'board' && defender.tile);
 }
@@ -966,18 +958,26 @@ function derivedStats(
   const globalBonus = globalModifierTotals(state, content);
   const alcoholBonus = alcoholTotals(state, content);
   const auraBonus = subclassAuras(state, defender);
+  const attackCooldownMs = Math.max(
+    360,
+    base.attackCooldownMs + globalBonus.attackCooldownMs + (alcoholBonus.attackCooldownMs ?? 0) + auraBonus.attackCooldownMs
+  );
   return {
     maxHp: Math.max(6, base.maxHp + globalBonus.maxHp + (alcoholBonus.maxHp ?? 0) + auraBonus.maxHp),
     damage: Math.max(1, base.damage + globalBonus.damage + (alcoholBonus.damage ?? 0) + auraBonus.damage),
     heal: Math.max(0, base.heal + globalBonus.heal + (alcoholBonus.heal ?? 0) + auraBonus.heal),
     range: Math.max(1, base.range + globalBonus.range + (alcoholBonus.range ?? 0) + auraBonus.range),
-    attackCooldownMs: Math.max(360, base.attackCooldownMs + globalBonus.attackCooldownMs + (alcoholBonus.attackCooldownMs ?? 0) + auraBonus.attackCooldownMs),
+    attackCooldownMs: defender.battleHymnBuffExpiresAtMs > state.timeMs
+      ? Math.max(360, Math.round((attackCooldownMs * 2) / 3))
+      : attackCooldownMs,
     defense: Math.max(0, base.defense + globalBonus.defense + (alcoholBonus.defense ?? 0) + auraBonus.defense),
     regenHpPerSecond: Math.max(0, base.regenHpPerSecond + globalBonus.regenHpPerSecond + (alcoholBonus.regenHpPerSecond ?? 0) + auraBonus.regenHpPerSecond)
   };
 }
 
 function normalizeDefender(state: RunState, defender: DefenderInstance, content: GameContent): void {
+  defender.battleHymnReadyAtMs ??= 0;
+  defender.battleHymnBuffExpiresAtMs ??= 0;
   defender.hp = Math.min(defender.hp, derivedStats(state, defender, content).maxHp);
 }
 
@@ -1063,6 +1063,8 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
     motion: null,
     attackReadyAtMs: 0,
     blinkReadyAtMs: 0,
+    battleHymnReadyAtMs: 0,
+    battleHymnBuffExpiresAtMs: 0,
     fireballReadyAtMs: 0,
     items: [],
     skills: [],
@@ -1072,13 +1074,9 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
 }
 
 function buildRoster(state: RunState, content: GameContent): DefenderInstance[] {
-  const defenders: DefenderInstance[] = [];
-  for (let index = 0; index < content.config.baseRosterCap; index += 1) {
-    const defender = newDefender(state, DEF_IDS[index % DEF_IDS.length], content);
-    defender.location = index === content.config.boardCap ? 'sauna' : 'ready';
-    defenders.push(defender);
-  }
-  return defenders;
+  void state;
+  void content;
+  return [];
 }
 
 function wrapLane(index: number, laneCount: number): number {
@@ -1351,6 +1349,7 @@ function autoFillSaunaFromBench(state: RunState, content: GameContent): Defender
 }
 
 function maybeSaunaSlapSwap(state: RunState, defender: DefenderInstance, content: GameContent): boolean {
+  void content;
   if (!hasSaunaSlapSwap(state) || state.waveSwapUsed || !defender.tile || defender.location !== 'board' || defender.hp <= 0) {
     return false;
   }
@@ -1498,22 +1497,17 @@ function canRollRecruitOffers(state: RunState): boolean {
   );
 }
 
-function recruitReplacementTarget(state: RunState): DefenderInstance | null {
-  if (state.selectedMapTarget === 'sauna') {
-    const saunaDefender = getDefender(state, state.saunaDefenderId);
-    return saunaDefender && saunaDefender.location === 'sauna' ? saunaDefender : null;
-  }
-  const selected = getDefender(state, state.selectedDefenderId);
-  return selected && selected.location !== 'dead' ? selected : null;
+function pendingReadyRecruit(state: RunState): DefenderInstance | null {
+  return state.defenders.find((defender) => defender.location === 'ready') ?? null;
 }
 
 function canBuyAnyRecruitOffer(state: RunState, content: GameContent): boolean {
-  const rosterFull = livingDefenders(state).length >= rosterCap(state, content);
-  const liveOffers = state.recruitOffers.filter((offer): offer is RecruitOffer => offer !== null);
+  const visibleOffers = state.recruitOffers.filter((offer): offer is RecruitOffer => offer !== null);
+  const boardIsFull = boardDefenders(state).length >= boardCap(state, content);
   return (
     canAccessRecruitment(state) &&
-    (!rosterFull || state.saunaDefenderId !== null || recruitReplacementTarget(state) !== null) &&
-    liveOffers.some((offer) => state.sisu.current >= offer.price)
+    (!pendingReadyRecruit(state) || boardIsFull) &&
+    visibleOffers.some((offer) => state.sisu.current >= offer.price)
   );
 }
 
@@ -1585,10 +1579,7 @@ function setDefenderStartingLevel(defender: DefenderInstance, level: number): vo
   defender.xp = xpForLevel(level);
 }
 
-function recruitOfferPrice(defender: DefenderInstance, content: GameContent, freeMarket: boolean): number {
-  if (freeMarket) {
-    return 0;
-  }
+function recruitOfferPrice(defender: DefenderInstance, content: GameContent): number {
   const score = recruitScore(defender, content);
   const qualityTax = score >= 1.12 ? 2 : score >= 0.96 ? 1 : 0;
   const statTax = Math.max(0, Math.round((score - 0.82) * 6));
@@ -1696,7 +1687,7 @@ function createRecruitOffer(state: RunState, content: GameContent): RecruitOffer
   setDefenderStartingLevel(candidate, recruitStartingLevel(state));
   const score = recruitScore(candidate, content);
   const quality = recruitQuality(score);
-  const price = recruitOfferPrice(candidate, content, state.recruitMarketIsFree);
+  const price = state.recruitMarketIsFree ? 0 : recruitOfferPrice(candidate, content);
   return {
     offerId: state.nextRecruitOfferId++,
     price,
@@ -1705,16 +1696,9 @@ function createRecruitOffer(state: RunState, content: GameContent): RecruitOffer
   };
 }
 
-function rollRecruitOffersIntoState(state: RunState, content: GameContent): void {
+function rollRecruitOffersIntoState(state: RunState, content: GameContent, isFree = false): void {
+  state.recruitMarketIsFree = isFree;
   state.recruitOffers = Array.from({ length: RECRUIT_MARKET_SLOT_COUNT }, () => createRecruitOffer(state, content));
-}
-
-function clearRecruitOffersIntoState(state: RunState): void {
-  state.recruitOffers = Array.from({ length: RECRUIT_MARKET_SLOT_COUNT }, () => null);
-}
-
-function liveRecruitOffers(state: RunState): RecruitOffer[] {
-  return state.recruitOffers.filter((offer): offer is RecruitOffer => offer !== null);
 }
 
 function createBeerShopOffer(state: RunState, alcoholId: AlcoholId): BeerShopOffer {
@@ -1779,8 +1763,6 @@ function replaceDefenderWithRecruit(
     state.selectedDefenderId = null;
     state.selectedMapTarget = null;
   }
-
-  autoFillSaunaFromBench(state, content);
 }
 
 function pushFx(
@@ -1873,28 +1855,69 @@ function tryBlink(state: RunState, defender: DefenderInstance, content: GameCont
   const buildRadius = currentBuildRadius(state, content);
   const spawnLanes = currentSpawnLanes(state, content);
   const hpRatio = defender.hp / Math.max(1, derivedStats(state, defender, content).maxHp);
-  if (hpRatio <= 0.5 && defender.homeTile) {
-    const canRetreat =
-      isBuildable(defender.homeTile, buildRadius, spawnLanes) &&
-      !occupied(state, defender.homeTile) &&
-      (defender.homeTile.q !== defender.tile.q || defender.homeTile.r !== defender.tile.r);
-    if (canRetreat) {
-      moveDefenderToTile(state, defender, defender.homeTile, 'blink', 420, from);
-      defender.blinkReadyAtMs = state.timeMs + BLINK_STEP_COOLDOWN_MS;
-      pushFx(state, 'blink', defender.tile, 420, from);
-      return true;
+  if (hpRatio >= 0.5) return false;
+
+  const canUseBlinkTile = (tile: AxialCoord | null): tile is AxialCoord => {
+    if (!tile) return false;
+    return isBuildable(tile, buildRadius, spawnLanes) &&
+      !occupied(state, tile) &&
+      !sameCoord(tile, defender.tile as AxialCoord);
+  };
+
+  let retreatTile = canUseBlinkTile(defender.homeTile) ? cloneCoord(defender.homeTile) : null;
+  if (!retreatTile) {
+    const healer = boardDefenders(state)
+      .filter((ally) => ally.id !== defender.id && ally.tile)
+      .filter((ally) => ally.hp > 0 && derivedStats(state, ally, content).heal > 0)
+      .sort((left, right) =>
+        (hexDistance(defender.tile as AxialCoord, left.tile as AxialCoord) - hexDistance(defender.tile as AxialCoord, right.tile as AxialCoord)) ||
+        (hexDistance(left.tile as AxialCoord, CENTER) - hexDistance(right.tile as AxialCoord, CENTER)) ||
+        left.id.localeCompare(right.id)
+      )[0] ?? null;
+    if (healer?.tile) {
+      retreatTile = DIRS
+        .map((dir) => add(healer.tile as AxialCoord, dir))
+        .filter((tile) => canUseBlinkTile(tile))
+        .sort((left, right) =>
+          (hexDistance(defender.tile as AxialCoord, left) - hexDistance(defender.tile as AxialCoord, right)) ||
+          (hexDistance(left, CENTER) - hexDistance(right, CENTER)) ||
+          (left.r - right.r) ||
+          (left.q - right.q)
+        )[0] ?? null;
     }
-    return false;
   }
-  const enemy = nearestEnemy(state, defender.tile);
-  if (!enemy) return false;
-  const tile = DIRS.map((dir) => add(defender.tile as AxialCoord, dir))
-    .filter((next) => isBuildable(next, buildRadius, spawnLanes) && !occupied(state, next))
-    .sort((left, right) => hexDistance(left, enemy.tile) - hexDistance(right, enemy.tile))[0];
-  if (!tile) return false;
-  moveDefenderToTile(state, defender, tile, 'blink', BLINK_MOTION_DURATION_MS, from);
+  if (!retreatTile) return false;
+
+  moveDefenderToTile(state, defender, retreatTile, 'blink', BLINK_MOTION_DURATION_MS, from);
   defender.blinkReadyAtMs = state.timeMs + BLINK_STEP_COOLDOWN_MS;
-  pushFx(state, 'blink', tile, 320, from);
+  pushFx(state, 'blink', defender.tile, 420, from);
+  return true;
+}
+
+function tryBlinkTowardEnemy(state: RunState, defender: DefenderInstance, stats: UnitStats, content: GameContent): boolean {
+  if (!defender.tile || !defender.skills.includes('blink_step') || state.timeMs < defender.blinkReadyAtMs) return false;
+  const targetEnemy = nearestEnemy(state, defender.tile);
+  if (!targetEnemy) return false;
+
+  const buildRadius = currentBuildRadius(state, content);
+  const spawnLanes = currentSpawnLanes(state, content);
+  const from = cloneCoord(defender.tile);
+  const destination = createHexGrid(currentGridRadius(state, content))
+    .filter((tile) => isBuildable(tile, buildRadius, spawnLanes))
+    .filter((tile) => !occupied(state, tile))
+    .filter((tile) => !sameCoord(tile, defender.tile as AxialCoord))
+    .filter((tile) => hexDistance(tile, targetEnemy.tile) <= stats.range)
+    .sort((left, right) =>
+      (hexDistance(left, targetEnemy.tile) - hexDistance(right, targetEnemy.tile)) ||
+      (hexDistance(left, CENTER) - hexDistance(right, CENTER)) ||
+      (left.r - right.r) ||
+      (left.q - right.q)
+    )[0];
+  if (!destination) return false;
+
+  moveDefenderToTile(state, defender, destination, 'blink', BLINK_MOTION_DURATION_MS, from);
+  defender.blinkReadyAtMs = state.timeMs + BLINK_STEP_COOLDOWN_MS;
+  pushFx(state, 'blink', destination, 320, from);
   return true;
 }
 
@@ -2084,6 +2107,9 @@ function resolveEnemyDeaths(state: RunState, content: GameContent): void {
         killer.kills += 1;
         if (killer.skills.includes('blink_step')) {
           killer.blinkReadyAtMs = state.timeMs;
+        }
+        if (killer.skills.includes('battle_hymn')) {
+          killer.battleHymnReadyAtMs = Math.max(state.timeMs, killer.battleHymnReadyAtMs - 1000);
         }
         const levelMessage = grantXp(state, killer, xpForEnemy(enemy.archetypeId), content);
         if (levelMessage) {
@@ -2383,8 +2409,10 @@ function applySubclassAttackEffects(
 function applySubclassRetaliationEffects(
   state: RunState,
   enemy: EnemyInstance,
-  target: DefenderInstance
+  target: DefenderInstance,
+  _content: GameContent
 ): void {
+  void _content;
   if (!target.tile) return;
   if (hasSubclass(target, 'stonewall') && hexDistance(enemy.tile, target.tile) <= 1) {
     applyEnemyHitWithFx(state, target, enemy, 2, 'pulse', target.tile);
@@ -2397,61 +2425,34 @@ function applySubclassRetaliationEffects(
   }
 }
 
-function defenderAttack(state: RunState, defender: DefenderInstance, content: GameContent): void {
-  if (!defender.tile || defender.location !== 'board' || state.timeMs < defender.attackReadyAtMs) return;
-  const stats = derivedStats(state, defender, content);
-  const dmgMult = state.timeMs < state.sisu.activeUntilMs ? content.config.sisuDamageMultiplier : 1;
-  const cdMult = state.timeMs < state.sisu.activeUntilMs ? content.config.sisuAttackMultiplier : 1;
-  const originTile = { ...defender.tile };
-  const lowHp = defender.skills.includes('blink_step') && defender.hp / Math.max(1, stats.maxHp) <= 0.5;
-  if (lowHp && tryBlink(state, defender, content)) {
-    defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
-    return;
-  }
-
-  const healTargets = stats.heal > 0 ? alliesToHeal(state, defender, stats, content) : [];
-  const ally = healTargets[0] ?? null;
-  if (ally) {
-    const calmWhisperMultiplier = hasSubclass(defender, 'calm_whisper') ? 0.8 : 1;
-    applyHealToDefender(
-      state,
-      defender,
-      ally,
-      Math.round(stats.heal * dmgMult * calmWhisperMultiplier) + subclassHealBonusAmount(state, defender, ally, content),
-      content,
-      'heal',
-      defender.tile
-    );
-    applySubclassHealEffects(state, defender, ally, stats, healTargets, content);
-    grantCombatXp(state, defender, 1, content);
-    defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
-    return;
-  }
-
-  let target = preferredEnemiesInRange(state, defender, defender.tile, stats.range)[0] ?? null;
-  if (!target && tryBlink(state, defender, content)) {
-    const retreatedHome =
-      defender.homeTile &&
-      defender.tile.q === defender.homeTile.q &&
-      defender.tile.r === defender.homeTile.r &&
-      (originTile.q !== defender.tile.q || originTile.r !== defender.tile.r);
-    if (retreatedHome) {
-      defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
-      return;
+function triggerBattleHymn(state: RunState, defender: DefenderInstance): void {
+  if (!defender.tile || !defender.skills.includes('battle_hymn') || state.timeMs < defender.battleHymnReadyAtMs) return;
+  const recipients = [defender, ...boardAlliesWithin(state, defender.tile, 1, defender.id)];
+  for (const ally of recipients) {
+    ally.battleHymnBuffExpiresAtMs = state.timeMs + BATTLE_HYMN_BUFF_MS;
+    if (ally.tile) {
+      pushFx(state, 'pulse', ally.tile, 260, defender.tile);
     }
-    target = preferredEnemiesInRange(state, defender, defender.tile, stats.range)[0] ?? null;
   }
+  defender.battleHymnReadyAtMs = state.timeMs + BATTLE_HYMN_COOLDOWN_MS;
+}
 
-  if (!target) {
-    moveDefenderTowardSaunaThreat(state, defender, stats, content, cdMult);
-    return;
-  }
+function performDefenderBasicAttack(
+  state: RunState,
+  defender: DefenderInstance,
+  stats: UnitStats,
+  damageMultiplier: number,
+  content: GameContent
+): boolean {
+  if (!defender.tile) return false;
+  const target = preferredEnemiesInRange(state, defender, defender.tile, stats.range)[0] ?? null;
+  if (!target) return false;
 
   const benchOakSpin = hasSubclass(defender, 'bench_oak')
     ? state.enemies.filter((enemy) => hexDistance(enemy.tile, defender.tile as AxialCoord) <= 1)
     : [];
 
-  let hitDamage = Math.round(stats.damage * dmgMult);
+  let hitDamage = Math.round(stats.damage * damageMultiplier);
   if (hasSubclass(defender, 'bucket_sniper') && hexDistance(defender.tile, target.tile) === stats.range) {
     hitDamage += 2;
   }
@@ -2498,14 +2499,55 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
     defender.hp = Math.min(stats.maxHp, defender.hp + 3);
     pushFx(state, 'heal', defender.tile, 220);
   }
-  if (defender.skills.includes('battle_hymn')) {
-    const allyPulse = alliesToHeal(state, defender, { ...stats, range: 1 }, content)[0];
-    if (allyPulse?.tile) {
-      allyPulse.hp = Math.min(derivedStats(state, allyPulse, content).maxHp, allyPulse.hp + 2);
-      pushFx(state, 'heal', allyPulse.tile, 240, defender.tile);
-    }
+  triggerBattleHymn(state, defender);
+  return true;
+}
+
+function defenderAttack(state: RunState, defender: DefenderInstance, content: GameContent): void {
+  if (!defender.tile || defender.location !== 'board' || state.timeMs < defender.attackReadyAtMs) return;
+  const stats = derivedStats(state, defender, content);
+  const dmgMult = state.timeMs < state.sisu.activeUntilMs ? content.config.sisuDamageMultiplier : 1;
+  const cdMult = state.timeMs < state.sisu.activeUntilMs ? content.config.sisuAttackMultiplier : 1;
+  const lowHp = defender.skills.includes('blink_step') && defender.hp / Math.max(1, stats.maxHp) < 0.5;
+  if (lowHp && tryBlink(state, defender, content)) {
+    defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
+    return;
   }
-  defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
+
+  const inRangeTarget = preferredEnemiesInRange(state, defender, defender.tile, stats.range)[0] ?? null;
+  if (!lowHp && !inRangeTarget && tryBlinkTowardEnemy(state, defender, stats, content)) {
+    performDefenderBasicAttack(state, defender, derivedStats(state, defender, content), dmgMult, content);
+    defender.attackReadyAtMs = state.timeMs + derivedStats(state, defender, content).attackCooldownMs / cdMult;
+    return;
+  }
+
+  const healTargets = stats.heal > 0 ? alliesToHeal(state, defender, stats, content) : [];
+  const ally = healTargets[0] ?? null;
+  if (ally) {
+    const calmWhisperMultiplier = hasSubclass(defender, 'calm_whisper') ? 0.8 : 1;
+    applyHealToDefender(
+      state,
+      defender,
+      ally,
+      Math.round(stats.heal * dmgMult * calmWhisperMultiplier) + subclassHealBonusAmount(state, defender, ally, content),
+      content,
+      'heal',
+      defender.tile
+    );
+    applySubclassHealEffects(state, defender, ally, stats, healTargets, content);
+    grantCombatXp(state, defender, 1, content);
+    defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
+    return;
+  }
+
+  const target = inRangeTarget ?? preferredEnemiesInRange(state, defender, defender.tile, stats.range)[0] ?? null;
+
+  if (!target) {
+    moveDefenderTowardSaunaThreat(state, defender, stats, content, cdMult);
+    return;
+  }
+  performDefenderBasicAttack(state, defender, stats, dmgMult, content);
+  defender.attackReadyAtMs = state.timeMs + derivedStats(state, defender, content).attackCooldownMs / cdMult;
 }
 
 function pebblePathForLane(laneIndex: number): AxialCoord[] {
@@ -2553,7 +2595,7 @@ function applyEnemyDamageToDefender(
   if (target.tile) {
     pushFx(state, enemyImpactFxKind(enemy), target.tile, isBossThreat(enemy) ? 240 : 190, enemy.tile);
   }
-      applySubclassRetaliationEffects(state, enemy, target);
+  applySubclassRetaliationEffects(state, enemy, target, content);
   maybeSaunaSlapSwap(state, target, content);
   if (isBossThreat(enemy)) {
     addHitStop(state, 32);
@@ -3441,9 +3483,8 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
   const selectedDefender = getDefender(state, state.selectedDefenderId);
   const selectedEnemy = getEnemy(state, state.selectedEnemyInstanceId);
   const boardCount = boardDefenders(state).length;
-  const readyCount = state.defenders.filter((defender) => defender.location === 'ready').length;
-  const freeSlots = Math.max(0, rosterCap(state, content) - livingDefenders(state).length);
-  const replacement = recruitReplacementTarget(state);
+  const readyRecruit = pendingReadyRecruit(state);
+  const liveOffers = state.recruitOffers.filter((offer): offer is RecruitOffer => offer !== null);
 
   if (state.overlayMode === 'intermission') {
     if (!state.meta.shopUnlocked) {
@@ -3517,42 +3558,38 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
         : `${content.enemyArchetypes[selectedEnemy.archetypeId].name} is selected. Read its stats and lore, then decide which lane needs help first.`
     };
   }
-  const liveOffers = liveRecruitOffers(state);
   if (liveOffers.length > 0) {
     return {
       title: 'Recruit Market Live',
-      body:
-          state.recruitMarketIsFree
-            ? state.saunaDefenderId
-              ? 'The opening batch is free, but buying one will replace the hero currently in the sauna.'
-              : 'The opening batch is free. Pick one recruit for the sauna, or refresh the market when you want priced offers instead.'
-            : state.saunaDefenderId
-              ? 'Four candidates are on the towel rack. Buying one now replaces the current sauna reserve immediately.'
-              : freeSlots > 0
-                ? 'Four candidates are on the towel rack. Compare the prices, then buy one into the sauna reserve.'
-                : replacement
-                  ? `Four candidates are ready. Buying one will replace ${replacement.name} immediately.`
-                  : 'Four candidates are ready, but your roster is full. Select the hero you want to replace before buying.'
+      body: readyRecruit
+        ? `${readyRecruit.name} is waiting to be placed. Drop them on a green hex or send a board hero to sauna before buying another recruit.`
+        : boardCount >= boardCap(state, content)
+          ? state.saunaDefenderId
+            ? 'Board full: the next recruit replaces the current sauna hero.'
+            : 'Board full: the next recruit goes to the empty sauna.'
+          : state.recruitMarketIsFree
+            ? 'The opening four recruits are free. Pick one and place them before refreshing the roster.'
+            : 'Four recruits are waiting in the market. Pick one, place them, then refresh when you want a new batch.'
     };
   }
   if (selectedDefender && selectedDefender.location !== 'board') {
     return {
       title: 'Place Defender',
-      body: `Drop ${selectedDefender.name} onto a bright green build hex. You can place heroes from the bench even while the wave is live.`
+      body: `Drop ${selectedDefender.name} onto a bright green build hex. You can still place recruits while the wave is live.`
     };
   }
   if (state.phase === 'prep') {
-    if (boardCount === 0 && readyCount > 0) {
+    if (boardCount === 0 && readyRecruit) {
       return {
         title: 'Place Your First Hero',
-        body: 'Select a hero from the roster, then click any green build hex on the board. Path tiles stay dark and cannot hold defenders.'
+        body: 'Pick one recruit from the bottom market, then click any green build hex on the board. Path tiles stay dark and cannot hold defenders.'
       };
     }
     return {
       title: state.currentWave.isBoss ? `${bossDisplayName(state.currentWave.bossId) ?? 'Boss'} Prep` : 'Prep Window',
       body: state.currentWave.isBoss
         ? bossHint(state.currentWave.bossId) ?? 'This is the clean break before a boss. Set the board, spend SISU carefully, then start when ready.'
-        : freeSlots > 0
+        : liveOffers.length > 0
           ? 'Set the board, reroll recruits if needed, and start when your lanes make sense.'
           : 'Set the board, sort loot, and start when your lanes make sense.'
     };
@@ -3561,8 +3598,8 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
     title: state.currentWave.isBoss ? (bossDisplayName(state.currentWave.bossId) ?? 'Boss Pressure') : 'Hold The Line',
     body: state.currentWave.isBoss
       ? bossHint(state.currentWave.bossId) ?? 'Keep the center alive, use pause if you need to assign loot, and watch for direct sauna breaches.'
-      : freeSlots > 0
-        ? 'Non-boss waves keep chaining. You can still recruit and place bench heroes while the fight is live.'
+      : liveOffers.length > 0
+        ? 'Non-boss waves keep chaining. You can still recruit and place new heroes while the fight is live.'
         : 'Non-boss waves keep chaining, so stabilize attrition before the next spike arrives.'
   };
 }
@@ -3611,8 +3648,8 @@ export function createInitialState(
     inventory: [],
     selectedInventoryDropId: null,
     recentDropId: null,
-    recruitMarketIsFree: true,
     recruitOffers: [],
+    recruitMarketIsFree: false,
     benchRerollCountsByDefenderId: {},
     recruitLevelBonus: 0,
     recruitLevelUpCount: 0,
@@ -3638,14 +3675,14 @@ export function createInitialState(
     meta: clone(meta),
     message: showIntermission
       ? 'Spend Steam, browse upgrades, then begin the next sauna shift.'
-      : 'Place defenders, keep one weird hero in the sauna, then start the wave.',
+      : 'Pick a free recruit, place them on the board, then start the wave.',
     metaAwarded: false
   };
   state.defenders = buildRoster(state, content);
   state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
-  rollRecruitOffersIntoState(state, content);
-  state.selectedDefenderId = state.defenders.find((defender) => defender.location === 'ready')?.id ?? null;
-  state.selectedMapTarget = state.selectedDefenderId ? 'defender' : null;
+  if (!showIntermission) {
+    rollRecruitOffersIntoState(state, content, true);
+  }
   if (beerShopUnlocked(state)) {
     rollBeerShopOffersIntoState(state, content);
   }
@@ -3826,9 +3863,6 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     case 'closeSaunaPopup':
     case 'clearSelection':
       clearBoardSelection(next);
-      if (next.phase === 'prep' && next.overlayMode === 'none') {
-        selectFirstReadyDefender(next);
-      }
       return next;
     case 'selectInventoryDrop': {
       const drop = getInventoryDrop(next, action.dropId);
@@ -3904,12 +3938,8 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       defender.attackReadyAtMs = next.timeMs + derivedStats(next, defender, content).attackCooldownMs;
       if (next.saunaDefenderId === defender.id) next.saunaDefenderId = null;
       clearBoardSelection(next);
-      if (next.phase === 'prep' && next.overlayMode === 'none') {
-        selectFirstReadyDefender(next);
-      }
-      const movedToSauna = autoFillSaunaFromBench(next, content);
-      next.message = movedToSauna
-        ? `${defender.name} entered the fight. ${movedToSauna.name} moved into the empty sauna reserve.`
+      next.message = cameFromSauna
+        ? `${defender.name} stepped out of the sauna and onto the board.`
         : `${defender.name} entered the fight.`;
       return next;
     }
@@ -3926,8 +3956,11 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       defender.tile = null;
       clearUnitMotion(defender);
       next.saunaDefenderId = defender.id;
+      next.selectedMapTarget = 'sauna';
+      next.selectedDefenderId = null;
+      next.selectedEnemyInstanceId = null;
       next.message = currentSaunaDefender && currentSaunaDefender.location === 'sauna'
-        ? `${defender.name} took the sauna seat and ${currentSaunaDefender.name} left the roster.`
+        ? `${defender.name} took the sauna seat. ${currentSaunaDefender.name} was sent home.`
         : `${defender.name} went to recover in the sauna.`;
       return next;
     }
@@ -3981,14 +4014,12 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         return next;
       }
       next.sisu.current -= cost;
-      next.recruitMarketIsFree = false;
-      rollRecruitOffersIntoState(next, content);
-      const offers = liveRecruitOffers(next);
+      rollRecruitOffersIntoState(next, content, false);
+      setActiveHudPanel(next, 'recruit');
+      const visibleOffers = next.recruitOffers.filter((offer): offer is RecruitOffer => offer !== null);
       next.message =
-        offers.length > 0
-          ? next.recruitMarketIsFree
-            ? 'The free opening market is ready.'
-            : `The market rerolled. Four new recruits are up for sale, starting at ${Math.min(...offers.map((offer) => offer.price))} SISU.`
+        visibleOffers.length > 0
+          ? `The market rerolled. Four new recruits are up for sale, starting at ${Math.min(...visibleOffers.map((offer) => offer.price))} SISU.`
           : 'No recruits showed up.';
       return next;
     }
@@ -4009,6 +4040,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.message = `${previousName} rerolled into ${defender.name} ${defender.title} for ${cost} SISU.`;
       return next;
     }
+    case 'rerollRecruitOffer':
+      next.message = 'Single-slot rerolls are gone. Use Refresh to scout a new batch.';
+      return next;
     case 'levelUpRecruitment': {
       if (!canAccessRecruitment(next)) return next;
       const cost = recruitLevelUpCost(next.recruitLevelUpCount);
@@ -4019,23 +4053,20 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.sisu.current -= cost;
       next.recruitLevelBonus += 1;
       next.recruitLevelUpCount += 1;
+      setActiveHudPanel(next, 'recruit');
       next.message = `Recruitment leveled up. Future rerolls now favor stronger starting levels.`;
       return next;
     }
     case 'recruitOffer': {
       if (!canAccessRecruitment(next)) return next;
       const offerIndex = next.recruitOffers.findIndex((entry) => entry?.offerId === action.offerId);
-      const offer = offerIndex >= 0 ? next.recruitOffers[offerIndex] : null;
+      if (offerIndex < 0) return next;
+      const offer = next.recruitOffers[offerIndex];
       if (!offer) return next;
-      const rosterFull = livingDefenders(next).length >= rosterCap(next, content);
-      const saunaReplacement = getDefender(next, next.saunaDefenderId);
-      const replacement = saunaReplacement && saunaReplacement.location === 'sauna'
-        ? saunaReplacement
-        : rosterFull
-          ? recruitReplacementTarget(next)
-          : null;
-      if (rosterFull && !replacement) {
-        next.message = 'Roster is full. Select a hero from the roster, or click the sauna, to choose who gets replaced.';
+      const boardIsFull = boardDefenders(next).length >= boardCap(next, content);
+      const currentPendingReadyRecruit = pendingReadyRecruit(next);
+      if (currentPendingReadyRecruit && !boardIsFull) {
+        next.message = `Place or sauna ${currentPendingReadyRecruit.name} first before recruiting another hero.`;
         return next;
       }
       if (next.sisu.current < offer.price) {
@@ -4043,24 +4074,34 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         return next;
       }
       next.sisu.current -= offer.price;
-      if (replacement) {
-        replaceDefenderWithRecruit(next, replacement, offer.candidate, content);
+      if (boardIsFull) {
+        const saunaDefender = getDefender(next, next.saunaDefenderId);
+        if (saunaDefender && saunaDefender.location === 'sauna') {
+          replaceDefenderWithRecruit(next, saunaDefender, offer.candidate, content);
+          next.selectedMapTarget = 'sauna';
+          next.selectedDefenderId = null;
+          next.selectedEnemyInstanceId = null;
+          next.message = `${offer.candidate.name} ${offer.candidate.title} replaced ${saunaDefender.name} in the sauna for ${offer.price} SISU.`;
+        } else {
+          addRecruitToReserve(next, offer.candidate, content);
+          next.message = `${offer.candidate.name} ${offer.candidate.title} took the empty sauna slot for ${offer.price} SISU.`;
+        }
       } else {
         addRecruitToReserve(next, offer.candidate, content);
+        next.selectedMapTarget = 'defender';
+        next.selectedDefenderId = offer.candidate.id;
+        next.selectedEnemyInstanceId = null;
+        next.message = offer.price === 0
+          ? `${offer.candidate.name} ${offer.candidate.title} joined for free. Click a build hex to place them.`
+          : `${offer.candidate.name} ${offer.candidate.title} is ready to place for ${offer.price} SISU.`;
       }
       next.recruitOffers[offerIndex] = null;
-      const purchasedForFree = offer.price === 0;
-      next.message = replacement
-        ? `${offer.candidate.name} ${offer.candidate.title} replaced ${replacement.name} for ${offer.price} SISU.`
-        : `${offer.candidate.name} ${offer.candidate.title} took the sauna reserve for ${offer.price} SISU.`;
-      if (purchasedForFree) {
-        next.message = next.message.replace(' for 0 SISU.', ' for free.');
-      }
       return next;
     }
     case 'clearRecruitOffers':
       if (!canAccessRecruitment(next)) return next;
-      clearRecruitOffersIntoState(next);
+      next.recruitOffers = Array.from({ length: RECRUIT_MARKET_SLOT_COUNT }, () => null);
+      next.recruitMarketIsFree = false;
       clearActiveHudPanel(next);
       next.message = 'Recruit offers dismissed.';
       return next;
@@ -4246,7 +4287,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     next.saunaHp = 0;
     next.phase = 'lost';
     next.overlayMode = 'intermission';
-    clearActiveHudPanel(next);
+    setActiveHudPanel(next, 'metashop', 'metashop');
     next.activeAlcohols = [];
     next.pendingFireballs = [];
     awardMeta(next);
@@ -4281,13 +4322,12 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const action = actionCopy(state, content);
   const boardCount = boardDefenders(state).length;
   const readyBenchCount = readyReserveDefenders.length;
-  const freeRecruitSlots = Math.max(0, rosterCap(state, content) - livingDefenders(state).length);
-  const liveOffers = liveRecruitOffers(state);
+  const freeRecruitSlots = state.recruitOffers.filter((offer) => offer !== null).length;
   const beerTier = beerShopTier(state);
   const selectedBoardDefender = selected && selected.location === 'board' ? selected : null;
   const saunaSendLabel = selectedBoardDefender
     ? saunaDefender
-      ? `Replace Sauna Hero With ${selectedBoardDefender.name}`
+      ? `Swap ${selectedBoardDefender.name} Into Sauna`
       : `Send ${selectedBoardDefender.name} To Sauna`
     : null;
   const readyReserveEntries = createReadyReserveEntries(
@@ -4384,26 +4424,58 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     recruitLevelOdds: recruitLevelOdds(state.recruitLevelBonus),
     canRollRecruitOffers: canRollRecruitOffers(state),
     canLevelUpRecruitment: canAccessRecruitment(state) && state.sisu.current >= recruitLevelUpCost(state.recruitLevelUpCount),
-    hasRecruitOffers: liveOffers.length > 0,
+    hasRecruitOffers: state.recruitOffers.some((offer) => offer !== null),
     boardFullButBenchAvailable: boardFullButBenchAvailable(state, content),
     rosterFullNeedsReplacement: livingDefenders(state).length >= rosterCap(state, content),
     recruitOffers: state.recruitOffers.map((offer, slotIndex) => {
       if (!offer) {
-        return null;
+        return {
+          slotIndex,
+          id: null,
+          price: null,
+          quality: null,
+          name: null,
+          title: null,
+          roleName: null,
+          subclassName: null,
+          roleSummary: null,
+          lore: null,
+          level: null,
+          hp: null,
+          damage: null,
+          heal: null,
+          range: null,
+          rerollCount: 0,
+          rerollCost: null,
+          empty: true,
+          isFree: false,
+          canBuy: false,
+          hotkeyKey: RECRUIT_SLOT_HOTKEYS[slotIndex] ?? null
+        };
       }
       const roleStats = derivedStats(state, offer.candidate, content, false);
       return {
-        id: offer.offerId,
         slotIndex,
+        id: offer.offerId,
         price: offer.price,
         quality: offer.quality,
         name: offer.candidate.name,
         title: offer.candidate.title,
         roleName: content.defenderTemplates[offer.candidate.templateId].name,
         subclassName: subclassSummary(offer.candidate, content),
+        roleSummary: content.defenderTemplates[offer.candidate.templateId].role,
+        lore: offer.candidate.lore,
         level: offer.candidate.level,
         hp: roleStats.maxHp,
-        damage: roleStats.damage
+        damage: roleStats.damage,
+        heal: roleStats.heal,
+        range: roleStats.range,
+        rerollCount: 0,
+        rerollCost: null,
+        empty: false,
+        isFree: offer.price === 0,
+        canBuy: canAccessRecruitment(state) && (!pendingReadyRecruit(state) || boardCount >= boardCap(state, content)) && state.sisu.current >= offer.price,
+        hotkeyKey: RECRUIT_SLOT_HOTKEYS[slotIndex] ?? null
       };
     }),
     steamEarned: state.steamEarned,

@@ -2,6 +2,7 @@ import { coordKey, hexDistance } from './geometry';
 import {
   axialFloatToPixel,
   axialToPixel,
+  DEFAULT_BOARD_CAMERA,
   getBoardLayout,
   type BoardLayout
 } from './render/layout';
@@ -13,6 +14,7 @@ import {
 export { getTileViewportPosition } from './render/layout';
 import type {
   AxialCoord,
+  BoardCamera,
   BossId,
   DefenderTemplateId,
   EnemyInstance,
@@ -2106,9 +2108,10 @@ export function paintSnapshot(
   ctx: CanvasRenderingContext2D,
   snapshot: GameSnapshot,
   viewportWidth: number,
-  viewportHeight: number
+  viewportHeight: number,
+  camera: BoardCamera = DEFAULT_BOARD_CAMERA
 ) {
-  const layout = getBoardLayout(viewportWidth, viewportHeight, snapshot.config.gridRadius);
+  const layout = getBoardLayout(viewportWidth, viewportHeight, snapshot.config.gridRadius, camera);
   const buildableSet = new Set(snapshot.buildableTiles.map(coordKey));
   const spawnSet = new Set(snapshot.spawnTiles.map(coordKey));
   const hoverKey = snapshot.state.hoveredTile ? coordKey(snapshot.state.hoveredTile) : null;
@@ -2379,16 +2382,18 @@ export function pickTileAtCanvasPoint(
   snapshot: GameSnapshot,
   rect: DOMRect,
   clientX: number,
-  clientY: number
+  clientY: number,
+  camera: BoardCamera = DEFAULT_BOARD_CAMERA
 ): AxialCoord | null {
-  return pickTileAtCanvasPointFromModule(snapshot, rect, clientX, clientY);
+  return pickTileAtCanvasPointFromModule(snapshot, rect, clientX, clientY, camera);
 }
 
 export function pickDefenderAtCanvasPoint(
   snapshot: GameSnapshot,
   rect: DOMRect,
   clientX: number,
-  clientY: number
+  clientY: number,
+  camera: BoardCamera = DEFAULT_BOARD_CAMERA
 ): string | null {
   return pickDefenderAtCanvasPointFromModule(
     snapshot,
@@ -2406,7 +2411,8 @@ export function pickDefenderAtCanvasPoint(
           ),
           radius: layout.hexSize * 0.62
         }))
-        .sort((left, right) => right.radius - left.radius)
+        .sort((left, right) => right.radius - left.radius),
+    camera
   );
 }
 
@@ -2414,7 +2420,8 @@ export function pickEnemyAtCanvasPoint(
   snapshot: GameSnapshot,
   rect: DOMRect,
   clientX: number,
-  clientY: number
+  clientY: number,
+  camera: BoardCamera = DEFAULT_BOARD_CAMERA
 ): number | null {
   return pickEnemyAtCanvasPointFromModule(
     snapshot,
@@ -2431,6 +2438,7 @@ export function pickEnemyAtCanvasPoint(
             radius: resolved.bossProfile.presentation === 'boss_unit' ? resolved.radius * 1.18 : resolved.radius * 1.05
           };
         })
-        .sort((left, right) => right.radius - left.radius)
+        .sort((left, right) => right.radius - left.radius),
+    camera
   );
 }

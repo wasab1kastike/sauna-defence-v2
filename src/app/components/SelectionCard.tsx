@@ -15,6 +15,7 @@ interface SelectionCardProps {
   selectedSauna: HudSelectedSauna | null;
   selectedEnemy: HudSelectedEnemy | null;
   canSendSelectedDefenderToSauna: boolean;
+  sendSelectedDefenderToSaunaLabel: string;
   dispatch: (action: InputAction) => void;
 }
 
@@ -23,6 +24,7 @@ export function SelectionCard({
   selectedSauna,
   selectedEnemy,
   canSendSelectedDefenderToSauna,
+  sendSelectedDefenderToSaunaLabel,
   dispatch
 }: SelectionCardProps) {
   if (!selectedDefender && !selectedSauna && !selectedEnemy) {
@@ -43,7 +45,7 @@ export function SelectionCard({
           <small>
             {selectedSauna.occupantRole
               ? `${selectedSauna.occupantRole} - ${selectedSauna.occupantSubclassName}`
-              : 'No hero is warming up inside.'}
+              : 'No reserve hero inside.'}
           </small>
           {selectedSauna.occupantName ? (
             <>
@@ -71,13 +73,10 @@ export function SelectionCard({
                   </button>
                 ) : null}
               </div>
-              {selectedSauna.canSendSelectedBoardHero && selectedDefender?.location === 'board' ? (
-                <p className="panel-copy small-copy">Sending the selected board hero here will replace the current sauna hero permanently.</p>
-              ) : null}
             </>
           ) : (
             <>
-              <p className="panel-copy small-copy">Send one board hero here during prep to keep them in the sauna.</p>
+              <p className="panel-copy small-copy">Send one board hero here during prep to create a reserve.</p>
               {selectedSauna.canSendSelectedBoardHero && selectedDefender?.location === 'board' ? (
                 <button
                   className="secondary-button small-button"
@@ -196,17 +195,12 @@ export function SelectionCard({
             </div>
           ) : null}
           {canSendSelectedDefenderToSauna ? (
-            <>
-              <p className="panel-copy small-copy">
-                Sending this hero to the sauna will either occupy the free sauna slot or replace the current sauna hero with no refund.
-              </p>
-              <button
-                className="mini-button"
-                onClick={() => dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })}
-              >
-                Send To Sauna
-              </button>
-            </>
+            <button
+              className="mini-button"
+              onClick={() => dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })}
+            >
+              {sendSelectedDefenderToSaunaLabel}
+            </button>
           ) : null}
         </>
       ) : null}

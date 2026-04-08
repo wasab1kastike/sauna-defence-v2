@@ -279,6 +279,12 @@ export interface RecruitOffer {
   candidate: DefenderInstance;
 }
 
+export interface BoardCamera {
+  zoom: number;
+  offsetX: number;
+  offsetY: number;
+}
+
 export interface BeerShopOffer {
   offerId: number;
   alcoholId: AlcoholId;
@@ -342,6 +348,8 @@ export interface DefenderInstance {
   motion?: UnitMotionState | null;
   attackReadyAtMs: number;
   blinkReadyAtMs: number;
+  battleHymnReadyAtMs: number;
+  battleHymnBuffExpiresAtMs: number;
   fireballReadyAtMs: number;
   items: ItemId[];
   skills: SkillId[];
@@ -515,8 +523,8 @@ export interface RunState {
   inventory: InventoryDrop[];
   selectedInventoryDropId: number | null;
   recentDropId: number | null;
-  recruitMarketIsFree: boolean;
   recruitOffers: Array<RecruitOffer | null>;
+  recruitMarketIsFree: boolean;
   benchRerollCountsByDefenderId: Record<string, number>;
   recruitLevelBonus: number;
   recruitLevelUpCount: number;
@@ -732,17 +740,27 @@ export interface HudDeathLogEntry {
 }
 
 export interface HudRecruitOfferEntry {
-  id: number;
   slotIndex: number;
-  price: number;
-  quality: 'rough' | 'solid' | 'elite';
-  name: string;
-  title: string;
-  roleName: string;
-  subclassName: string;
-  level: number;
-  hp: number;
-  damage: number;
+  id: number | null;
+  price: number | null;
+  quality: 'rough' | 'solid' | 'elite' | null;
+  name: string | null;
+  title: string | null;
+  roleName: string | null;
+  subclassName: string | null;
+  roleSummary: string | null;
+  lore: string | null;
+  level: number | null;
+  hp: number | null;
+  damage: number | null;
+  heal: number | null;
+  range: number | null;
+  rerollCount: number;
+  rerollCost: number | null;
+  empty: boolean;
+  isFree: boolean;
+  canBuy: boolean;
+  hotkeyKey: string | null;
 }
 
 export interface HudRecruitLevelOddsEntry {
@@ -858,7 +876,7 @@ export interface HudViewModel {
   hasRecruitOffers: boolean;
   boardFullButBenchAvailable: boolean;
   rosterFullNeedsReplacement: boolean;
-  recruitOffers: Array<HudRecruitOfferEntry | null>;
+  recruitOffers: HudRecruitOfferEntry[];
   steamEarned: number;
   bankedSteam: number;
   metaShopUnlockCost: number;
@@ -944,6 +962,7 @@ export type InputAction =
   | { type: 'rerollSaunaDefender' }
   | { type: 'rerollBenchDefender'; defenderId: string }
   | { type: 'rerollRecruitOffers' }
+  | { type: 'rerollRecruitOffer'; offerId: number }
   | { type: 'levelUpRecruitment' }
   | { type: 'rollRecruitOffers' }
   | { type: 'recruitOffer'; offerId: number }
@@ -974,6 +993,7 @@ export interface GameRuntime {
   start(): void;
   stop(): void;
   resize(): void;
+  setBoardCamera(camera: BoardCamera): void;
   dispatch(action: InputAction): void;
   subscribe(listener: (snapshot: GameSnapshot) => void): () => void;
   getSnapshot(): GameSnapshot;

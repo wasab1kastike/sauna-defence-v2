@@ -9,13 +9,15 @@ import {
 import type { DefenderInstance, RunState, UnitStats } from '../types';
 
 const selectorDeps = {
-  benchRerollCost: (...args: [RunState, string]) => {
-    void args;
+  benchRerollCost: (state: RunState, defenderId: string) => {
+    void state;
+    void defenderId;
     return 2;
   },
   canRerollSaunaDefender: () => true,
-  derivedStats: (...args: [RunState, DefenderInstance, typeof gameContent]): UnitStats => {
-    const [, defender] = args;
+  derivedStats: (state: RunState, defender: DefenderInstance, content: typeof gameContent): UnitStats => {
+    void state;
+    void content;
     return defender.stats;
   },
   saunaRerollCost: () => 3,
@@ -23,8 +25,14 @@ const selectorDeps = {
 };
 
 describe('hud selectors', () => {
-  it('limits reserve shortcut keys to the first three ready defenders', () => {
+  it('assigns A, S and D to the first three ready reserve defenders', () => {
     const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+    const offers = state.recruitOffers.filter((offer): offer is NonNullable<typeof offer> => offer !== null);
+    state.defenders = offers.slice(0, 3).map((offer) => offer.candidate);
+    state.defenders.forEach((defender) => {
+      defender.location = 'ready';
+      defender.tile = null;
+    });
 
     const shortcutMap = createReserveShortcutKeyMap(state.defenders);
     const reserveEntries = createReadyReserveEntries(state, state.defenders, gameContent, shortcutMap, selectorDeps);
@@ -36,11 +44,14 @@ describe('hud selectors', () => {
 
   it('sorts roster entries by board, sauna, then reserve and builds sauna dock labels', () => {
     const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+    const offers = state.recruitOffers.filter((offer): offer is NonNullable<typeof offer> => offer !== null);
+    state.defenders = offers.slice(0, 3).map((offer) => offer.candidate);
     const [boardHero, saunaHero, reserveHero] = state.defenders;
     boardHero.location = 'board';
     boardHero.tile = { q: 0, r: -1 };
     saunaHero.location = 'sauna';
     reserveHero.location = 'ready';
+    state.saunaDefenderId = saunaHero.id;
     state.selectedDefenderId = boardHero.id;
     state.selectedMapTarget = 'sauna';
 
@@ -49,14 +60,9 @@ describe('hud selectors', () => {
     const rosterEntries = createRosterEntries(state, state.defenders, gameContent, shortcutMap, selectorDeps);
     const saunaReserve = createSaunaReserveEntry(state, saunaHero, boardHero, gameContent, selectorDeps);
 
-    const firstSaunaIndex = rosterEntries.findIndex((entry) => entry.location === 'sauna');
-    const firstReadyIndex = rosterEntries.findIndex((entry) => entry.location === 'ready');
-
-    expect(rosterEntries[0]?.location).toBe('board');
-    expect(firstSaunaIndex).toBeGreaterThan(0);
-    expect(firstReadyIndex).toBeGreaterThan(firstSaunaIndex);
+    expect(rosterEntries.map((entry) => entry.location)).toEqual(['board', 'sauna', 'ready']);
     expect(saunaReserve.canReroll).toBe(true);
     expect(saunaReserve.rerollCost).toBe(3);
-    expect(saunaReserve.sendSelectedBoardHeroLabel).toBe(`Replace Sauna Hero With ${boardHero.name}`);
+    expect(saunaReserve.sendSelectedBoardHeroLabel).toBe(`Swap ${boardHero.name} Into Sauna`);
   });
 });

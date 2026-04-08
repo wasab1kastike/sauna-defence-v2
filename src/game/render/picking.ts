@@ -1,6 +1,6 @@
 import { hexDistance } from '../geometry';
-import type { AxialCoord, GameSnapshot } from '../types';
-import { getBoardLayout, pixelToAxial, type BoardLayout } from './layout';
+import type { AxialCoord, BoardCamera, GameSnapshot } from '../types';
+import { DEFAULT_BOARD_CAMERA, getBoardLayout, pixelToAxial, type BoardLayout } from './layout';
 
 interface CircleTarget<T> {
   center: { x: number; y: number };
@@ -22,9 +22,10 @@ export function pickTileAtCanvasPoint(
   snapshot: GameSnapshot,
   rect: DOMRect,
   clientX: number,
-  clientY: number
+  clientY: number,
+  camera: BoardCamera = DEFAULT_BOARD_CAMERA
 ): AxialCoord | null {
-  const layout = getBoardLayout(rect.width, rect.height, snapshot.config.gridRadius);
+  const layout = getBoardLayout(rect.width, rect.height, snapshot.config.gridRadius, camera);
   const tile = pixelToAxial(clientX - rect.left, clientY - rect.top, layout);
   return hexDistance(tile, { q: 0, r: 0 }) > snapshot.config.gridRadius ? null : tile;
 }
@@ -34,9 +35,10 @@ export function pickDefenderAtCanvasPoint(
   rect: DOMRect,
   clientX: number,
   clientY: number,
-  resolveTargets: (snapshot: GameSnapshot, layout: BoardLayout) => CircleTarget<string>[]
+  resolveTargets: (snapshot: GameSnapshot, layout: BoardLayout) => CircleTarget<string>[],
+  camera: BoardCamera = DEFAULT_BOARD_CAMERA
 ): string | null {
-  const layout = getBoardLayout(rect.width, rect.height, snapshot.config.gridRadius);
+  const layout = getBoardLayout(rect.width, rect.height, snapshot.config.gridRadius, camera);
   const pointer = { x: clientX - rect.left, y: clientY - rect.top };
   return pickCircleTargetAtPoint(pointer, resolveTargets(snapshot, layout));
 }
@@ -46,9 +48,10 @@ export function pickEnemyAtCanvasPoint(
   rect: DOMRect,
   clientX: number,
   clientY: number,
-  resolveTargets: (snapshot: GameSnapshot, layout: BoardLayout) => CircleTarget<number>[]
+  resolveTargets: (snapshot: GameSnapshot, layout: BoardLayout) => CircleTarget<number>[],
+  camera: BoardCamera = DEFAULT_BOARD_CAMERA
 ): number | null {
-  const layout = getBoardLayout(rect.width, rect.height, snapshot.config.gridRadius);
+  const layout = getBoardLayout(rect.width, rect.height, snapshot.config.gridRadius, camera);
   const pointer = { x: clientX - rect.left, y: clientY - rect.top };
   return pickCircleTargetAtPoint(pointer, resolveTargets(snapshot, layout));
 }

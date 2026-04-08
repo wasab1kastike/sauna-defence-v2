@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type { PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from 'react';
 
 import { latestPatchNotes } from '../content/patchNotes';
 import { gameContent } from '../content/gameContent';
 import { getTileViewportPosition, pickTileAtCanvasPoint } from '../game/render';
+import { clampBoardCamera, DEFAULT_BOARD_CAMERA } from '../game/render/layout';
 import { createGameRuntime, STORAGE_KEY_PREFIX } from '../game/runtime';
 import { APP_VERSION } from '../game/version';
 import { BottomDock } from './components/BottomDock';
@@ -11,7 +12,6 @@ import { GuideOverlay } from './components/GuideOverlay';
 import { HudUtilityRail } from './components/HudUtilityRail';
 import { IntroOverlay } from './components/IntroOverlay';
 import { PatchNotesOverlay } from './components/PatchNotesOverlay';
-import { RecruitOfferSlots } from './components/RecruitOfferSlots';
 import { SelectionCard } from './components/SelectionCard';
 import {
   assetUrl,
@@ -26,6 +26,7 @@ import {
   shouldAutoOpenPatchNotes
 } from './uiHelpers';
 import type {
+  BoardCamera,
   GameRuntime,
   GameSnapshot
 } from '../game/types';
@@ -52,6 +53,13 @@ export function App() {
   const [guideStep, setGuideStep] = useState<number | null>(null);
   const [patchNotesOpen, setPatchNotesOpen] = useState(false);
   const [patchNotesChecked, setPatchNotesChecked] = useState(false);
+  const [boardCamera, setBoardCamera] = useState<BoardCamera>(DEFAULT_BOARD_CAMERA);
+  const panStateRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    camera: BoardCamera;
+  } | null>(null);
 
   const markPatchNotesSeen = useCallback(() => {
     if (typeof window === 'undefined') {
@@ -119,6 +127,22 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    runtimeRef.current?.setBoardCamera(boardCamera);
+  }, [boardCamera]);
+
+  useEffect(() => {
+    if (!snapshot || frameSize.width <= 0 || frameSize.height <= 0) {
+      return;
+    }
+    setBoardCamera((camera) => {
+      const clamped = clampBoardCamera(camera, frameSize.width, frameSize.height, snapshot.config.gridRadius);
+      return clamped.zoom === camera.zoom && clamped.offsetX === camera.offsetX && clamped.offsetY === camera.offsetY
+        ? camera
+        : clamped;
+    });
+  }, [frameSize.height, frameSize.width, snapshot, snapshot?.config.gridRadius]);
+
+  useEffect(() => {
     if (!snapshot || snapshot.hud.introOpen || snapshot.hud.showIntermission || guideSeen || guideStep !== null) {
       return;
     }
@@ -149,6 +173,20 @@ export function App() {
     }
     setPatchNotesChecked(true);
   }, [guideStep, patchNotesChecked, snapshot]);
+
+  useEffect(() => {
+    if (!patchNotesOpen) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setPatchNotesOpen(false);
+        markPatchNotesSeen();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [markPatchNotesSeen, patchNotesOpen]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -190,6 +228,9 @@ export function App() {
   };
 
   const dispatch = (action: Parameters<GameRuntime['dispatch']>[0]) => {
+    if (action.type === 'startNextRun' || action.type === 'restartRun') {
+      setBoardCamera(DEFAULT_BOARD_CAMERA);
+    }
     runtimeRef.current?.dispatch(action);
   };
 
@@ -197,23 +238,10 @@ export function App() {
     setPatchNotesOpen(true);
   };
 
-  const closePatchNotes = useCallback(() => {
+  const closePatchNotes = () => {
     setPatchNotesOpen(false);
     markPatchNotesSeen();
-  }, [markPatchNotesSeen]);
-
-  useEffect(() => {
-    if (!patchNotesOpen) {
-      return;
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        closePatchNotes();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [closePatchNotes, patchNotesOpen]);
+  };
 
   const pickLandmarkAtPointer = (
     nextSnapshot: GameSnapshot,
@@ -223,7 +251,7 @@ export function App() {
   ) => {
     const radius = Math.max(24, Math.min(rect.width, rect.height) * 0.035);
     return nextSnapshot.hud.worldLandmarks.find((landmark) => {
-      const point = getTileViewportPosition(nextSnapshot, rect.width, rect.height, landmark.tile);
+      const point = getTileViewportPosition(nextSnapshot, rect.width, rect.height, landmark.tile, boardCamera);
       return Math.hypot(point.x - (clientX - rect.left), point.y - (clientY - rect.top)) <= radius;
     }) ?? null;
   };
@@ -234,11 +262,23 @@ export function App() {
     if (!runtime || !nextSnapshot) {
       return;
     }
+    const panState = panStateRef.current;
+    if (panState && panState.pointerId === event.pointerId) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      setBoardCamera(clampBoardCamera({
+        zoom: panState.camera.zoom,
+        offsetX: panState.camera.offsetX + (event.clientX - panState.startX),
+        offsetY: panState.camera.offsetY + (event.clientY - panState.startY)
+      }, rect.width, rect.height, nextSnapshot.config.gridRadius));
+      runtime.dispatch({ type: 'hoverTile', tile: null });
+      return;
+    }
     const tile = pickTileAtCanvasPoint(
       nextSnapshot,
       event.currentTarget.getBoundingClientRect(),
       event.clientX,
-      event.clientY
+      event.clientY,
+      boardCamera
     );
     runtime.dispatch({ type: 'hoverTile', tile });
   };
@@ -253,9 +293,60 @@ export function App() {
     if (!runtime || !nextSnapshot || nextSnapshot.hud.introOpen || nextSnapshot.hud.showGlobalModifierDraft || nextSnapshot.hud.showSubclassDraft || guideStep !== null) {
       return;
     }
+    if (event.button === 2) {
+      panStateRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        camera: boardCamera
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      runtime.dispatch({ type: 'hoverTile', tile: null });
+      return;
+    }
+    if (event.button !== 0) {
+      return;
+    }
 
     const rect = event.currentTarget.getBoundingClientRect();
-    runtime.dispatch(resolveBoardPointerAction(nextSnapshot, rect, event.clientX, event.clientY, pickLandmarkAtPointer));
+    runtime.dispatch(resolveBoardPointerAction(nextSnapshot, rect, event.clientX, event.clientY, boardCamera, pickLandmarkAtPointer));
+  };
+
+  const handlePointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (panStateRef.current?.pointerId !== event.pointerId) {
+      return;
+    }
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    panStateRef.current = null;
+  };
+
+  const handlePointerCancel = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (panStateRef.current?.pointerId === event.pointerId) {
+      panStateRef.current = null;
+    }
+  };
+
+  const handleBoardWheel = (event: ReactWheelEvent<HTMLCanvasElement>) => {
+    const nextSnapshot = snapshot;
+    if (!nextSnapshot) {
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pointerX = event.clientX - rect.left;
+    const pointerY = event.clientY - rect.top;
+    const zoomFactor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const nextZoom = Math.min(1.9, Math.max(0.75, boardCamera.zoom * zoomFactor));
+    const scaleRatio = nextZoom / boardCamera.zoom;
+    const localX = pointerX - rect.width / 2 - boardCamera.offsetX;
+    const localY = pointerY - rect.height / 2 - boardCamera.offsetY;
+
+    event.preventDefault();
+    setBoardCamera(clampBoardCamera({
+      zoom: nextZoom,
+      offsetX: pointerX - rect.width / 2 - localX * scaleRatio,
+      offsetY: pointerY - rect.height / 2 - localY * scaleRatio
+    }, rect.width, rect.height, nextSnapshot.config.gridRadius));
   };
 
   const selectedDefender = snapshot?.hud.selectedDefender ?? null;
@@ -375,18 +466,19 @@ export function App() {
       return null;
     }
     return (
-      <SelectionCard
-        selectedDefender={selectedDefender}
-        selectedSauna={selectedSauna}
-        selectedEnemy={selectedEnemy}
-        canSendSelectedDefenderToSauna={Boolean(
-          selectedDefender
-          && selectedDefender.location === 'board'
-          && snapshot.state.phase === 'prep'
-        )}
-        dispatch={dispatch}
-      />
-    );
+        <SelectionCard
+          selectedDefender={selectedDefender}
+          selectedSauna={selectedSauna}
+          selectedEnemy={selectedEnemy}
+          canSendSelectedDefenderToSauna={Boolean(
+            selectedDefender
+            && selectedDefender.location === 'board'
+            && snapshot.state.phase === 'prep'
+          )}
+          sendSelectedDefenderToSaunaLabel={snapshot.state.saunaDefenderId ? 'Replace Sauna Hero' : 'Send To Sauna'}
+          dispatch={dispatch}
+        />
+      );
   };
 
   const renderPanelPopup = () => {
@@ -395,7 +487,7 @@ export function App() {
     }
 
     const popupStyle = (activePanel === 'beer_shop' || activePanel === 'metashop')
-      ? getLandmarkPopupStyle(snapshot, frameSize, activeLandmark)
+      ? getLandmarkPopupStyle(snapshot, frameSize, activeLandmark, boardCamera)
       : undefined;
     const popupClassName = (activePanel === 'beer_shop' || activePanel === 'metashop')
       ? 'board-popup board-popup-landmark'
@@ -536,20 +628,17 @@ export function App() {
           <section className="popup-section">
             <div className="mini-tag-row">
               <span className="mini-tag">Board {snapshot.hud.boardCount}/{snapshot.hud.boardCap}</span>
-                <span className="mini-tag">{snapshot.hud.saunaOccupantName ? `Sauna: ${snapshot.hud.saunaOccupantName}` : 'Sauna empty'}</span>
+              <span className="mini-tag">Sauna {snapshot.hud.saunaOccupancyLabel}</span>
               <span className="mini-tag">SISU {snapshot.hud.sisu}</span>
               <span className="mini-tag">Recruit Lvl +{snapshot.hud.recruitLevelBonus}</span>
             </div>
-            <p className="panel-copy small-copy">
-              This mirrors the bottom dock: four fixed slots, free opening heroes, then normal prices after the first refresh.
-            </p>
             <div className="button-row tight">
               <button
                 className="mini-button"
                 disabled={!snapshot.hud.canRollRecruitOffers}
                 onClick={() => dispatch({ type: 'rerollRecruitOffers' })}
               >
-                Refresh Market ({snapshot.hud.recruitRollCost} SISU)
+                Refresh 4 Slots ({snapshot.hud.recruitRollCost} SISU)
               </button>
               <button
                 className="secondary-button"
@@ -558,14 +647,58 @@ export function App() {
               >
                 Recruit Level Up ({snapshot.hud.recruitLevelUpCost} SISU)
               </button>
+              {snapshot.hud.hasRecruitOffers ? (
+                <button className="ghost-button" onClick={() => dispatch({ type: 'clearRecruitOffers' })}>
+                  Clear Offers
+                </button>
+              ) : null}
             </div>
           </section>
           <section className="popup-section">
             <div className="section-head">
-              <strong>Current Slots</strong>
-              <span>{snapshot.hud.recruitOffers.filter(Boolean).length}/4</span>
+              <strong>Current Offers</strong>
+              <span>{snapshot.hud.freeRecruitSlots}/4</span>
             </div>
-            <RecruitOfferSlots offers={snapshot.hud.recruitOffers} dispatch={dispatch} className="popup-market-grid" />
+            {snapshot.hud.hasRecruitOffers ? (
+              <div className="popup-list">
+                {snapshot.hud.recruitOffers.map((offer) => (
+                  <div key={`offer-${offer.slotIndex}`} className={offer.empty ? 'popup-card offer-card offer-empty' : `popup-card offer-card offer-${offer.quality ?? 'rough'}`}>
+                    <div className="unit-row-top">
+                      <strong>
+                        {offer.empty ? 'Empty Slot' : offer.name} {!offer.empty && offer.title ? <em>{offer.title}</em> : null}
+                      </strong>
+                      {offer.hotkeyKey ? <span className="mini-tag">{offer.hotkeyKey}</span> : null}
+                    </div>
+                    <small>{offer.roleName} Â· {offer.subclassName}</small>
+                    <small>{offer.lore}</small>
+                    <div className="mini-tag-row">
+                      <span className="mini-tag">Lvl {offer.level}</span>
+                      <span className="mini-tag">HP {offer.hp}</span>
+                      <span className="mini-tag">ATK {offer.damage}</span>
+                      <span className="mini-tag">Heal {offer.heal}</span>
+                      <span className="mini-tag">Range {offer.range}</span>
+                      <span className="mini-tag">Rerolls {offer.rerollCount}</span>
+                    </div>
+                    <div className="button-row tight">
+                      <button
+                        className="mini-button"
+                        disabled={offer.id === null}
+                        onClick={() => offer.id !== null && dispatch({ type: 'recruitOffer', offerId: offer.id })}
+                      >
+                        Recruit For {offer.price} SISU
+                      </button>
+                      <button
+                        className="ghost-button small-ghost"
+                        disabled={offer.id === null}
+                        onClick={() => offer.id !== null && dispatch({ type: 'rerollRecruitOffer', offerId: offer.id })}
+                      >
+                        Reroll ({offer.rerollCost} SISU)
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="panel-copy small-copy">No candidates waiting. Roll the market to scout three new heroes.</p>}
           </section>
         </div>
       );
@@ -720,6 +853,10 @@ export function App() {
             onPointerMove={handlePointerMove}
             onPointerLeave={handlePointerLeave}
             onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            onContextMenu={(event) => event.preventDefault()}
+            onWheel={handleBoardWheel}
           />
 
           {snapshot ? (
@@ -783,8 +920,8 @@ export function App() {
                 <p className="panel-copy small-copy hint-copy">{hintBody}</p>
                 <div className="mini-tag-row">
                   <span className="mini-tag">{snapshot.hud.nextWaveThreat}</span>
-                  <span className="mini-tag">{snapshot.hud.saunaOccupantName ? `Sauna: ${snapshot.hud.saunaOccupantName}` : 'Sauna empty'}</span>
-                  <span className="mini-tag">{snapshot.hud.hasRecruitOffers ? `${snapshot.hud.recruitOffers.filter(Boolean).length}/4 offers up` : 'Market waiting for refresh'}</span>
+                  <span className="mini-tag">Sauna {snapshot.hud.saunaOccupancyLabel}</span>
+                  <span className="mini-tag">Recruit Slots {snapshot.hud.freeRecruitSlots}</span>
                 </div>
               </div>
               <div className="hud-main-actions hud-action-buttons">
@@ -826,7 +963,7 @@ export function App() {
               <button
                 key={landmark.id}
                 className={landmark.selected ? 'landmark-chip selected' : 'landmark-chip'}
-                style={getLandmarkStyle(snapshot, frameSize, landmark)}
+                style={getLandmarkStyle(snapshot, frameSize, landmark, boardCamera)}
                 onClick={() => dispatch({ type: 'selectWorldLandmark', landmarkId: landmark.id })}
               >
                 <strong>{landmark.label}</strong>

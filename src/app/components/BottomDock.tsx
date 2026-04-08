@@ -1,5 +1,4 @@
 import type { GameSnapshot, InputAction } from '../../game/types';
-import { RecruitOfferSlots } from './RecruitOfferSlots';
 
 interface BottomDockProps {
   snapshot: GameSnapshot;
@@ -11,11 +10,6 @@ export function BottomDock({ snapshot, dispatch }: BottomDockProps) {
     return null;
   }
 
-  const liveOfferCount = snapshot.hud.recruitOffers.filter(Boolean).length;
-  const saunaStatus = snapshot.hud.saunaOccupantName
-    ? `Sauna occupied by ${snapshot.hud.saunaOccupantName}`
-    : 'Sauna empty';
-
   return (
     <section className="bottom-dock popup-card">
       <div className="dock-head">
@@ -23,14 +17,10 @@ export function BottomDock({ snapshot, dispatch }: BottomDockProps) {
           <h2>Recruit Market</h2>
           <p className="panel-copy small-copy">{snapshot.hud.recruitmentStatusText}</p>
         </div>
-        <span>{liveOfferCount}/4 slots</span>
+        <span>{snapshot.hud.freeRecruitSlots}/4 live slots</span>
       </div>
-      <div className="mini-tag-row">
-        <span className="mini-tag">{saunaStatus}</span>
-        <span className="mini-tag">Recruit Lvl +{snapshot.hud.recruitLevelBonus}</span>
-        <span className="mini-tag">SISU {snapshot.hud.sisu}</span>
-      </div>
-      <div className="button-row market-actions-inline">
+
+      <div className="button-row tight market-actions">
         <button
           className="mini-button"
           disabled={!snapshot.hud.canRollRecruitOffers}
@@ -46,7 +36,44 @@ export function BottomDock({ snapshot, dispatch }: BottomDockProps) {
           Level Up (W - {snapshot.hud.recruitLevelUpCost} SISU)
         </button>
       </div>
-      <RecruitOfferSlots offers={snapshot.hud.recruitOffers} dispatch={dispatch} />
+
+      <div className="market-row market-row-four">
+        {snapshot.hud.recruitOffers.map((offer) => (
+          <div
+            key={`recruit-slot-${offer.slotIndex}`}
+            className={offer.empty ? 'market-card market-card-empty' : `market-card offer-${offer.quality ?? 'rough'}`}
+          >
+            <div className="unit-row-top">
+              <strong>
+                {offer.empty ? 'Empty Slot' : `${offer.name} `}
+                {!offer.empty && offer.title ? <em>{offer.title}</em> : null}
+              </strong>
+              {offer.hotkeyKey ? <span className="hotkey-pill">{offer.hotkeyKey}</span> : null}
+            </div>
+
+            {offer.empty ? (
+              <p className="panel-copy small-copy">Bought heroes leave an empty slot behind until the next refresh.</p>
+            ) : (
+              <>
+                <small>{offer.roleName} - {offer.subclassName}</small>
+                <div className="mini-tag-row">
+                  <span className="mini-tag">Lvl {offer.level}</span>
+                  <span className="mini-tag">HP {offer.hp}</span>
+                  <span className="mini-tag">ATK {offer.damage}</span>
+                  <span className="mini-tag">{offer.isFree ? 'Free' : `${offer.price} SISU`}</span>
+                </div>
+                <button
+                  className="mini-button"
+                  disabled={!offer.canBuy || offer.id === null}
+                  onClick={() => offer.id !== null && dispatch({ type: 'recruitOffer', offerId: offer.id })}
+                >
+                  {offer.isFree ? 'Recruit Free' : `Recruit ${offer.price} SISU`}
+                </button>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
