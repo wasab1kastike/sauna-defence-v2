@@ -564,7 +564,6 @@ export interface HudRosterEntry {
   title: string;
   templateName: string;
   subclassName: string;
-  roleSummary: string;
   locationLabel: string;
   summary: string;
   level: number;
@@ -577,9 +576,6 @@ export interface HudRosterEntry {
   regenHpPerSecond: number;
   kills: number;
   location: DefenderLocation;
-  benchRerollCount: number;
-  benchRerollCost: number;
-  shortcutKey: string | null;
   selected: boolean;
 }
 
@@ -748,15 +744,9 @@ export interface HudRecruitOfferEntry {
   title: string | null;
   roleName: string | null;
   subclassName: string | null;
-  roleSummary: string | null;
-  lore: string | null;
   level: number | null;
   hp: number | null;
   damage: number | null;
-  heal: number | null;
-  range: number | null;
-  rerollCount: number;
-  rerollCost: number | null;
   empty: boolean;
   isFree: boolean;
   canBuy: boolean;
@@ -848,7 +838,6 @@ export interface HudViewModel {
   inventoryCount: number;
   inventoryCap: number;
   inventoryOpen: boolean;
-  recruitmentOpen: boolean;
   hasRecentLoot: boolean;
   autoAssignUnlocked: boolean;
   autoAssignEnabled: boolean;
@@ -863,10 +852,7 @@ export interface HudViewModel {
   canUseSisu: boolean;
   sisuLabel: string;
   canPause: boolean;
-  canOpenRecruitment: boolean;
   recruitmentStatusText: string;
-  recruitCost: number;
-  canRecruit: boolean;
   recruitRollCost: number;
   recruitLevelBonus: number;
   recruitLevelUpCost: number;
@@ -874,8 +860,6 @@ export interface HudViewModel {
   canRollRecruitOffers: boolean;
   canLevelUpRecruitment: boolean;
   hasRecruitOffers: boolean;
-  boardFullButBenchAvailable: boolean;
-  rosterFullNeedsReplacement: boolean;
   recruitOffers: HudRecruitOfferEntry[];
   steamEarned: number;
   bankedSteam: number;
@@ -891,11 +875,8 @@ export interface HudViewModel {
   activeAlcohols: HudActiveAlcoholEntry[];
   actionTitle: string;
   actionBody: string;
-  readyBenchCount: number;
   freeRecruitSlots: number;
-  readyReserveEntries: HudRosterEntry[];
   saunaReserve: HudSaunaDockEntry;
-  rosterEntries: HudRosterEntry[];
   deathLogEntries: HudDeathLogEntry[];
   headerItemEntries: HudInventoryEntry[];
   headerSkillEntries: HudInventoryEntry[];

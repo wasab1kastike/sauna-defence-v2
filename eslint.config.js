@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'coverage/**', 'src/game/__tests__/logic.test.ts', 'src/game/__tests__/balance.spec.ts'],
+    ignores: ['dist/**', 'coverage/**'],
   },
   {
     files: ['src/**/*.{ts,tsx}'],
@@ -31,6 +31,12 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       '@typescript-eslint/consistent-type-imports': 'warn',
+    },
+  },
+  {
+    files: ['src/game/__tests__/logic.test.ts'],
+    rules: {
+      '@typescript-eslint/ban-ts-comment': 'off',
     },
   },
 );

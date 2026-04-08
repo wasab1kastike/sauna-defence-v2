@@ -14,13 +14,16 @@ export function RecruitOfferSlots({
   return (
     <div className={className}>
       {offers.map((offer, slotIndex) => (
-        offer ? (
-          <div key={offer.id} className={`market-card offer-${offer.quality ?? 'common'}`}>
+        !offer.empty ? (
+          <div key={offer.id ?? `filled-slot-${slotIndex}`} className={`market-card offer-${offer.quality ?? 'rough'}`}>
             <div className="unit-row-top">
               <strong>
                 {offer.name} <em>{offer.title}</em>
               </strong>
-              <span className="mini-tag">{offer.price === 0 ? 'Free' : `${offer.price} SISU`}</span>
+              <div className="mini-tag-row">
+                {offer.hotkeyKey ? <span className="hotkey-pill">{offer.hotkeyKey}</span> : null}
+                <span className="mini-tag">{offer.price === 0 ? 'Free' : `${offer.price} SISU`}</span>
+              </div>
             </div>
             <small>{offer.roleName} - {offer.subclassName}</small>
             <div className="mini-tag-row">
@@ -30,7 +33,7 @@ export function RecruitOfferSlots({
             </div>
             <button
               className="mini-button"
-              disabled={offer.id === null || !offer.canBuy}
+              disabled={!offer.canBuy || offer.id === null}
               onClick={() => {
                 if (offer.id === null) {
                   return;
@@ -38,12 +41,15 @@ export function RecruitOfferSlots({
                 dispatch({ type: 'recruitOffer', offerId: offer.id });
               }}
             >
-              {offer.price === 0 ? 'Take Free Hero' : `Buy ${offer.price} SISU`}
+              {offer.price === 0 ? 'Recruit Free' : `Recruit ${offer.price} SISU`}
             </button>
           </div>
         ) : (
           <div key={`empty-slot-${slotIndex}`} className="market-card market-card-empty">
-            <strong>Empty Slot</strong>
+            <div className="unit-row-top">
+              <strong>Empty Slot</strong>
+              {offer.hotkeyKey ? <span className="hotkey-pill">{offer.hotkeyKey}</span> : null}
+            </div>
             <small>Refresh the market to fill this slot with a new recruit.</small>
           </div>
         )

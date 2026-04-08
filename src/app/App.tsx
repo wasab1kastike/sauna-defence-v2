@@ -647,11 +647,6 @@ export function App() {
               >
                 Recruit Level Up ({snapshot.hud.recruitLevelUpCost} SISU)
               </button>
-              {snapshot.hud.hasRecruitOffers ? (
-                <button className="ghost-button" onClick={() => dispatch({ type: 'clearRecruitOffers' })}>
-                  Clear Offers
-                </button>
-              ) : null}
             </div>
           </section>
           <section className="popup-section">
@@ -670,35 +665,24 @@ export function App() {
                       {offer.hotkeyKey ? <span className="mini-tag">{offer.hotkeyKey}</span> : null}
                     </div>
                     <small>{offer.roleName} Â· {offer.subclassName}</small>
-                    <small>{offer.lore}</small>
                     <div className="mini-tag-row">
                       <span className="mini-tag">Lvl {offer.level}</span>
                       <span className="mini-tag">HP {offer.hp}</span>
                       <span className="mini-tag">ATK {offer.damage}</span>
-                      <span className="mini-tag">Heal {offer.heal}</span>
-                      <span className="mini-tag">Range {offer.range}</span>
-                      <span className="mini-tag">Rerolls {offer.rerollCount}</span>
                     </div>
                     <div className="button-row tight">
                       <button
                         className="mini-button"
-                        disabled={offer.id === null}
+                        disabled={offer.id === null || !offer.canBuy}
                         onClick={() => offer.id !== null && dispatch({ type: 'recruitOffer', offerId: offer.id })}
                       >
-                        Recruit For {offer.price} SISU
-                      </button>
-                      <button
-                        className="ghost-button small-ghost"
-                        disabled={offer.id === null}
-                        onClick={() => offer.id !== null && dispatch({ type: 'rerollRecruitOffer', offerId: offer.id })}
-                      >
-                        Reroll ({offer.rerollCost} SISU)
+                        {offer.isFree ? 'Recruit Free' : `Recruit ${offer.price} SISU`}
                       </button>
                     </div>
                   </div>
                 ))}
               </div>
-            ) : <p className="panel-copy small-copy">No candidates waiting. Roll the market to scout three new heroes.</p>}
+            ) : <p className="panel-copy small-copy">No candidates waiting. Refresh the market to scout four new heroes.</p>}
           </section>
         </div>
       );

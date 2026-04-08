@@ -60,9 +60,6 @@ import {
   landmarkTileForWave as resolveLandmarkTileForWave
 } from './boardGeometry';
 import {
-  createReadyReserveEntries,
-  createReserveShortcutKeyMap,
-  createRosterEntries,
   createSaunaReserveEntry
 } from './hudSelectors';
 import {
@@ -237,7 +234,6 @@ const saunaDeps = {
 };
 
 const hudSelectorDeps = {
-  benchRerollCost: (state: RunState, defenderId: string) => benchRerollCost(state, defenderId),
   canRerollSaunaDefender: (state: RunState) => canRerollSaunaDefender(state),
   derivedStats: (state: RunState, defender: DefenderInstance, content: GameContent) => derivedStats(state, defender, content),
   saunaRerollCost: (state: RunState) => saunaRerollCost(state),
@@ -1486,10 +1482,6 @@ function hudWorldLandmarkEntry(state: RunState, landmarkId: WorldLandmarkId, con
   };
 }
 
-function boardFullButBenchAvailable(state: RunState, content: GameContent): boolean {
-  return boardDefenders(state).length >= boardCap(state, content) && livingDefenders(state).length < rosterCap(state, content);
-}
-
 function canRollRecruitOffers(state: RunState): boolean {
   return (
     canAccessRecruitment(state) &&
@@ -1499,16 +1491,6 @@ function canRollRecruitOffers(state: RunState): boolean {
 
 function pendingReadyRecruit(state: RunState): DefenderInstance | null {
   return state.defenders.find((defender) => defender.location === 'ready') ?? null;
-}
-
-function canBuyAnyRecruitOffer(state: RunState, content: GameContent): boolean {
-  const visibleOffers = state.recruitOffers.filter((offer): offer is RecruitOffer => offer !== null);
-  const boardIsFull = boardDefenders(state).length >= boardCap(state, content);
-  return (
-    canAccessRecruitment(state) &&
-    (!pendingReadyRecruit(state) || boardIsFull) &&
-    visibleOffers.some((offer) => state.sisu.current >= offer.price)
-  );
 }
 
 function canRerollSaunaDefender(state: RunState): boolean {
@@ -4317,38 +4299,21 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const activeMs = Math.max(0, state.sisu.activeUntilMs - state.timeMs);
   const cdMs = Math.max(0, state.sisu.cooldownUntilMs - state.timeMs);
   const saunaDefender = getDefender(state, state.saunaDefenderId);
-  const readyReserveDefenders = state.defenders.filter((defender) => defender.location === 'ready');
-  const shortcutKeyByDefenderId = createReserveShortcutKeyMap(readyReserveDefenders);
   const action = actionCopy(state, content);
   const boardCount = boardDefenders(state).length;
-  const readyBenchCount = readyReserveDefenders.length;
   const freeRecruitSlots = state.recruitOffers.filter((offer) => offer !== null).length;
   const beerTier = beerShopTier(state);
   const selectedBoardDefender = selected && selected.location === 'board' ? selected : null;
   const saunaSendLabel = selectedBoardDefender
     ? saunaDefender
-      ? `Swap ${selectedBoardDefender.name} Into Sauna`
+      ? `Replace Sauna Hero With ${selectedBoardDefender.name}`
       : `Send ${selectedBoardDefender.name} To Sauna`
     : null;
-  const readyReserveEntries = createReadyReserveEntries(
-    state,
-    readyReserveDefenders,
-    content,
-    shortcutKeyByDefenderId,
-    hudSelectorDeps
-  );
   const saunaReserve = createSaunaReserveEntry(
     state,
     saunaDefender,
     selectedBoardDefender,
     content,
-    hudSelectorDeps
-  );
-  const rosterEntries = createRosterEntries(
-    state,
-    state.defenders,
-    content,
-    shortcutKeyByDefenderId,
     hudSelectorDeps
   );
   const activeGlobalModifiers = uniqueGlobalModifierIds(state.activeGlobalModifierIds)
@@ -4399,7 +4364,6 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     inventoryCount: state.inventory.length,
     inventoryCap: inventoryCap(state, content),
     inventoryOpen: inventoryUnlocked(state) ? state.inventoryOpen : false,
-    recruitmentOpen: state.recruitmentOpen,
     hasRecentLoot: state.recentDropId !== null,
     autoAssignUnlocked: hasLootAutoAssign(state),
     autoAssignEnabled: state.autoAssignEnabled && hasLootAutoAssign(state),
@@ -4414,10 +4378,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     canUseSisu: state.overlayMode === 'none' && canUseSisu(state, content),
     sisuLabel: activeMs > 0 ? `SISU active ${Math.ceil(activeMs / 1000)} s` : cdMs > 0 ? `SISU cooldown ${Math.ceil(cdMs / 1000)} s` : `SISU ready (${content.config.sisuAbilityCost})`,
     canPause: state.phase === 'wave',
-    canOpenRecruitment: canAccessRecruitment(state),
     recruitmentStatusText: recruitmentStatusText(state, content),
-    recruitCost: recruitPriceFloor(),
-    canRecruit: canBuyAnyRecruitOffer(state, content),
     recruitRollCost: recruitRollCost(),
     recruitLevelBonus: state.recruitLevelBonus,
     recruitLevelUpCost: recruitLevelUpCost(state.recruitLevelUpCount),
@@ -4425,8 +4386,6 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     canRollRecruitOffers: canRollRecruitOffers(state),
     canLevelUpRecruitment: canAccessRecruitment(state) && state.sisu.current >= recruitLevelUpCost(state.recruitLevelUpCount),
     hasRecruitOffers: state.recruitOffers.some((offer) => offer !== null),
-    boardFullButBenchAvailable: boardFullButBenchAvailable(state, content),
-    rosterFullNeedsReplacement: livingDefenders(state).length >= rosterCap(state, content),
     recruitOffers: state.recruitOffers.map((offer, slotIndex) => {
       if (!offer) {
         return {
@@ -4438,15 +4397,9 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
           title: null,
           roleName: null,
           subclassName: null,
-          roleSummary: null,
-          lore: null,
           level: null,
           hp: null,
           damage: null,
-          heal: null,
-          range: null,
-          rerollCount: 0,
-          rerollCost: null,
           empty: true,
           isFree: false,
           canBuy: false,
@@ -4463,15 +4416,9 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         title: offer.candidate.title,
         roleName: content.defenderTemplates[offer.candidate.templateId].name,
         subclassName: subclassSummary(offer.candidate, content),
-        roleSummary: content.defenderTemplates[offer.candidate.templateId].role,
-        lore: offer.candidate.lore,
         level: offer.candidate.level,
         hp: roleStats.maxHp,
         damage: roleStats.damage,
-        heal: roleStats.heal,
-        range: roleStats.range,
-        rerollCount: 0,
-        rerollCost: null,
         empty: false,
         isFree: offer.price === 0,
         canBuy: canAccessRecruitment(state) && (!pendingReadyRecruit(state) || boardCount >= boardCap(state, content)) && state.sisu.current >= offer.price,
@@ -4519,11 +4466,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     }),
     actionTitle: action.title,
     actionBody: action.body,
-    readyBenchCount,
     freeRecruitSlots,
-    readyReserveEntries,
     saunaReserve,
-    rosterEntries,
     deathLogEntries: state.deathLog.slice(0, 5).map((entry) => ({
       id: entry.id,
       wave: entry.wave,
