@@ -1090,9 +1090,11 @@ function slotInCycle(index: number, content: GameContent): number {
 function spawnIntervalMs(index: number, content: GameContent, modifier = 0): number {
   const cycle = cycleNumber(index, content);
   const slot = slotInCycle(index, content);
+  const perCycleCompression = cycle * 12;
+  const slotStep = 32 + cycle * 2;
   return Math.max(
     content.config.minSpawnIntervalMs,
-    920 - cycle * content.config.spawnIntervalStepMs - slot * 32 + modifier
+    920 - cycle * content.config.spawnIntervalStepMs - perCycleCompression - slot * slotStep + modifier
   );
 }
 
@@ -1115,9 +1117,11 @@ function wavePressure(index: number, content: GameContent, isBoss: boolean): num
     return basePressure + 7 + cycle * 2 + bossCycleSpike;
   }
 
-  // Non-boss waves ramp quadratically by cycle to make each 5-wave block feel noticeably tougher.
-  const cycleBonus = cycle * cycle + cycle;
-  return basePressure + cycleBonus;
+  // Tutorial onboarding is locked at waves 1-4 above. From wave 6 onward,
+  // each 5-wave cycle adds a visibly stronger pressure bump.
+  const cycleRamp = cycle * (cycle + 2);
+  const milestoneBonus = cycle > 0 ? 1 + Math.floor(cycle / 2) : 0;
+  return basePressure + cycleRamp + milestoneBonus;
 }
 
 function rewardSisuForWave(index: number, pressure: number, isBoss: boolean, content: GameContent): number {
@@ -1139,21 +1143,33 @@ function pushSpawn(spawns: WaveSpawn[], atMs: number, enemyId: EnemyUnitId, lane
 function compositionForPressure(pressure: number, cycle: number, favorBrutes: number): EnemyUnitId[] {
   const result: EnemyUnitId[] = [];
   let remaining = pressure;
-  let brutesLeft = Math.max(0, Math.min(1 + cycle, Math.floor((pressure - 4) / 4) + favorBrutes));
+  const bruteCap = 1 + cycle + Math.floor(cycle / 2);
+  let brutesLeft = Math.max(0, Math.min(bruteCap, Math.floor((pressure - 4) / 3) + favorBrutes + Math.floor(cycle / 2)));
 
   while (remaining > 0) {
-    if (remaining >= 4 && brutesLeft > 0) {
+    const bruteThreshold = Math.max(3, 5 - Math.floor(cycle / 2));
+    if (remaining >= bruteThreshold && brutesLeft > 0) {
       result.push('brute');
       remaining -= 4;
       brutesLeft -= 1;
       continue;
     }
+
     result.push('raider');
     remaining -= 2;
   }
 
   if (result.length < 3) {
     result.push('raider');
+  }
+
+  const extraPicks = Math.max(0, Math.floor(cycle / 2));
+  for (let i = 0; i < extraPicks; i += 1) {
+    const shouldSpawnBrute = brutesLeft > 0 && cycle >= 2 && i % 2 === 0;
+    result.push(shouldSpawnBrute ? 'brute' : 'raider');
+    if (shouldSpawnBrute) {
+      brutesLeft -= 1;
+    }
   }
 
   return result;

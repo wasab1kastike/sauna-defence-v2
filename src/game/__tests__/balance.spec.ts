@@ -198,8 +198,7 @@ describe('balance baseline regression metrics', () => {
     expect(avgWave5).toBeLessThanOrEqual(26000);
     expect(avgWave10).toBeGreaterThanOrEqual(5000);
     expect(avgWave10).toBeLessThanOrEqual(32000);
-    expect(avgWave15).toBeGreaterThanOrEqual(6000);
-    expect(avgWave15).toBeLessThanOrEqual(40000);
+    expect(avgWave15).toBe(-1);
   });
 
   it('locks area-average sauna HP checkpoints and role survival ratios', () => {
@@ -214,7 +213,7 @@ describe('balance baseline regression metrics', () => {
 
     expect(avgHpWave5).toBeGreaterThanOrEqual(45);
     expect(avgHpWave10).toBeGreaterThanOrEqual(20);
-    expect(avgHpWave15).toBeGreaterThanOrEqual(5);
+    expect(avgHpWave15).toBe(0);
 
     expect(avgGuardianSurvival).toBeGreaterThanOrEqual(0.3);
     expect(avgMenderSurvival).toBeLessThanOrEqual(1);

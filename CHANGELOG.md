@@ -22,7 +22,8 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 - [internal] `scripts/check-player-patch-notes.mjs` validates now that generated JSON/Markdown patch notes match current release version/date, not only that changelog metadata exists.
-- [player] Wave pressure scaling now uses stronger cycle spikes (with separate boss tuning) so waves 5/10/15/20 ramp harder between cycles.
+- [player] Balance pass increased enemies per wave by scaling non-boss composition with cycle (higher brute cap + extra spawn picks), making each 5-wave block visibly denser.
+- [player] Wave pressure and spawn pacing now ramp faster per 5-wave cycle (tutorial waves 1-4 unchanged), increasing intensity before each boss.
 
 ### Fixed
 - [internal] CI now catches stale generated patch-notes artifacts before release by validating generated files against `CHANGELOG.md` + `package.json`.

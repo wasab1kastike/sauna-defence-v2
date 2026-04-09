@@ -12,12 +12,27 @@ Yhteiset ehdot:
 - asetellaan 4 kenttäpuolustajaa samoille tileille joka ajossa
 - drafteissa valitaan aina ensimmäinen tarjolla oleva vaihtoehto
 
+## Wave ramp -malli (päivitetty)
+
+Wavet 1-4 pidetään ennallaan onboarding-vakauden vuoksi.
+
+Wave 5+: 
+- **Wave pressure** kasvattaa ei-boss-waveja aiempaa enemmän jokaisessa 5-wave syklissä (`cycleRamp + milestoneBonus`).
+- **Composition scaling** muuntaa paineen tiheämmäksi unit-mixiksi: bruten yläraja kasvaa syklin mukana ja korkeammilla sykleillä lisätään ylimääräisiä spawn pickejä.
+- **Spawn pacing** kiristyy syklin kasvaessa (`spawnIntervalMs` pienenee nopeammin), mutta kunnioittaa aina `minSpawnIntervalMs`-rajaa.
+
+Käytännön odote baseline-ajossa:
+- **Wave 5** clearataan edelleen luotettavasti.
+- **Wave 10** clearataan edelleen useimmissa baseline-skenaarioissa, mutta paine/HP laskee aiempaa nopeammin.
+- **Wave 15** ei enää ole baseline-rosterille vakaa clear-checkpoint uuden 5-wave cycle rampin jälkeen.
+
 ## Target-mittarit
 
 ### 1) Wave clear time
 - Seurataan wavejen **5 / 10 / 15** clear time -arvoja (millisekunteina).
 - Raportointiluku on baseline-skenaarioiden keskiarvo per checkpoint.
 - Tavoite: trendi ei saa hajota regressiossa (ks. testin lukitut rajat).
+- Huom: wave 15 on nyt tarkoituksella "fail checkpoint" baseline-rosterille (`-1` = checkpointia ei saavutettu).
 
 ### 2) Aluekeskimääräinen sauna HP checkpointissa 5/10/15
 - Mittari lasketaan 3-wave trailing-ikkuna-keskiarvona:
@@ -26,6 +41,7 @@ Yhteiset ehdot:
   - wave 15: avg(HP wave 13, 14, 15)
 - Raportointiluku on baseline-skenaarioiden keskiarvo.
 - Tavoite: sauna HP ei saa pudota yli regressiorajan.
+- Huom: kun wave 15 checkpointia ei saavuteta, baseline-tavoite on `0`.
 
 ### 3) Defender survival ratio rooleittain
 - Lasketaan runin lopussa (checkpoint wave 15 jälkeen):
