@@ -22,6 +22,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 - [internal] `scripts/check-player-patch-notes.mjs` validates now that generated JSON/Markdown patch notes match current release version/date, not only that changelog metadata exists.
+- [internal] `docs/balance.md` now includes a wave-by-wave spawn recap table for waves 1-30 to keep GitHub Pages-facing balance docs in sync with current logic.
 - [player] Balance pass increased enemies per wave by scaling non-boss composition with cycle (higher brute cap + extra spawn picks), making each 5-wave block visibly denser.
 - [player] Wave pressure and spawn pacing now ramp faster per 5-wave cycle (tutorial waves 1-4 unchanged), increasing intensity before each boss.
 

@@ -50,6 +50,44 @@ Käytännön odote baseline-ajossa:
   - `mender`: elossa / alussa olleet menderit
 - Raportointiluku on baseline-skenaarioiden keskiarvo.
 
+
+## Recap: vihollismaarat per wave (1-30)
+
+Alla nykyisen balanssilogiikan tuottama spawn-maara per wave (`createWaveDefinition`, nykyinen `main`):
+
+| Wave | Spawns | Boss | Pattern |
+|---:|---:|:---:|:---|
+| 1 | 3 | no | tutorial |
+| 2 | 4 | no | tutorial |
+| 3 | 4 | no | split |
+| 4 | 5 | no | staggered |
+| 5 | 1 | yes | boss_breach |
+| 6 | 6 | no | staggered |
+| 7 | 7 | no | spearhead |
+| 8 | 9 | no | surge |
+| 9 | 9 | no | split |
+| 10 | 16 | yes | boss_pressure |
+| 11 | 10 | no | spearhead |
+| 12 | 12 | no | surge |
+| 13 | 12 | no | split |
+| 14 | 13 | no | staggered |
+| 15 | 1 | yes | boss_pressure |
+| 16 | 16 | no | surge |
+| 17 | 16 | no | split |
+| 18 | 17 | no | staggered |
+| 19 | 18 | no | spearhead |
+| 20 | 1 | yes | boss_pressure |
+| 21 | 22 | no | split |
+| 22 | 23 | no | staggered |
+| 23 | 24 | no | spearhead |
+| 24 | 26 | no | surge |
+| 25 | 1 | yes | boss_breach |
+| 26 | 29 | no | staggered |
+| 27 | 30 | no | spearhead |
+| 28 | 32 | no | surge |
+| 29 | 32 | no | split |
+| 30 | 16 | yes | boss_pressure |
+
 ## PR-käytäntö balanssimuutoksille
 
 Kaikki balanssia muuttavat PR:t:
