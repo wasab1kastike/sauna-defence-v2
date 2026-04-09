@@ -337,6 +337,70 @@ button {
   padding-right: 16px;
 }
 
+.selection-card--compact {
+  padding: 12px 12px 10px;
+  border-radius: 20px;
+  display: grid;
+  gap: 8px;
+  scroll-behavior: smooth;
+}
+
+.selection-card--compact .popup-head {
+  gap: 8px;
+}
+
+.selection-card--compact .mini-tag-row {
+  gap: 6px;
+}
+
+.selection-card--compact .mini-tag {
+  padding: 4px 8px;
+  font-size: 0.82rem;
+  line-height: 1.2;
+}
+
+.selection-card--compact .panel-copy {
+  margin: 2px 0;
+}
+
+.selection-card--compact .popup-list {
+  gap: 6px;
+}
+
+.selection-card--compact .popup-card,
+.selection-card--compact .inventory-card {
+  padding: 8px 10px;
+  border-radius: 14px;
+  gap: 4px;
+}
+
+.selection-card--compact .stat-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 6px;
+  align-items: stretch;
+}
+
+.selection-card--compact .stat-chip-grid .mini-tag {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.selection-card--compact .popup-list .popup-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 4px;
+}
+
+.selection-card--compact .popup-list .popup-card .ghost-button.small-ghost {
+  padding: 6px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  line-height: 1.1;
+}
+
 .board-popup {
   width: min(420px, calc(100% - 36px));
   max-height: min(68vh, 720px);
