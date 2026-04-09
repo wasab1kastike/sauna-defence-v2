@@ -331,6 +331,10 @@ button {
   left: 18px;
   bottom: clamp(220px, 31vh, 304px);
   width: min(360px, calc(100% - 36px));
+  max-height: min(68vh, 720px);
+  overflow: auto;
+  scrollbar-gutter: stable;
+  padding-right: 16px;
 }
 
 .board-popup {
@@ -876,6 +880,8 @@ em {
     right: 18px;
     width: auto;
     bottom: min(410px, 48vh);
+    max-height: min(52vh, 560px);
+    overflow: auto;
   }
 
   .landmark-chip {
