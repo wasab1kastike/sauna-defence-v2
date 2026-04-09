@@ -2244,6 +2244,81 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.boardCap).toBe(gameContent.config.boardCap + 1);
   });
 
+  it('keeps repeatable metashop upgrades purchasable past their old cap and marks softcaps in the HUD', () => {
+    let state = prepState();
+    state.phase = 'lost';
+    state.overlayMode = 'intermission';
+    state.meta.shopUnlocked = true;
+    state.meta.steam = 200;
+    state.meta.upgrades.inventory_slots = 4;
+
+    let snapshot = createSnapshot(state, gameContent);
+    let upgrade = snapshot.hud.metaUpgrades.find((entry) => entry.id === 'inventory_slots');
+    expect(upgrade?.repeatable).toBe(true);
+    expect(upgrade?.maxed).toBe(false);
+    expect(upgrade?.softcapReached).toBe(false);
+    expect(upgrade?.cost).not.toBeNull();
+    expect(upgrade?.nextEffectText).toBe('Next: +1 stash capacity');
+
+    state = applyAction(state, { type: 'buyMetaUpgrade', upgradeId: 'inventory_slots' }, gameContent);
+
+    snapshot = createSnapshot(state, gameContent);
+    upgrade = snapshot.hud.metaUpgrades.find((entry) => entry.id === 'inventory_slots');
+    expect(state.meta.upgrades.inventory_slots).toBe(5);
+    expect(upgrade?.repeatable).toBe(true);
+    expect(upgrade?.maxed).toBe(false);
+    expect(upgrade?.softcapReached).toBe(true);
+    expect(upgrade?.cost).not.toBeNull();
+  });
+
+  it('applies softened endless scaling to roster, stash, loot luck, and item slots', () => {
+    const state = prepState();
+    state.meta.upgrades.roster_capacity = 7;
+    state.meta.upgrades.inventory_slots = 5;
+    state.meta.upgrades.loot_luck = 6;
+    state.meta.upgrades.item_slots = 5;
+
+    const snapshot = createSnapshot(state, gameContent);
+    const lootLuckUpgrade = snapshot.hud.metaUpgrades.find((entry) => entry.id === 'loot_luck');
+
+    expect(snapshot.hud.rosterCap).toBe(gameContent.config.baseRosterCap + 6);
+    expect(snapshot.hud.boardCap).toBe(gameContent.config.boardCap + 6);
+    expect(snapshot.hud.inventoryCap).toBe(gameContent.config.baseInventoryCap + 7);
+    expect(lootLuckUpgrade?.nextEffectText).toBe('Next: +3% loot chance');
+    expect(snapshot.hud.rosterEntries[0]?.itemSlotCount).toBe(gameContent.config.baseItemSlots + 4);
+  });
+
+  it('keeps loot rarity and beer shop scaling stable beyond the old metashop caps', () => {
+    const state = prepState();
+    state.meta.shopUnlocked = true;
+    state.meta.upgrades.loot_rarity = 11;
+    state.meta.upgrades.beer_shop_unlock = 1;
+    state.meta.upgrades.beer_shop_level = 6;
+
+    const snapshot = createSnapshot(state, gameContent);
+    const rarityUpgrade = snapshot.hud.metaUpgrades.find((entry) => entry.id === 'loot_rarity');
+    const beerUpgrade = snapshot.hud.metaUpgrades.find((entry) => entry.id === 'beer_shop_level');
+
+    expect(rarityUpgrade?.nextEffectText).toBe('Next: build-up level toward the next rarity score');
+    expect(beerUpgrade?.nextEffectText).toBe('Next: +1 offer');
+    expect(snapshot.hud.beerOfferCount).toBe(7);
+    expect(snapshot.hud.beerActiveSlotCap).toBe(4);
+  });
+
+  it('still treats utility metashop unlocks as capped one-shots', () => {
+    const state = prepState();
+    state.meta.shopUnlocked = true;
+    state.meta.upgrades.sauna_auto_deploy = 1;
+
+    const snapshot = createSnapshot(state, gameContent);
+    const upgrade = snapshot.hud.metaUpgrades.find((entry) => entry.id === 'sauna_auto_deploy');
+
+    expect(upgrade?.repeatable).toBe(false);
+    expect(upgrade?.maxed).toBe(true);
+    expect(upgrade?.softcapReached).toBe(false);
+    expect(upgrade?.nextEffectText).toBeNull();
+  });
+
   it('auto deploys the sauna defender when a board defender dies', () => {
     let state = prepState();
     const boardDefender = state.defenders.find((defender) => defender.location === 'ready');
@@ -2492,6 +2567,123 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.saunaDefenderId).toBe(offer.candidate.id);
     const replacement = state.defenders.find((defender) => defender.id === offer.candidate.id);
     expect(replacement?.location).toBe('sauna');
+  });
+
+  it('hires a recruit straight into an empty sauna from the market', () => {
+    let state = prepState();
+    state.sisu.current = 30;
+    const saunaDefender = state.defenders.find((defender) => defender.location === 'sauna');
+    expect(saunaDefender).toBeTruthy();
+    saunaDefender!.location = 'ready';
+    saunaDefender!.tile = null;
+    state.saunaDefenderId = null;
+
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
+    const offer = state.recruitOffers[0];
+    const snapshot = createSnapshot(state, gameContent);
+    const hudOffer = snapshot.hud.recruitOffers.find((entry) => entry.id === offer.offerId);
+
+    expect(hudOffer?.canHireToSauna).toBe(true);
+    expect(hudOffer?.hireToSaunaLabel).toContain('Hire To Sauna');
+
+    state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId, destination: 'sauna' }, gameContent);
+
+    const recruit = state.defenders.find((defender) => defender.id === offer.candidate.id);
+    expect(recruit?.location).toBe('sauna');
+    expect(state.saunaDefenderId).toBe(offer.candidate.id);
+  });
+
+  it('only enables occupied-sauna recruit replacement after the sauna is selected', () => {
+    let state = prepState();
+    state.sisu.current = 30;
+
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
+    const offer = state.recruitOffers[0];
+
+    let snapshot = createSnapshot(state, gameContent);
+    let hudOffer = snapshot.hud.recruitOffers.find((entry) => entry.id === offer.offerId);
+    expect(hudOffer?.canHireToSauna).toBe(false);
+    expect(hudOffer?.hireToSaunaLabel).toBe('Select Sauna To Replace');
+
+    state = applyAction(state, { type: 'selectSauna' }, gameContent);
+    snapshot = createSnapshot(state, gameContent);
+    hudOffer = snapshot.hud.recruitOffers.find((entry) => entry.id === offer.offerId);
+    expect(hudOffer?.canHireToSauna).toBe(true);
+    expect(hudOffer?.hireToSaunaLabel).toContain('Hire To Sauna');
+  });
+
+  it('lets a board hero live-retreat to an empty sauna during a wave for 3 SISU', () => {
+    let state = prepState();
+    const boardHero = state.defenders.find((defender) => defender.location === 'ready');
+    const saunaHero = state.defenders.find((defender) => defender.location === 'sauna');
+    expect(boardHero).toBeTruthy();
+    expect(saunaHero).toBeTruthy();
+
+    boardHero!.location = 'board';
+    boardHero!.tile = { q: 0, r: -1 };
+    boardHero!.homeTile = { q: 0, r: -1 };
+    saunaHero!.location = 'ready';
+    saunaHero!.tile = null;
+    state.saunaDefenderId = null;
+    state.phase = 'wave';
+    state.sisu.current = 7;
+    state.selectedDefenderId = boardHero!.id;
+    state.selectedMapTarget = 'defender';
+
+    const before = createSnapshot(state, gameContent);
+    expect(before.hud.selectedDefender?.canSaunaCommand).toBe(true);
+    expect(before.hud.selectedDefender?.saunaCommandLabel).toBe('Live Retreat (3 SISU)');
+
+    state = applyAction(state, { type: 'recallDefenderToSauna', defenderId: boardHero!.id }, gameContent);
+
+    const updated = state.defenders.find((defender) => defender.id === boardHero!.id);
+    expect(updated?.location).toBe('sauna');
+    expect(updated?.tile).toBeNull();
+    expect(state.saunaDefenderId).toBe(boardHero!.id);
+    expect(state.sisu.current).toBe(4);
+    expect(state.saunaRetreatReadyAtMs).toBe(12000);
+  });
+
+  it('shows live-retreat cooldown and blocks another wave retreat until it expires', () => {
+    let state = prepState();
+    const boardHeroes = state.defenders.filter((defender) => defender.location === 'ready').slice(0, 2);
+    const saunaHero = state.defenders.find((defender) => defender.location === 'sauna');
+    expect(boardHeroes).toHaveLength(2);
+    expect(saunaHero).toBeTruthy();
+
+    boardHeroes[0].location = 'board';
+    boardHeroes[0].tile = { q: 0, r: -1 };
+    boardHeroes[0].homeTile = { q: 0, r: -1 };
+    boardHeroes[1].location = 'board';
+    boardHeroes[1].tile = { q: 1, r: -1 };
+    boardHeroes[1].homeTile = { q: 1, r: -1 };
+    saunaHero!.location = 'ready';
+    saunaHero!.tile = null;
+    state.saunaDefenderId = null;
+    state.phase = 'wave';
+    state.sisu.current = 10;
+
+    state = applyAction(state, { type: 'recallDefenderToSauna', defenderId: boardHeroes[0].id }, gameContent);
+    const retreated = state.defenders.find((defender) => defender.id === boardHeroes[0].id);
+    expect(retreated?.location).toBe('sauna');
+
+    retreated!.location = 'ready';
+    state.saunaDefenderId = null;
+    state.selectedDefenderId = boardHeroes[1].id;
+    state.selectedMapTarget = 'defender';
+    state.timeMs = 1000;
+
+    const snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.selectedDefender?.canSaunaCommand).toBe(false);
+    expect(snapshot.hud.selectedDefender?.saunaCommandLabel).toBe('Retreat 11s');
+
+    const beforeSisu = state.sisu.current;
+    state = applyAction(state, { type: 'recallDefenderToSauna', defenderId: boardHeroes[1].id }, gameContent);
+
+    const secondHero = state.defenders.find((defender) => defender.id === boardHeroes[1].id);
+    expect(secondHero?.location).toBe('board');
+    expect(state.sisu.current).toBe(beforeSisu);
+    expect(state.saunaDefenderId).toBeNull();
   });
 
   it('shows recruitment availability in the hud during a live wave', () => {

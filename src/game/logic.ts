@@ -31,6 +31,7 @@ import type {
   MetaProgress,
   MetaUpgradeId,
   PendingFireball,
+  RecruitDestination,
   Rarity,
   RecruitOffer,
   RunPreferences,
@@ -116,6 +117,14 @@ const META_IDS: MetaUpgradeId[] = [
   'sauna_auto_deploy',
   'sauna_slap_swap'
 ];
+const REPEATABLE_META_UPGRADE_IDS: MetaUpgradeId[] = [
+  'roster_capacity',
+  'inventory_slots',
+  'loot_luck',
+  'loot_rarity',
+  'item_slots',
+  'beer_shop_level'
+];
 const CENTER: AxialCoord = { q: 0, r: 0 };
 const WORLD_LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'beer_shop'];
 const BLINK_STEP_COOLDOWN_MS = 12000;
@@ -166,6 +175,8 @@ const PEBBLE_MOTION_DURATION_MS = 520;
 const PEBBLE_DEVOUR_STACK_CAP = 6;
 const PEBBLE_DEVOUR_DAMAGE_PER_STACK = 2;
 const PEBBLE_DEVOUR_HEAL_RATIO = 0.35;
+const LIVE_SAUNA_RETREAT_SISU_COST = 3;
+const LIVE_SAUNA_RETREAT_COOLDOWN_MS = 12000;
 const BLINK_MOTION_DURATION_MS = 320;
 const SPAWN_SETTLE_DURATION_MS = 260;
 const PEBBLE_PATH_BASE: AxialCoord[] = [
@@ -592,11 +603,11 @@ function weightedPick<T>(state: RunState, values: T[], weight: (value: T) => num
 }
 
 function rosterCap(state: RunState, content: GameContent): number {
-  return content.config.baseRosterCap + state.meta.upgrades.roster_capacity;
+  return content.config.baseRosterCap + rosterCapacityBonus(state.meta.upgrades.roster_capacity);
 }
 
 function boardCap(state: RunState, content: GameContent): number {
-  return content.config.boardCap + state.meta.upgrades.roster_capacity;
+  return content.config.boardCap + rosterCapacityBonus(state.meta.upgrades.roster_capacity);
 }
 
 function inventoryUnlocked(state: RunState): boolean {
@@ -605,7 +616,7 @@ function inventoryUnlocked(state: RunState): boolean {
 
 function inventoryCap(state: RunState, content: GameContent): number {
   if (!inventoryUnlocked(state)) return 0;
-  return content.config.baseInventoryCap + Math.max(0, state.meta.upgrades.inventory_slots - 1) * 2;
+  return content.config.baseInventoryCap + inventoryCapacityBonus(state.meta.upgrades.inventory_slots);
 }
 
 function headerItemCap(content: GameContent): number {
@@ -617,7 +628,7 @@ function headerSkillCap(content: GameContent): number {
 }
 
 function itemSlotCap(state: RunState, content: GameContent): number {
-  return content.config.baseItemSlots + state.meta.upgrades.item_slots;
+  return content.config.baseItemSlots + itemSlotBonus(state.meta.upgrades.item_slots);
 }
 
 function beerShopUnlocked(state: RunState): boolean {
@@ -629,32 +640,11 @@ function beerShopTier(state: RunState): number {
 }
 
 function beerOfferCountForTier(tier: number): number {
-  switch (tier) {
-    case 4:
-      return 6;
-    case 3:
-      return 5;
-    case 2:
-      return 4;
-    case 1:
-      return 3;
-    default:
-      return 0;
-  }
+  return tier <= 0 ? 0 : beerShopOfferCountForLevel(Math.max(0, tier - 1));
 }
 
 function beerActiveSlotCapForTier(tier: number): number {
-  switch (tier) {
-    case 4:
-      return 3;
-    case 3:
-    case 2:
-      return 2;
-    case 1:
-      return 1;
-    default:
-      return 0;
-  }
+  return tier <= 0 ? 0 : beerActiveSlotCapForLevel(Math.max(0, tier - 1));
 }
 
 function skillSlotCap(): number {
@@ -683,6 +673,56 @@ function hasLootAutoAssign(state: RunState): boolean {
 
 function hasLootAutoUpgrade(state: RunState): boolean {
   return state.meta.upgrades.loot_auto_upgrade > 0;
+}
+
+function isRepeatableMetaUpgrade(upgradeId: MetaUpgradeId): boolean {
+  return REPEATABLE_META_UPGRADE_IDS.includes(upgradeId);
+}
+
+function metaSoftcapLevel(upgradeId: MetaUpgradeId, content: GameContent): number {
+  return content.metaUpgrades[upgradeId].maxLevel;
+}
+
+function rosterCapacityBonus(level: number): number {
+  const softcap = 5;
+  return Math.min(level, softcap) + Math.floor(Math.max(0, level - softcap) / 2);
+}
+
+function inventoryCapacityBonus(level: number): number {
+  if (level <= 0) return 0;
+  return Math.min(Math.max(0, level - 1), 3) * 2 + Math.max(0, level - 4);
+}
+
+function lootLuckBonus(level: number): number {
+  return Math.min(level, 5) * 0.06 + Math.max(0, level - 5) * 0.03;
+}
+
+function lootRarityScore(level: number): number {
+  return Math.min(level, 5) + Math.floor(Math.max(0, level - 5) / 2);
+}
+
+function lootRarityWeights(level: number): Record<Rarity, number> {
+  const score = lootRarityScore(level);
+  return {
+    common: Math.max(16, 70 - score * 7),
+    rare: Math.max(18, 22 + score * 4),
+    epic: Math.max(4, score >= 1 ? 4 + score * 2 : 3),
+    legendary: Math.max(0, score >= 4 ? (score - 3) * 2 : 0)
+  };
+}
+
+function itemSlotBonus(level: number): number {
+  return Math.min(level, 3) + Math.floor(Math.max(0, level - 3) / 2);
+}
+
+function beerShopOfferCountForLevel(level: number): number {
+  return 3 + Math.min(level, 3) + Math.floor(Math.max(0, level - 3) / 2);
+}
+
+function beerActiveSlotCapForLevel(level: number): number {
+  if (level <= 0) return 1;
+  if (level <= 2) return 2;
+  return 3 + Math.floor(Math.max(0, level - 3) / 3);
 }
 
 function clearActiveHudPanel(state: RunState): void {
@@ -1570,6 +1610,30 @@ function recruitReplacementTarget(state: RunState): DefenderInstance | null {
   return selected && selected.location !== 'dead' ? selected : null;
 }
 
+function hasSelectedSaunaReplacement(state: RunState): boolean {
+  return state.selectedMapTarget === 'sauna';
+}
+
+function canHireRecruitToSauna(state: RunState, offer: RecruitOffer, content: GameContent): boolean {
+  if (!canAccessRecruitment(state) || state.sisu.current < offer.price) return false;
+  const saunaDefender = getDefender(state, state.saunaDefenderId);
+  if (saunaDefender && saunaDefender.location === 'sauna') {
+    return hasSelectedSaunaReplacement(state);
+  }
+  return livingDefenders(state).length < rosterCap(state, content);
+}
+
+function hireRecruitToSaunaLabel(state: RunState, offer: RecruitOffer, content: GameContent): string {
+  const saunaDefender = getDefender(state, state.saunaDefenderId);
+  if (saunaDefender && saunaDefender.location === 'sauna') {
+    return hasSelectedSaunaReplacement(state) ? `Hire To Sauna (${offer.price})` : 'Select Sauna To Replace';
+  }
+  if (livingDefenders(state).length >= rosterCap(state, content)) {
+    return 'Roster Full';
+  }
+  return `Hire To Sauna (${offer.price})`;
+}
+
 function canBuyAnyRecruitOffer(state: RunState, content: GameContent): boolean {
   const rosterFull = livingDefenders(state).length >= rosterCap(state, content);
   return (
@@ -1577,6 +1641,41 @@ function canBuyAnyRecruitOffer(state: RunState, content: GameContent): boolean {
     (!rosterFull || recruitReplacementTarget(state) !== null) &&
     state.recruitOffers.some((offer) => state.sisu.current >= offer.price)
   );
+}
+
+function canLiveRetreatDefenderToSauna(state: RunState, defender: DefenderInstance): boolean {
+  const saunaDefender = getDefender(state, state.saunaDefenderId);
+  return (
+    defender.location === 'board' &&
+    state.phase === 'wave' &&
+    state.overlayMode === 'none' &&
+    (!saunaDefender || saunaDefender.location !== 'sauna') &&
+    state.sisu.current >= LIVE_SAUNA_RETREAT_SISU_COST &&
+    state.timeMs >= state.saunaRetreatReadyAtMs
+  );
+}
+
+function canCommandDefenderToSauna(state: RunState, defender: DefenderInstance): boolean {
+  if (defender.location !== 'board' || state.overlayMode !== 'none') return false;
+  if (state.phase === 'prep') return true;
+  return canLiveRetreatDefenderToSauna(state, defender);
+}
+
+function saunaCommandLabel(state: RunState, defender: DefenderInstance): string | null {
+  if (defender.location !== 'board') return null;
+  const saunaDefender = getDefender(state, state.saunaDefenderId);
+  if (state.phase === 'prep' && state.overlayMode === 'none') {
+    return saunaDefender && saunaDefender.location === 'sauna'
+      ? `Swap ${defender.name} Into Sauna`
+      : `Send ${defender.name} To Sauna`;
+  }
+  if (state.phase !== 'wave' || state.overlayMode !== 'none') return null;
+  if (saunaDefender && saunaDefender.location === 'sauna') return 'Sauna occupied';
+  if (state.sisu.current < LIVE_SAUNA_RETREAT_SISU_COST) return `Need ${LIVE_SAUNA_RETREAT_SISU_COST} SISU`;
+  if (state.timeMs < state.saunaRetreatReadyAtMs) {
+    return `Retreat ${Math.ceil((state.saunaRetreatReadyAtMs - state.timeMs) / 1000)}s`;
+  }
+  return `Live Retreat (${LIVE_SAUNA_RETREAT_SISU_COST} SISU)`;
 }
 
 function canRerollSaunaDefender(state: RunState): boolean {
@@ -1747,6 +1846,23 @@ function fillDefenderToMax(state: RunState, defender: DefenderInstance, content:
 
 function addRecruitToReserve(state: RunState, defender: DefenderInstance, content: GameContent): void {
   addRecruitToReserveFromModule(state, defender, content, recruitmentDeps);
+}
+
+function moveRecruitToSauna(state: RunState, defender: DefenderInstance): void {
+  defender.location = 'sauna';
+  defender.tile = null;
+  defender.homeTile = null;
+  clearUnitMotion(defender);
+  state.saunaDefenderId = defender.id;
+}
+
+function performLiveRetreatToSauna(state: RunState, defender: DefenderInstance): void {
+  defender.location = 'sauna';
+  defender.tile = null;
+  clearUnitMotion(defender);
+  state.saunaDefenderId = defender.id;
+  state.sisu.current -= LIVE_SAUNA_RETREAT_SISU_COST;
+  state.saunaRetreatReadyAtMs = state.timeMs + LIVE_SAUNA_RETREAT_COOLDOWN_MS;
 }
 
 function createRecruitOffer(state: RunState, content: GameContent): RecruitOffer {
@@ -2076,11 +2192,13 @@ function maybeDrop(state: RunState, enemyId: EnemyUnitId, content: GameContent):
   const chance =
     isBossLootEnemy(enemyId)
       ? content.config.bossLootChance
-      : content.config.baseLootChance + state.meta.upgrades.loot_luck * 0.06 + (alcoholBonus.lootChance ?? 0);
+      : content.config.baseLootChance + lootLuckBonus(state.meta.upgrades.loot_luck) + (alcoholBonus.lootChance ?? 0);
   if (rng(state) > chance) return;
-  const rarityRoll = rng(state);
-  const rarityBoost = state.meta.upgrades.loot_rarity * 0.08;
-  const rarity = rarityRoll > 0.93 - rarityBoost ? 'epic' : rarityRoll > 0.62 - rarityBoost ? 'rare' : 'common';
+  const rarity = weightedPick(
+    state,
+    RARITY_ORDER,
+    (entry) => lootRarityWeights(state.meta.upgrades.loot_rarity)[entry]
+  ) ?? 'common';
   const kind = rng(state) < (rarity === 'epic' ? 0.5 : 0.32) ? 'skill' : 'item';
   const chosen =
     kind === 'item'
@@ -3056,8 +3174,69 @@ function applyGlobalRegenTick(state: RunState, content: GameContent): void {
 function metaCost(state: RunState, upgradeId: MetaUpgradeId, content: GameContent): number | null {
   const def = content.metaUpgrades[upgradeId];
   const level = state.meta.upgrades[upgradeId];
-  if (level >= def.maxLevel) return null;
-  return def.baseCost + def.costStep * level;
+  if (level >= def.maxLevel && !isRepeatableMetaUpgrade(upgradeId)) return null;
+  const baseCost = def.baseCost + def.costStep * level;
+  if (!isRepeatableMetaUpgrade(upgradeId) || level < def.maxLevel) {
+    return baseCost;
+  }
+  const postCapLevel = level - def.maxLevel + 1;
+  const surchargeStep = Math.max(4, def.costStep || Math.ceil(def.baseCost * 0.8));
+  return baseCost + Math.floor((postCapLevel * (postCapLevel + 1) * surchargeStep) / 2);
+}
+
+function metaUpgradeSoftcapReached(state: RunState, upgradeId: MetaUpgradeId, content: GameContent): boolean {
+  return isRepeatableMetaUpgrade(upgradeId) && state.meta.upgrades[upgradeId] > metaSoftcapLevel(upgradeId, content);
+}
+
+function nextMetaUpgradeEffectText(state: RunState, upgradeId: MetaUpgradeId, content: GameContent): string | null {
+  const currentLevel = state.meta.upgrades[upgradeId];
+  const nextLevel = currentLevel + 1;
+  switch (upgradeId) {
+    case 'roster_capacity': {
+      const current = rosterCapacityBonus(currentLevel);
+      const next = rosterCapacityBonus(nextLevel);
+      return next > current
+        ? `Next: +${next - current} board cap and +${next - current} roster cap`
+        : 'Next: build-up level toward the next +1 board and roster cap';
+    }
+    case 'inventory_slots': {
+      const current = inventoryCapacityBonus(currentLevel);
+      const next = inventoryCapacityBonus(nextLevel);
+      if (currentLevel <= 0) return 'Next: unlock Overflow Stash';
+      return `Next: +${Math.max(0, next - current)} stash capacity`;
+    }
+    case 'loot_luck': {
+      const current = lootLuckBonus(currentLevel);
+      const next = lootLuckBonus(nextLevel);
+      return `Next: +${Math.round((next - current) * 100)}% loot chance`;
+    }
+    case 'loot_rarity': {
+      const current = lootRarityScore(currentLevel);
+      const next = lootRarityScore(nextLevel);
+      return next > current
+        ? `Next: better rarity weights (score ${next})`
+        : 'Next: build-up level toward the next rarity score';
+    }
+    case 'item_slots': {
+      const current = itemSlotBonus(currentLevel);
+      const next = itemSlotBonus(nextLevel);
+      return next > current
+        ? `Next: +${next - current} item slot per hero`
+        : 'Next: build-up level toward the next item slot';
+    }
+    case 'beer_shop_level': {
+      const currentOffers = beerShopOfferCountForLevel(currentLevel);
+      const nextOffers = beerShopOfferCountForLevel(nextLevel);
+      const currentSlots = beerActiveSlotCapForLevel(currentLevel);
+      const nextSlots = beerActiveSlotCapForLevel(nextLevel);
+      const parts: string[] = [];
+      if (nextOffers > currentOffers) parts.push(`+${nextOffers - currentOffers} offer`);
+      if (nextSlots > currentSlots) parts.push(`+${nextSlots - currentSlots} active slot`);
+      return parts.length > 0 ? `Next: ${parts.join(', ')}` : 'Next: build-up level toward the next beer stock boost';
+    }
+    default:
+      return null;
+  }
 }
 
 function getInventoryDrop(state: RunState, dropId: number | null): InventoryDrop | null {
@@ -3859,6 +4038,7 @@ export function createInitialState(
     saunaHp: content.config.saunaHp,
     waveSwapUsed: false,
     nextRegenTickAtMs: 1000,
+    saunaRetreatReadyAtMs: 0,
     endUserHordeMomentum: 0,
     endUserHordeTier: 0,
     endUserHordeNextSurgeAtMs: 0,
@@ -4136,22 +4316,32 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     }
     case 'recallDefenderToSauna': {
-      if (next.overlayMode !== 'none' || next.phase !== 'prep') return next;
+      if (next.overlayMode !== 'none') return next;
       const defender = getDefender(next, action.defenderId);
       if (!defender || defender.location !== 'board') return next;
-      const currentSaunaDefender = getDefender(next, next.saunaDefenderId);
-      if (currentSaunaDefender && currentSaunaDefender.location === 'sauna') {
-        currentSaunaDefender.location = 'ready';
-        currentSaunaDefender.tile = null;
-        clearUnitMotion(currentSaunaDefender);
+      if (next.phase === 'prep') {
+        const currentSaunaDefender = getDefender(next, next.saunaDefenderId);
+        if (currentSaunaDefender && currentSaunaDefender.location === 'sauna') {
+          currentSaunaDefender.location = 'ready';
+          currentSaunaDefender.tile = null;
+          clearUnitMotion(currentSaunaDefender);
+        }
+        defender.location = 'sauna';
+        defender.tile = null;
+        clearUnitMotion(defender);
+        next.saunaDefenderId = defender.id;
+        next.message = currentSaunaDefender && currentSaunaDefender.location === 'ready'
+          ? `${defender.name} took the sauna seat and ${currentSaunaDefender.name} moved back to the reserve row.`
+          : `${defender.name} went to recover in the sauna.`;
+        return next;
       }
-      defender.location = 'sauna';
-      defender.tile = null;
-      clearUnitMotion(defender);
-      next.saunaDefenderId = defender.id;
-      next.message = currentSaunaDefender && currentSaunaDefender.location === 'ready'
-        ? `${defender.name} took the sauna seat and ${currentSaunaDefender.name} moved back to the reserve row.`
-        : `${defender.name} went to recover in the sauna.`;
+      if (next.phase !== 'wave') return next;
+      if (!canLiveRetreatDefenderToSauna(next, defender)) {
+        next.message = `${defender.name} cannot retreat to the sauna right now.`;
+        return next;
+      }
+      performLiveRetreatToSauna(next, defender);
+      next.message = `${defender.name} retreated to the sauna for ${LIVE_SAUNA_RETREAT_SISU_COST} SISU.`;
       return next;
     }
     case 'rerollSaunaDefender': {
@@ -4267,8 +4457,22 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       if (!canAccessRecruitment(next)) return next;
       const offer = next.recruitOffers.find((entry) => entry.offerId === action.offerId);
       if (!offer) return next;
+      const destination: RecruitDestination = action.destination ?? 'reserve';
       const rosterFull = livingDefenders(next).length >= rosterCap(next, content);
-      const replacement = rosterFull ? recruitReplacementTarget(next) : null;
+      const saunaDefender = getDefender(next, next.saunaDefenderId);
+      const replacement = destination === 'sauna'
+        ? (saunaDefender && saunaDefender.location === 'sauna' && hasSelectedSaunaReplacement(next) ? saunaDefender : null)
+        : (rosterFull ? recruitReplacementTarget(next) : null);
+      if (destination === 'sauna') {
+        if (saunaDefender && saunaDefender.location === 'sauna' && !hasSelectedSaunaReplacement(next)) {
+          next.message = 'Select the sauna first if you want to replace the current sauna reserve.';
+          return next;
+        }
+        if (!saunaDefender && rosterFull) {
+          next.message = 'Roster is full. Free space or select a replacement before hiring straight to the sauna.';
+          return next;
+        }
+      }
       if (rosterFull && !replacement) {
         next.message = 'Roster is full. Select a hero from the roster, or click the sauna, to choose who gets replaced.';
         return next;
@@ -4280,6 +4484,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.sisu.current -= offer.price;
       if (replacement) {
         replaceDefenderWithRecruit(next, replacement, offer.candidate, content);
+      } else if (destination === 'sauna') {
+        next.defenders.push(offer.candidate);
+        moveRecruitToSauna(next, offer.candidate);
       } else {
         addRecruitToReserve(next, offer.candidate, content);
       }
@@ -4288,7 +4495,9 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.recruitRerollCountsByOfferId = {};
       clearActiveHudPanel(next);
       next.message = replacement
-        ? `${offer.candidate.name} ${offer.candidate.title} replaced ${replacement.name} for ${offer.price} SISU.`
+        ? destination === 'sauna'
+          ? `${offer.candidate.name} ${offer.candidate.title} replaced ${replacement.name} in the sauna for ${offer.price} SISU.`
+          : `${offer.candidate.name} ${offer.candidate.title} replaced ${replacement.name} for ${offer.price} SISU.`
         : offer.candidate.location === 'sauna'
           ? `${offer.candidate.name} ${offer.candidate.title} took the sauna reserve for ${offer.price} SISU.`
           : `${offer.candidate.name} ${offer.candidate.title} joined your reserve row for ${offer.price} SISU.`;
@@ -4522,11 +4731,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const freeRecruitSlots = Math.max(0, rosterCap(state, content) - livingDefenders(state).length);
   const beerTier = beerShopTier(state);
   const selectedBoardDefender = selected && selected.location === 'board' ? selected : null;
-  const saunaSendLabel = selectedBoardDefender
-    ? saunaDefender
-      ? `Swap ${selectedBoardDefender.name} Into Sauna`
-      : `Send ${selectedBoardDefender.name} To Sauna`
-    : null;
+  const selectedBoardSaunaCommandLabel = selectedBoardDefender ? saunaCommandLabel(state, selectedBoardDefender) : null;
   const readyReserveEntries = createReadyReserveEntries(
     state,
     readyReserveDefenders,
@@ -4541,6 +4746,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     content,
     hudSelectorDeps
   );
+  saunaReserve.canSendSelectedBoardHero = selectedBoardDefender ? canCommandDefenderToSauna(state, selectedBoardDefender) : false;
+  saunaReserve.sendSelectedBoardHeroLabel = selectedBoardSaunaCommandLabel;
   const rosterEntries = createRosterEntries(
     state,
     state.defenders,
@@ -4645,7 +4852,9 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         heal: roleStats.heal,
         range: roleStats.range,
         rerollCount: state.recruitRerollCountsByOfferId[offer.offerId] ?? 0,
-        rerollCost: recruitOfferRerollCost(state, offer.offerId)
+        rerollCost: recruitOfferRerollCost(state, offer.offerId),
+        canHireToSauna: canHireRecruitToSauna(state, offer, content),
+        hireToSaunaLabel: hireRecruitToSaunaLabel(state, offer, content)
       };
     }),
     steamEarned: state.steamEarned,
@@ -4799,7 +5008,9 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
           id: skillId,
           name: content.skillDefinitions[skillId].name
         })),
-        location: selected.location
+        location: selected.location,
+        canSaunaCommand: canCommandDefenderToSauna(state, selected),
+        saunaCommandLabel: saunaCommandLabel(state, selected)
       };
     })() : null,
     selectedSauna: state.selectedMapTarget === 'sauna' ? {
@@ -4816,8 +5027,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       slapSwapUnlocked: hasSaunaSlapSwap(state),
       canReroll: canRerollSaunaDefender(state),
       rerollCost: saunaRerollCost(state),
-      canSendSelectedBoardHero: selectedBoardDefender !== null && state.overlayMode === 'none' && state.phase === 'prep',
-      sendSelectedBoardHeroLabel: saunaSendLabel
+      canSendSelectedBoardHero: selectedBoardDefender ? canCommandDefenderToSauna(state, selectedBoardDefender) : false,
+      sendSelectedBoardHeroLabel: selectedBoardSaunaCommandLabel
     } : null,
     selectedEnemy: state.selectedMapTarget === 'enemy' && selectedEnemy ? (() => {
       const archetype = content.enemyArchetypes[selectedEnemy.archetypeId];
@@ -4869,7 +5080,10 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         level: state.meta.upgrades[upgradeId],
         cost,
         affordable: !blocked && cost !== null && state.meta.steam >= cost,
-        maxed: cost === null
+        maxed: cost === null,
+        repeatable: isRepeatableMetaUpgrade(upgradeId),
+        softcapReached: metaUpgradeSoftcapReached(state, upgradeId, content),
+        nextEffectText: nextMetaUpgradeEffectText(state, upgradeId, content)
       };
     }),
     worldLandmarks

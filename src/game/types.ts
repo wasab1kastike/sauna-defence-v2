@@ -85,6 +85,7 @@ export type SkillId =
   | 'battle_hymn';
 export type LootKind = 'item' | 'skill';
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
+export type RecruitDestination = 'reserve' | 'sauna';
 export type AlcoholId =
   | 'light_lager'
   | 'sauna_stout'
@@ -538,6 +539,7 @@ export interface RunState {
   saunaHp: number;
   waveSwapUsed: boolean;
   nextRegenTickAtMs: number;
+  saunaRetreatReadyAtMs: number;
   endUserHordeMomentum: number;
   endUserHordeTier: number;
   endUserHordeNextSurgeAtMs: number;
@@ -651,6 +653,8 @@ export interface HudSelectedDefender {
   items: HudEquippedItemEntry[];
   skills: HudEquippedSkillEntry[];
   location: DefenderLocation;
+  canSaunaCommand: boolean;
+  saunaCommandLabel: string | null;
 }
 
 export interface HudSelectedSubclassEntry {
@@ -704,6 +708,9 @@ export interface HudMetaUpgradeEntry {
   cost: number | null;
   affordable: boolean;
   maxed: boolean;
+  repeatable: boolean;
+  softcapReached: boolean;
+  nextEffectText: string | null;
 }
 
 export interface HudBeerShopOfferEntry {
@@ -754,6 +761,8 @@ export interface HudRecruitOfferEntry {
   range: number;
   rerollCount: number;
   rerollCost: number;
+  canHireToSauna: boolean;
+  hireToSaunaLabel: string;
 }
 
 export interface HudRecruitLevelOddsEntry {
@@ -960,7 +969,7 @@ export type InputAction =
   | { type: 'rerollRecruitOffer'; offerId: number }
   | { type: 'levelUpRecruitment' }
   | { type: 'rollRecruitOffers' }
-  | { type: 'recruitOffer'; offerId: number }
+  | { type: 'recruitOffer'; offerId: number; destination?: RecruitDestination }
   | { type: 'clearRecruitOffers' }
   | { type: 'equipInventoryDrop'; dropId: number; defenderId: string }
   | { type: 'autoAssignInventoryDrop'; dropId: number }

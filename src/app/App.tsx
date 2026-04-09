@@ -390,12 +390,6 @@ export function App() {
         selectedDefender={selectedDefender}
         selectedSauna={selectedSauna}
         selectedEnemy={selectedEnemy}
-        canSendSelectedDefenderToSauna={Boolean(
-          selectedDefender
-          && selectedDefender.location === 'board'
-          && snapshot.state.phase === 'prep'
-          && !snapshot.state.saunaDefenderId
-        )}
         dispatch={dispatch}
       />
     );
@@ -692,7 +686,9 @@ export function App() {
       );
     } else if (activePanel === 'metashop') {
       title = 'Metashop';
-      subtitle = activeLandmark?.statusText ?? 'Permanent between-run upgrades.';
+      subtitle = activeLandmark?.statusText ?? 'Endless between-run progression with softcaps instead of hard endings.';
+      const repeatableUpgrades = snapshot.hud.metaUpgrades.filter((upgrade) => upgrade.repeatable);
+      const utilityUpgrades = snapshot.hud.metaUpgrades.filter((upgrade) => !upgrade.repeatable);
       content = (
         <div className="popup-scroll-stack">
           {!snapshot.hud.metaShopUnlocked ? (
@@ -711,30 +707,71 @@ export function App() {
               </div>
             </section>
           ) : (
-            <section className="popup-section">
-              <div className="mini-tag-row">
-                <span className="mini-tag">Banked Steam {snapshot.hud.bankedSteam}</span>
-                <span className="mini-tag">{snapshot.hud.showIntermission ? 'Purchases enabled' : 'Between runs only'}</span>
-              </div>
-              <div className="popup-list">
-                {snapshot.hud.metaUpgrades.map((upgrade) => (
-                  <div key={upgrade.id} className="popup-card">
-                    <div className="unit-row-top">
-                      <strong>{upgrade.name}</strong>
-                      <span className="mini-tag">Lvl {upgrade.level}</span>
+            <>
+              <section className="popup-section">
+                <div className="mini-tag-row">
+                  <span className="mini-tag">Banked Steam {snapshot.hud.bankedSteam}</span>
+                  <span className="mini-tag">{snapshot.hud.showIntermission ? 'Purchases enabled' : 'Between runs only'}</span>
+                  <span className="mini-tag">Repeatables keep scaling after softcap</span>
+                </div>
+                <p className="panel-copy small-copy">
+                  Repeatables never truly max out. Old caps now act as softcaps: costs keep climbing and gains arrive more slowly,
+                  while one-shot utility unlocks still finish normally.
+                </p>
+              </section>
+              <section className="popup-section">
+                <div className="section-head">
+                  <strong>Repeatable</strong>
+                  <span>{repeatableUpgrades.length}</span>
+                </div>
+                <div className="popup-list">
+                  {repeatableUpgrades.map((upgrade) => (
+                    <div key={upgrade.id} className="popup-card">
+                      <div className="unit-row-top">
+                        <strong>{upgrade.name}</strong>
+                        <div className="mini-tag-row">
+                          <span className="mini-tag">Lvl {upgrade.level}</span>
+                          {upgrade.softcapReached ? <span className="mini-tag">Softcap reached</span> : null}
+                        </div>
+                      </div>
+                      <small>{upgrade.description}</small>
+                      {upgrade.nextEffectText ? <small>{upgrade.nextEffectText}</small> : null}
+                      <button
+                        className="mini-button"
+                        disabled={!snapshot.hud.showIntermission || !upgrade.affordable}
+                        onClick={() => dispatch({ type: 'buyMetaUpgrade', upgradeId: upgrade.id })}
+                      >
+                        {`Buy${upgrade.cost !== null ? ` (${upgrade.cost} Steam)` : ''}`}
+                      </button>
                     </div>
-                    <small>{upgrade.description}</small>
-                    <button
-                      className="mini-button"
-                      disabled={!snapshot.hud.showIntermission || !upgrade.affordable || upgrade.maxed}
-                      onClick={() => dispatch({ type: 'buyMetaUpgrade', upgradeId: upgrade.id })}
-                    >
-                      {upgrade.maxed ? 'Maxed' : `Buy${upgrade.cost !== null ? ` (${upgrade.cost} Steam)` : ''}`}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </section>
+                  ))}
+                </div>
+              </section>
+              <section className="popup-section">
+                <div className="section-head">
+                  <strong>Utility Unlocks</strong>
+                  <span>{utilityUpgrades.length}</span>
+                </div>
+                <div className="popup-list">
+                  {utilityUpgrades.map((upgrade) => (
+                    <div key={upgrade.id} className="popup-card">
+                      <div className="unit-row-top">
+                        <strong>{upgrade.name}</strong>
+                        <span className="mini-tag">Lvl {upgrade.level}</span>
+                      </div>
+                      <small>{upgrade.description}</small>
+                      <button
+                        className="mini-button"
+                        disabled={!snapshot.hud.showIntermission || !upgrade.affordable || upgrade.maxed}
+                        onClick={() => dispatch({ type: 'buyMetaUpgrade', upgradeId: upgrade.id })}
+                      >
+                        {upgrade.maxed ? 'Maxed' : `Buy${upgrade.cost !== null ? ` (${upgrade.cost} Steam)` : ''}`}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </>
           )}
         </div>
       );

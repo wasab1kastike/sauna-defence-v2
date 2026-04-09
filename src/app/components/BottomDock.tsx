@@ -60,7 +60,7 @@ export function BottomDock({
           <div className="dock-head compact-popup-head">
             <div>
               <h2>Sauna</h2>
-              <p className="panel-copy small-copy">Reserve, reforge, and swap board heroes during prep.</p>
+              <p className="panel-copy small-copy">Reserve, reforge, swap in prep, and trigger paid live retreats during combat.</p>
             </div>
             <span>{saunaReserve.occupantName ? 'Occupied' : 'Empty'}</span>
           </div>
@@ -98,6 +98,10 @@ export function BottomDock({
               >
                 {saunaReserve.sendSelectedBoardHeroLabel}
               </button>
+            ) : saunaReserve.sendSelectedBoardHeroLabel && selectedDefender?.location === 'board' ? (
+              <button className="secondary-button small-button" disabled>
+                {saunaReserve.sendSelectedBoardHeroLabel}
+              </button>
             ) : null}
           </div>
         </div>
@@ -106,7 +110,7 @@ export function BottomDock({
           <div className="dock-head">
             <div>
               <h2>Recruit Market</h2>
-              <p className="panel-copy small-copy">{snapshot.hud.recruitmentStatusText}</p>
+              <p className="panel-copy small-copy">{snapshot.hud.recruitmentStatusText} You can also hire straight into the sauna reserve.</p>
             </div>
             <span>{snapshot.hud.recruitOffers.length}/3 offers</span>
           </div>
@@ -147,6 +151,13 @@ export function BottomDock({
                 <div className="button-row tight">
                   <button className="mini-button" onClick={() => dispatch({ type: 'recruitOffer', offerId: offer.id })}>
                     Buy {offer.price} SISU
+                  </button>
+                  <button
+                    className="secondary-button small-button"
+                    disabled={!offer.canHireToSauna}
+                    onClick={() => dispatch({ type: 'recruitOffer', offerId: offer.id, destination: 'sauna' })}
+                  >
+                    {offer.hireToSaunaLabel}
                   </button>
                   <button className="ghost-button small-ghost" onClick={() => dispatch({ type: 'rerollRecruitOffer', offerId: offer.id })}>
                     Reroll {offer.rerollCost}
