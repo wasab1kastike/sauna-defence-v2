@@ -23,8 +23,8 @@ Wave 5+:
 
 Käytännön odote baseline-ajossa:
 - **Wave 5** clearataan edelleen luotettavasti.
-- **Wave 10** clearataan edelleen useimmissa baseline-skenaarioissa, mutta paine/HP laskee aiempaa nopeammin.
-- **Wave 15** ei enää ole baseline-rosterille vakaa clear-checkpoint uuden 5-wave cycle rampin jälkeen.
+- **Wave 10** ei enää ole baseline-rosterille vakaa clear-checkpoint (odotettu fail uuden rampin jälkeen).
+- **Wave 15** pysyy baseline-rosterille fail-checkpointina uuden cycle-rampin alla.
 
 ## Target-mittarit
 
@@ -32,7 +32,7 @@ Käytännön odote baseline-ajossa:
 - Seurataan wavejen **5 / 10 / 15** clear time -arvoja (millisekunteina).
 - Raportointiluku on baseline-skenaarioiden keskiarvo per checkpoint.
 - Tavoite: trendi ei saa hajota regressiossa (ks. testin lukitut rajat).
-- Huom: wave 15 on nyt tarkoituksella "fail checkpoint" baseline-rosterille (`-1` = checkpointia ei saavutettu).
+- Huom: wave 10 ja wave 15 ovat nyt tarkoituksella "fail checkpoint" baseline-rosterille (`-1` = checkpointia ei saavutettu).
 
 ### 2) Aluekeskimääräinen sauna HP checkpointissa 5/10/15
 - Mittari lasketaan 3-wave trailing-ikkuna-keskiarvona:
@@ -41,7 +41,7 @@ Käytännön odote baseline-ajossa:
   - wave 15: avg(HP wave 13, 14, 15)
 - Raportointiluku on baseline-skenaarioiden keskiarvo.
 - Tavoite: sauna HP ei saa pudota yli regressiorajan.
-- Huom: kun wave 15 checkpointia ei saavuteta, baseline-tavoite on `0`.
+- Huom: kun wave 10/15 checkpointia ei saavuteta, baseline-tavoite on `0`.
 
 ### 3) Defender survival ratio rooleittain
 - Lasketaan runin lopussa (checkpoint wave 15 jälkeen):
@@ -53,40 +53,46 @@ Käytännön odote baseline-ajossa:
 
 ## Recap: vihollismaarat per wave (1-30)
 
-Alla nykyisen balanssilogiikan tuottama spawn-maara per wave (`createWaveDefinition`, nykyinen `main`):
+Alla nykyisen balanssilogiikan tuottama spawn-maara per wave (`createWaveDefinition`, nykyinen `main`).
 
-| Wave | Spawns | Boss | Pattern |
-|---:|---:|:---:|:---|
-| 1 | 3 | no | tutorial |
-| 2 | 4 | no | tutorial |
-| 3 | 4 | no | split |
-| 4 | 5 | no | staggered |
-| 5 | 1 | yes | boss_breach |
-| 6 | 6 | no | staggered |
-| 7 | 7 | no | spearhead |
-| 8 | 9 | no | surge |
-| 9 | 9 | no | split |
-| 10 | 16 | yes | boss_pressure |
-| 11 | 10 | no | spearhead |
-| 12 | 12 | no | surge |
-| 13 | 12 | no | split |
-| 14 | 13 | no | staggered |
-| 15 | 1 | yes | boss_pressure |
-| 16 | 16 | no | surge |
-| 17 | 16 | no | split |
-| 18 | 17 | no | staggered |
-| 19 | 18 | no | spearhead |
-| 20 | 1 | yes | boss_pressure |
-| 21 | 22 | no | split |
-| 22 | 23 | no | staggered |
-| 23 | 24 | no | spearhead |
-| 24 | 26 | no | surge |
-| 25 | 1 | yes | boss_breach |
-| 26 | 29 | no | staggered |
-| 27 | 30 | no | spearhead |
-| 28 | 32 | no | surge |
-| 29 | 32 | no | split |
-| 30 | 16 | yes | boss_pressure |
+Ankkurit (pyydetty ramp):
+- wave 6 = **15**
+- wave 10 = **30**
+- wave 15 = **60**
+- wave 20 = **100**
+
+| Wave | Spawns | Boss |
+|---:|---:|:---:|
+| 1 | 3 | no |
+| 2 | 4 | no |
+| 3 | 4 | no |
+| 4 | 5 | no |
+| 5 | 11 | yes |
+| 6 | 15 | no |
+| 7 | 19 | no |
+| 8 | 23 | no |
+| 9 | 26 | no |
+| 10 | 30 | yes |
+| 11 | 36 | no |
+| 12 | 42 | no |
+| 13 | 48 | no |
+| 14 | 54 | no |
+| 15 | 60 | yes |
+| 16 | 68 | no |
+| 17 | 76 | no |
+| 18 | 84 | no |
+| 19 | 92 | no |
+| 20 | 100 | yes |
+| 21 | 102 | no |
+| 22 | 105 | no |
+| 23 | 107 | no |
+| 24 | 110 | no |
+| 25 | 112 | yes |
+| 26 | 114 | no |
+| 27 | 117 | no |
+| 28 | 119 | no |
+| 29 | 122 | no |
+| 30 | 124 | yes |
 
 ## PR-käytäntö balanssimuutoksille
 
