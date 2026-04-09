@@ -31,8 +31,10 @@ export function SelectionCard({
     return null;
   }
 
+  const rootClassName = `selection-card popup-card${selectedDefender ? ' selection-card--compact' : ''}`;
+
   return (
-    <section className="selection-card popup-card">
+    <section className={rootClassName}>
       <div className="popup-head">
         <h2>{getSelectionCardTitle(Boolean(selectedSauna), selectedEnemy)}</h2>
         <button className="ghost-button small-ghost" onClick={() => dispatch({ type: 'clearSelection' })}>
@@ -49,7 +51,7 @@ export function SelectionCard({
           </small>
           {selectedSauna.occupantName ? (
             <>
-              <div className="mini-tag-row">
+              <div className="mini-tag-row stat-chip-grid">
                 <span className="mini-tag">HP {selectedSauna.occupantHp}/{selectedSauna.occupantMaxHp}</span>
                 <span className="mini-tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy ready' : 'Auto Deploy locked'}</span>
                 <span className="mini-tag">{selectedSauna.slapSwapUnlocked ? 'Slap Swap ready' : 'Slap Swap locked'}</span>
@@ -97,7 +99,7 @@ export function SelectionCard({
           <small>{selectedEnemy.behaviorLabel} - Threat {selectedEnemy.threat}</small>
           <p className="panel-copy small-copy">{selectedEnemy.description}</p>
           <p className="panel-copy flavor-copy small-copy">{selectedEnemy.lore}</p>
-          <div className="mini-tag-row">
+          <div className="mini-tag-row stat-chip-grid">
             <span className="mini-tag">HP {selectedEnemy.hp}/{selectedEnemy.maxHp}</span>
             <span className="mini-tag">ATK {selectedEnemy.damage}</span>
             <span className="mini-tag">Range {selectedEnemy.range}</span>
@@ -121,7 +123,7 @@ export function SelectionCard({
           </strong>
           <small>{selectedDefender.templateName} - {selectedDefender.subclassName} - {formatLocationLabel(selectedDefender.location)}</small>
           <p className="panel-copy small-copy">{selectedDefender.lore}</p>
-          <div className="mini-tag-row">
+          <div className="mini-tag-row stat-chip-grid">
             <span className="mini-tag">HP {selectedDefender.hp}/{selectedDefender.maxHp}</span>
             <span className="mini-tag">ATK {selectedDefender.damage}</span>
             <span className="mini-tag">Heal {selectedDefender.heal}</span>

@@ -25,6 +25,8 @@ All notable changes to this project are documented in this file.
 - [internal] `docs/balance.md` now includes a wave-by-wave spawn recap table for waves 1-30 to keep GitHub Pages-facing balance docs in sync with current logic.
 - [player] Balance pass increased enemies per wave by scaling non-boss composition with cycle (higher brute cap + extra spawn picks), making each 5-wave block visibly denser.
 - [player] Wave ramp now escalates to explicit spawn-density anchors (wave 6=15, wave 10=30, wave 15=60, wave 20=100), while tutorial waves 1-4 stay unchanged for onboarding.
+- [player] Defender selection now uses a scroll-bounded character card so core hero stats stay visible in the first viewport slice while longer loadouts continue below.
+- [player] Full item + skill loadouts now use a compact selection-card variant with tighter stat chips and row chrome for faster scanning without hurting readability.
 
 ### Fixed
 - [internal] CI now catches stale generated patch-notes artifacts before release by validating generated files against `CHANGELOG.md` + `package.json`.
