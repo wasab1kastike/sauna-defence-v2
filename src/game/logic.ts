@@ -1090,9 +1090,11 @@ function slotInCycle(index: number, content: GameContent): number {
 function spawnIntervalMs(index: number, content: GameContent, modifier = 0): number {
   const cycle = cycleNumber(index, content);
   const slot = slotInCycle(index, content);
+  const perCycleCompression = cycle * 12;
+  const slotStep = 32 + cycle * 2;
   return Math.max(
     content.config.minSpawnIntervalMs,
-    920 - cycle * content.config.spawnIntervalStepMs - slot * 32 + modifier
+    920 - cycle * content.config.spawnIntervalStepMs - perCycleCompression - slot * slotStep + modifier
   );
 }
 
@@ -1115,9 +1117,11 @@ function wavePressure(index: number, content: GameContent, isBoss: boolean): num
     return basePressure + 7 + cycle * 2 + bossCycleSpike;
   }
 
-  // Non-boss waves ramp quadratically by cycle to make each 5-wave block feel noticeably tougher.
-  const cycleBonus = cycle * cycle + cycle;
-  return basePressure + cycleBonus;
+  // Tutorial onboarding is locked at waves 1-4 above. From wave 6 onward,
+  // each 5-wave cycle adds a visibly stronger pressure bump.
+  const cycleRamp = cycle * (cycle + 2);
+  const milestoneBonus = cycle > 0 ? 1 + Math.floor(cycle / 2) : 0;
+  return basePressure + cycleRamp + milestoneBonus;
 }
 
 function rewardSisuForWave(index: number, pressure: number, isBoss: boolean, content: GameContent): number {
@@ -1136,24 +1140,61 @@ function pushSpawn(spawns: WaveSpawn[], atMs: number, enemyId: EnemyUnitId, lane
   return atMs;
 }
 
+
+function targetSpawnCountForWave(index: number): number {
+  if (index <= 4) return 0;
+  if (index <= 10) return Math.round(15 + (index - 6) * (15 / 4));
+  if (index <= 15) return 30 + (index - 10) * 6;
+  if (index <= 20) return 60 + (index - 15) * 8;
+  return 100 + Math.round((index - 20) * 2.4);
+}
+
+function upscaleEnemyListToTarget(base: EnemyUnitId[], targetCount: number, cycle: number): EnemyUnitId[] {
+  if (targetCount <= 0) return [...base];
+  const result = [...base];
+  if (result.length > targetCount) {
+    return result.slice(0, targetCount);
+  }
+
+  while (result.length < targetCount) {
+    const spawnIndex = result.length;
+    const addBrute = cycle >= 2 && spawnIndex % 3 === 0;
+    result.push(addBrute ? 'brute' : 'raider');
+  }
+
+  return result;
+}
+
 function compositionForPressure(pressure: number, cycle: number, favorBrutes: number): EnemyUnitId[] {
   const result: EnemyUnitId[] = [];
   let remaining = pressure;
-  let brutesLeft = Math.max(0, Math.min(1 + cycle, Math.floor((pressure - 4) / 4) + favorBrutes));
+  const bruteCap = 1 + cycle + Math.floor(cycle / 2);
+  let brutesLeft = Math.max(0, Math.min(bruteCap, Math.floor((pressure - 4) / 3) + favorBrutes + Math.floor(cycle / 2)));
 
   while (remaining > 0) {
-    if (remaining >= 4 && brutesLeft > 0) {
+    const bruteThreshold = Math.max(3, 5 - Math.floor(cycle / 2));
+    if (remaining >= bruteThreshold && brutesLeft > 0) {
       result.push('brute');
       remaining -= 4;
       brutesLeft -= 1;
       continue;
     }
+
     result.push('raider');
     remaining -= 2;
   }
 
   if (result.length < 3) {
     result.push('raider');
+  }
+
+  const extraPicks = Math.max(0, Math.floor(cycle / 2));
+  for (let i = 0; i < extraPicks; i += 1) {
+    const shouldSpawnBrute = brutesLeft > 0 && cycle >= 2 && i % 2 === 0;
+    result.push(shouldSpawnBrute ? 'brute' : 'raider');
+    if (shouldSpawnBrute) {
+      brutesLeft -= 1;
+    }
   }
 
   return result;
@@ -1172,12 +1213,14 @@ function buildPatternSpawns(
   const flankLane = wrapLane(baseLane + 1, laneCount);
   const interval = spawnIntervalMs(index, content, pattern === 'surge' ? -70 : pattern === 'staggered' ? 35 : 0);
   const cycle = cycleNumber(index, content);
-  const enemies =
+  const baseEnemies =
     pattern === 'surge'
       ? compositionForPressure(pressure + 2, cycle, 0)
       : pattern === 'spearhead'
         ? compositionForPressure(pressure, cycle, 1)
         : compositionForPressure(pressure, cycle, 0);
+  const targetCount = targetSpawnCountForWave(index);
+  const enemies = upscaleEnemyListToTarget(baseEnemies, targetCount, cycle);
   const spawns: WaveSpawn[] = [];
   let atMs = 0;
 
@@ -1237,18 +1280,46 @@ function buildEscalationManagerSpawns(index: number, content: GameContent): Wave
 }
 
 function buildBossSpawns(index: number, content: GameContent, bossId: BossId): WaveSpawn[] {
-  switch (bossId) {
-    case 'pebble':
-      return buildPebbleSpawns(index, content);
-    case 'end_user_horde':
-      return buildEndUserHordeSpawns(index, content);
-    case 'electric_bather':
-      return buildElectricBatherSpawns(index, content);
-    case 'escalation_manager':
-      return buildEscalationManagerSpawns(index, content);
-    default:
-      return [];
+  const baseSpawns = (() => {
+    switch (bossId) {
+      case 'pebble':
+        return buildPebbleSpawns(index, content);
+      case 'end_user_horde':
+        return buildEndUserHordeSpawns(index, content);
+      case 'electric_bather':
+        return buildElectricBatherSpawns(index, content);
+      case 'escalation_manager':
+        return buildEscalationManagerSpawns(index, content);
+      default:
+        return [];
+    }
+  })();
+
+  const targetCount = targetSpawnCountForWave(index);
+  if (baseSpawns.length >= targetCount || targetCount <= 0) {
+    return baseSpawns;
   }
+
+  const laneCount = spawnLanesForWave(index, content).length;
+  const baseLane = bossBaseLane(index, content);
+  const lanes = [
+    baseLane,
+    wrapLane(baseLane + 1, laneCount),
+    wrapLane(baseLane + 2, laneCount),
+    wrapLane(baseLane + 4, laneCount)
+  ];
+  const spawns = [...baseSpawns];
+  let atMs = baseSpawns.length > 0 ? Math.max(...baseSpawns.map((spawn) => spawn.atMs)) + 220 : 0;
+  const cycle = cycleNumber(index, content);
+
+  while (spawns.length < targetCount) {
+    const addIndex = spawns.length - baseSpawns.length;
+    const enemyId: EnemyUnitId = cycle >= 2 && addIndex % 5 === 4 ? 'brute' : 'thirsty_user';
+    pushSpawn(spawns, atMs, enemyId, lanes[addIndex % lanes.length], laneCount);
+    atMs += Math.max(content.config.minSpawnIntervalMs, 210 - cycle * 8);
+  }
+
+  return spawns;
 }
 
 export function createWaveDefinition(index: number, content: GameContent): WaveDefinition {
