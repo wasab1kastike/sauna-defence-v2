@@ -22,6 +22,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 - [internal] `scripts/check-player-patch-notes.mjs` validates now that generated JSON/Markdown patch notes match current release version/date, not only that changelog metadata exists.
+- [player] Wave pressure scaling now uses stronger cycle spikes (with separate boss tuning) so waves 5/10/15/20 ramp harder between cycles.
 
 ### Fixed
 - [internal] CI now catches stale generated patch-notes artifacts before release by validating generated files against `CHANGELOG.md` + `package.json`.

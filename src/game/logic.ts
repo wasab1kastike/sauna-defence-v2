@@ -1108,7 +1108,16 @@ function wavePressure(index: number, content: GameContent, isBoss: boolean): num
     content.config.cyclePressureBase +
     cycle * content.config.cyclePressureStep +
     Math.max(0, slot - 1) * content.config.wavePressureStep;
-  return isBoss ? basePressure + 7 + cycle * 2 : basePressure;
+
+  if (isBoss) {
+    // Bosses keep their own curve so each boss wave still feels like a distinct spike.
+    const bossCycleSpike = Math.max(1, Math.floor(cycle * 1.5));
+    return basePressure + 7 + cycle * 2 + bossCycleSpike;
+  }
+
+  // Non-boss waves ramp quadratically by cycle to make each 5-wave block feel noticeably tougher.
+  const cycleBonus = cycle * cycle + cycle;
+  return basePressure + cycleBonus;
 }
 
 function rewardSisuForWave(index: number, pressure: number, isBoss: boolean, content: GameContent): number {
