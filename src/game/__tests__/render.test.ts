@@ -1,5 +1,6 @@
 import {
   canRenderEndUserHordeSprites,
+  collectPebbleBottleTiles,
   collectFireballTelegraphTiles,
   getTileViewportPosition,
   pickEnemyAtCanvasPoint,
@@ -77,6 +78,21 @@ describe('render helpers', () => {
   it('exposes deterministic horde sprite picks and reports fallback when custom sprites are unavailable', () => {
     expect(resolveEndUserHordeSpriteIndexes(7)).toEqual([1, 3, 5]);
     expect(canRenderEndUserHordeSprites(7)).toBe(false);
+  });
+
+  it('exposes Pebble bottle tiles for rendering only during Pebble boss waves', () => {
+    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+    state.currentWave = createWaveDefinition(5, gameContent);
+    state.pebbleBottleTargets = [
+      { id: 1, tile: { q: 2, r: -3 }, consumed: false },
+      { id: 2, tile: { q: -2, r: 3 }, consumed: true }
+    ];
+
+    const snapshot = createSnapshot(state, gameContent);
+    expect(collectPebbleBottleTiles(snapshot)).toEqual([{ q: 2, r: -3 }]);
+
+    state.currentWave = createWaveDefinition(10, gameContent);
+    expect(collectPebbleBottleTiles(createSnapshot(state, gameContent))).toEqual([]);
   });
 
   it('hit-tests enemies at their rendered position, including bosses', () => {

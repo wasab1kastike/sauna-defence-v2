@@ -796,6 +796,8 @@ export function App() {
                   <span className="mini-tag">{snapshot.hud.nextWaveThreat}</span>
                   {snapshot.hud.bossMomentumLabel ? <span className="mini-tag">Horde {snapshot.hud.bossMomentumLabel}</span> : null}
                   {snapshot.hud.bossMomentumTierLabel ? <span className="mini-tag">{snapshot.hud.bossMomentumTierLabel}</span> : null}
+                  {snapshot.hud.pebbleBottlesRemainingLabel ? <span className="mini-tag">Bottles {snapshot.hud.pebbleBottlesRemainingLabel}</span> : null}
+                  {snapshot.hud.pebbleBottleStacksLabel ? <span className="mini-tag">Bottle Stacks {snapshot.hud.pebbleBottleStacksLabel}</span> : null}
                   <span className="mini-tag">Reserve {snapshot.hud.readyBenchCount}</span>
                   <span className="mini-tag">Recruit Slots {snapshot.hud.freeRecruitSlots}</span>
                 </div>

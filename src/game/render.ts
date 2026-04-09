@@ -97,6 +97,8 @@ const END_USER_HORDE_SPRITE_URLS = [
 const PEBBLE_HEAD_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_head.png`;
 const PEBBLE_BODY_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_body.png`;
 const BEER_SHOP_SPRITE_URL = `${import.meta.env.BASE_URL}Buildings/olutkauppa.png`;
+const PEBBLE_BASE_RENDER_HP = 320;
+const PEBBLE_RENDER_HP_STEP = 40;
 const DEFENDER_SPRITE_SHEET_URL = `${import.meta.env.BASE_URL}defenders/sauna-party-sheet.png`;
 const DEFENDER_ROLE_PORTRAITS: Record<DefenderTemplateId, number[]> = {
   guardian: [0],
@@ -134,6 +136,20 @@ export function collectFireballTelegraphTiles(snapshot: GameSnapshot): AxialCoor
     }
   }
   return [...tiles.values()];
+}
+
+export function collectPebbleBottleTiles(snapshot: GameSnapshot): AxialCoord[] {
+  if (!snapshot.state.currentWave.isBoss || snapshot.state.currentWave.bossId !== 'pebble') {
+    return [];
+  }
+  return snapshot.state.pebbleBottleTargets
+    .filter((target) => !target.consumed)
+    .map((target) => ({ ...target.tile }));
+}
+
+function pebbleRenderMaxHp(snapshot: GameSnapshot, enemy: EnemyInstance): number {
+  return enemy.pebbleEncounterMaxHp
+    ?? (PEBBLE_BASE_RENDER_HP + Math.max(0, Math.max(1, snapshot.state.pebbleEncounterCount) - 1) * PEBBLE_RENDER_HP_STEP);
 }
 
 function buildHexPath(ctx: CanvasRenderingContext2D, center: { x: number; y: number }, size: number) {
@@ -2134,6 +2150,57 @@ function drawWorldLandmarks(ctx: CanvasRenderingContext2D, snapshot: GameSnapsho
   }
 }
 
+function drawPebbleBottleTargets(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, layout: BoardLayout) {
+  for (const tile of collectPebbleBottleTiles(snapshot)) {
+    const center = axialToPixel(tile, layout);
+    const bob = Math.sin(snapshot.state.timeMs * 0.006 + tile.q * 0.7 + tile.r * 0.4) * layout.hexSize * 0.06;
+    const bottleHeight = layout.hexSize * 0.74;
+    const bottleWidth = layout.hexSize * 0.28;
+    const neckWidth = bottleWidth * 0.48;
+    const neckHeight = bottleHeight * 0.26;
+    const capHeight = bottleHeight * 0.1;
+
+    ctx.save();
+    ctx.translate(center.x, center.y + bob);
+
+    const glow = ctx.createRadialGradient(0, layout.hexSize * 0.1, layout.hexSize * 0.08, 0, layout.hexSize * 0.1, layout.hexSize * 0.72);
+    glow.addColorStop(0, 'rgba(255, 214, 134, 0.42)');
+    glow.addColorStop(1, 'rgba(255, 214, 134, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, layout.hexSize * 0.1, layout.hexSize * 0.72, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(26, 14, 8, 0.44)';
+    ctx.beginPath();
+    ctx.ellipse(0, layout.hexSize * 0.42, bottleWidth * 1.5, bottleWidth * 0.56, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#7a4320';
+    ctx.strokeStyle = '#f8cf73';
+    ctx.lineWidth = Math.max(1.4, layout.hexSize * 0.05);
+    ctx.beginPath();
+    ctx.moveTo(-bottleWidth, bottleHeight * 0.2);
+    ctx.lineTo(-neckWidth, -neckHeight);
+    ctx.lineTo(-neckWidth, -neckHeight - capHeight);
+    ctx.lineTo(neckWidth, -neckHeight - capHeight);
+    ctx.lineTo(neckWidth, -neckHeight);
+    ctx.lineTo(bottleWidth, bottleHeight * 0.2);
+    ctx.quadraticCurveTo(bottleWidth * 0.82, bottleHeight * 0.55, 0, bottleHeight * 0.6);
+    ctx.quadraticCurveTo(-bottleWidth * 0.82, bottleHeight * 0.55, -bottleWidth, bottleHeight * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(255, 230, 183, 0.72)';
+    ctx.beginPath();
+    ctx.ellipse(-bottleWidth * 0.26, bottleHeight * 0.06, bottleWidth * 0.22, bottleHeight * 0.26, -0.16, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
 export function paintSnapshot(
   ctx: CanvasRenderingContext2D,
   snapshot: GameSnapshot,
@@ -2215,6 +2282,7 @@ export function paintSnapshot(
 
   drawFireballTelegraphs(ctx, snapshot, layout);
   drawWorldLandmarks(ctx, snapshot, layout);
+  drawPebbleBottleTargets(ctx, snapshot, layout);
 
   const saunaCenter = axialToPixel({ q: 0, r: 0 }, layout);
   const saunaGlow = ctx.createRadialGradient(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.1, saunaCenter.x, saunaCenter.y, layout.hexSize * 1.4);
@@ -2368,7 +2436,7 @@ export function paintSnapshot(
       ctx,
       center,
       layout.hexSize * (bossProfile.presentation === 'boss_unit' ? 1.56 : bossProfile.presentation === 'boss_horde_member' ? 1.2 : 1.04),
-      enemy.hp / archetype.maxHp,
+      enemy.hp / Math.max(1, enemy.archetypeId === 'pebble' ? pebbleRenderMaxHp(snapshot, enemy) : archetype.maxHp),
       bossProfile.presentation === 'boss_unit' ? '#ff9f85' : bossProfile.presentation === 'boss_horde_member' ? '#ffb189' : '#ff8772',
       bossProfile.presentation === 'boss_unit'
         ? {

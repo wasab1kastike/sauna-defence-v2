@@ -365,8 +365,15 @@ export interface EnemyInstance {
   nextAbilityAtMs?: number;
   pathIndex?: number | null;
   pebbleDevourStacks?: number;
+  pebbleEncounterMaxHp?: number;
   spawnLaneIndex?: number;
   spawnedByEnemyInstanceId?: number | null;
+}
+
+export interface PebbleBottleTarget {
+  id: number;
+  tile: AxialCoord;
+  consumed: boolean;
 }
 
 export interface WaveSpawn {
@@ -539,6 +546,10 @@ export interface RunState {
   waveSwapUsed: boolean;
   nextRegenTickAtMs: number;
   saunaRetreatReadyAtMs: number;
+  pebbleBottleTargets: PebbleBottleTarget[];
+  pebbleBottleStacks: number;
+  pebbleEncounterCount: number;
+  nextPebbleBottleTargetId: number;
   endUserHordeMomentum: number;
   endUserHordeTier: number;
   endUserHordeNextSurgeAtMs: number;
@@ -839,6 +850,8 @@ export interface HudViewModel {
   bossHint: string | null;
   bossMomentumLabel: string | null;
   bossMomentumTierLabel: string | null;
+  pebbleBottleStacksLabel: string | null;
+  pebbleBottlesRemainingLabel: string | null;
   nextWaveThreat: string;
   nextWavePattern: string;
   pressureSignals: string[];

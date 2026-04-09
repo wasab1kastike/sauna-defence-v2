@@ -241,6 +241,179 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.selectedEnemy?.damage).toBe(22);
   });
 
+  it('spawns three valid bottle targets when a Pebble boss wave starts', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.location = 'board';
+    defender.tile = { q: 0, r: -1 };
+    defender.homeTile = { q: 0, r: -1 };
+    defender.attackReadyAtMs = 999999;
+    state.currentWave = createWaveDefinition(5, gameContent);
+    state.waveIndex = 5;
+
+    state = applyAction(state, { type: 'startWave' }, gameContent);
+    const snapshot = createSnapshot(state, gameContent);
+    const bottleTargets = state.pebbleBottleTargets.filter((target) => !target.consumed);
+    const bottleKeys = bottleTargets.map((target) => `${target.tile.q},${target.tile.r}`);
+    const landmarkKeys = snapshot.hud.worldLandmarks.map((entry) => `${entry.tile.q},${entry.tile.r}`);
+    const spawnKeys = snapshot.spawnTiles.map((tile) => `${tile.q},${tile.r}`);
+
+    expect(bottleTargets).toHaveLength(3);
+    expect(new Set(bottleKeys).size).toBe(3);
+    expect(bottleTargets.every((target) => target.tile.q !== 0 || target.tile.r !== 0)).toBe(true);
+    expect(bottleKeys.some((key) => spawnKeys.includes(key))).toBe(false);
+    expect(bottleKeys.some((key) => landmarkKeys.includes(key))).toBe(false);
+    expect(bottleKeys).not.toContain('0,-1');
+  });
+
+  it('makes Pebble detour toward the nearest bottle before returning to the sauna route', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.currentWave = createWaveDefinition(5, gameContent);
+    state.pendingSpawns = [];
+    state.pebbleBottleTargets = [
+      { id: 1, tile: { q: 2, r: -6 }, consumed: false },
+      { id: 2, tile: { q: -2, r: -4 }, consumed: false },
+      { id: 3, tile: { q: 0, r: 3 }, consumed: false }
+    ];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: 320,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      pebbleDevourStacks: 0,
+      pebbleEncounterMaxHp: 320,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies[0]?.tile).toEqual({ q: 1, r: -6 });
+    expect(state.enemies[0]?.pathIndex).toBe(0);
+  });
+
+  it('grinds through blockers on the bottle route instead of idling', () => {
+    let state = prepState();
+    const blocker = state.defenders.find((entry) => entry.location === 'ready')!;
+    blocker.location = 'board';
+    blocker.tile = { q: 1, r: -6 };
+    blocker.homeTile = { q: 1, r: -6 };
+    blocker.hp = 30;
+    blocker.stats.defense = 0;
+    blocker.attackReadyAtMs = 999999;
+
+    state.phase = 'wave';
+    state.currentWave = createWaveDefinition(5, gameContent);
+    state.pendingSpawns = [];
+    state.pebbleBottleTargets = [
+      { id: 1, tile: { q: 2, r: -6 }, consumed: false },
+      { id: 2, tile: { q: -2, r: -4 }, consumed: false },
+      { id: 3, tile: { q: 0, r: 3 }, consumed: false }
+    ];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: 320,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      pebbleDevourStacks: 0,
+      pebbleEncounterMaxHp: 320,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies[0]?.tile).toEqual({ q: 0, r: -6 });
+    expect(state.defenders.find((entry) => entry.id === blocker.id)?.hp).toBe(12);
+    expect(state.enemies[0]?.pebbleDevourStacks).toBe(1);
+  });
+
+  it('consumes bottles into persistent Pebble stacks and scales later Pebbles immediately', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.currentWave = createWaveDefinition(5, gameContent);
+    state.pendingSpawns = [];
+    state.pebbleBottleTargets = [
+      { id: 1, tile: { q: 1, r: -6 }, consumed: false },
+      { id: 2, tile: { q: 0, r: 3 }, consumed: false },
+      { id: 3, tile: { q: -2, r: -4 }, consumed: false }
+    ];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: 320,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      pebbleDevourStacks: 0,
+      pebbleEncounterMaxHp: 320,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.pebbleBottleStacks).toBe(1);
+    expect(state.pebbleBottleTargets.find((target) => target.id === 1)?.consumed).toBe(true);
+
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.location = 'board';
+    defender.tile = { q: 0, r: -1 };
+    defender.homeTile = { q: 0, r: -1 };
+    defender.attackReadyAtMs = 999999;
+    state.phase = 'prep';
+    state.waveIndex = 25;
+    state.currentWave = createWaveDefinition(25, gameContent);
+    state.pendingSpawns = [];
+    state.enemies = [];
+    state.pebbleEncounterCount = 1;
+
+    state = applyAction(state, { type: 'startWave' }, gameContent);
+    state = stepState(state, 16, gameContent);
+    state.selectedMapTarget = 'enemy';
+    state.selectedEnemyInstanceId = state.enemies[0]?.instanceId ?? null;
+
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(state.pebbleEncounterCount).toBe(2);
+    expect(state.enemies[0]?.hp).toBe(360);
+    expect(state.enemies[0]?.pebbleEncounterMaxHp).toBe(360);
+    expect(snapshot.hud.selectedEnemy?.maxHp).toBe(360);
+    expect(snapshot.hud.selectedEnemy?.damage).toBe(20);
+    expect(snapshot.hud.pebbleBottleStacksLabel).toBe('1');
+    expect(snapshot.hud.pebbleBottlesRemainingLabel).toBe('3/3');
+  });
+
+  it('resets Pebble bottle growth when a new run starts', () => {
+    let state = prepState();
+    state.pebbleBottleStacks = 4;
+    state.pebbleEncounterCount = 3;
+    state.pebbleBottleTargets = [{ id: 1, tile: { q: 2, r: -2 }, consumed: false }];
+
+    state = applyAction(state, { type: 'restartRun' }, gameContent);
+
+    expect(state.pebbleBottleStacks).toBe(0);
+    expect(state.pebbleEncounterCount).toBe(0);
+    expect(state.pebbleBottleTargets).toEqual([]);
+  });
+
   it('creates step motion metadata when a standard enemy advances', () => {
     let state = prepState();
     state.phase = 'wave';

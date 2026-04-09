@@ -31,6 +31,7 @@ import type {
   MetaProgress,
   MetaUpgradeId,
   PendingFireball,
+  PebbleBottleTarget,
   RecruitDestination,
   Rarity,
   RecruitOffer,
@@ -175,6 +176,10 @@ const PEBBLE_MOTION_DURATION_MS = 520;
 const PEBBLE_DEVOUR_STACK_CAP = 6;
 const PEBBLE_DEVOUR_DAMAGE_PER_STACK = 2;
 const PEBBLE_DEVOUR_HEAL_RATIO = 0.35;
+const PEBBLE_BOTTLE_TARGET_COUNT = 3;
+const PEBBLE_BOTTLE_DAMAGE_PER_STACK = 2;
+const PEBBLE_BASE_MAX_HP = 320;
+const PEBBLE_MAX_HP_STEP = 40;
 const LIVE_SAUNA_RETREAT_SISU_COST = 3;
 const LIVE_SAUNA_RETREAT_COOLDOWN_MS = 12000;
 const BLINK_MOTION_DURATION_MS = 320;
@@ -380,6 +385,10 @@ function bossDisplayName(bossId: BossId | null): string | null {
 
 function bossHint(bossId: BossId | null): string | null {
   return bossRotation.find((entry) => entry.bossId === bossId)?.hint ?? null;
+}
+
+function isPebbleBossWave(wave: WaveDefinition): boolean {
+  return wave.isBoss && wave.bossId === 'pebble';
 }
 
 function isEndUserHordeBossWave(wave: WaveDefinition): boolean {
@@ -755,7 +764,14 @@ function hasSubclass(defender: DefenderInstance, subclassId: DefenderSubclassId)
   return defender.subclassIds.includes(subclassId);
 }
 
-function enemyMaxHp(enemy: EnemyInstance, content: GameContent): number {
+function pebbleEncounterMaxHp(state: RunState): number {
+  return PEBBLE_BASE_MAX_HP + Math.max(0, Math.max(1, state.pebbleEncounterCount) - 1) * PEBBLE_MAX_HP_STEP;
+}
+
+function enemyMaxHp(state: RunState, enemy: EnemyInstance, content: GameContent): number {
+  if (enemy.archetypeId === 'pebble') {
+    return enemy.pebbleEncounterMaxHp ?? pebbleEncounterMaxHp(state);
+  }
   return content.enemyArchetypes[enemy.archetypeId].maxHp;
 }
 
@@ -1401,6 +1417,14 @@ function waveCounts(waveDef: WaveDefinition, content: GameContent): WavePreviewE
 function occupied(state: RunState, tile: AxialCoord): boolean {
   return boardDefenders(state).some((defender) => defender.tile && sameCoord(defender.tile, tile)) ||
     state.enemies.some((enemy) => sameCoord(enemy.tile, tile));
+}
+
+function boardDefenderAtTile(state: RunState, tile: AxialCoord): DefenderInstance | null {
+  return boardDefenders(state).find((defender) => defender.tile && sameCoord(defender.tile, tile)) ?? null;
+}
+
+function otherEnemyOccupiesTile(state: RunState, tile: AxialCoord, enemyInstanceId: number): boolean {
+  return state.enemies.some((enemy) => enemy.instanceId !== enemyInstanceId && sameCoord(enemy.tile, tile));
 }
 
 function isBuildable(tile: AxialCoord, buildRadius: number, spawnLanes: AxialCoord[]): boolean {
@@ -2568,7 +2592,7 @@ function applySubclassAttackEffects(
     }
   }
 
-  if (hasSubclass(defender, 'last_ladle') && primaryTarget.hp > 0 && primaryTarget.hp / Math.max(1, enemyMaxHp(primaryTarget, content)) < 0.5) {
+  if (hasSubclass(defender, 'last_ladle') && primaryTarget.hp > 0 && primaryTarget.hp / Math.max(1, enemyMaxHp(state, primaryTarget, content)) < 0.5) {
     applyEnemyHitWithFx(state, defender, primaryTarget, primaryDamage * 0.7, 'volley', defender.tile);
   }
 
@@ -2644,7 +2668,7 @@ function performDefenderBasicAttack(
   if (hasSubclass(defender, 'bucket_sniper') && hexDistance(defender.tile, target.tile) === stats.range) {
     hitDamage += 2;
   }
-  if (hasSubclass(defender, 'white_heat_gunner') && target.hp / Math.max(1, enemyMaxHp(target, content)) <= 0.4) {
+  if (hasSubclass(defender, 'white_heat_gunner') && target.hp / Math.max(1, enemyMaxHp(state, target, content)) <= 0.4) {
     hitDamage += 4;
   }
   if (hasSubclass(defender, 'spark_juggler')) {
@@ -2739,7 +2763,117 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
 }
 
 function pebblePathForLane(laneIndex: number): AxialCoord[] {
-  return PEBBLE_PATH_BASE.map((coord) => rotateCoord(coord, laneIndex));
+  return PEBBLE_PATH_BASE.map((coord) => rotateCoord(coord, ((laneIndex % 6) + 6) % 6));
+}
+
+function activePebbleBottleTargets(state: RunState): PebbleBottleTarget[] {
+  return state.pebbleBottleTargets.filter((target) => !target.consumed);
+}
+
+function pebbleBottleDamageBonus(state: RunState): number {
+  return state.pebbleBottleStacks * PEBBLE_BOTTLE_DAMAGE_PER_STACK;
+}
+
+function pebbleSpawnLaneIndex(wave: WaveDefinition, content: GameContent): number {
+  if (isPebbleBossWave(wave)) {
+    return wave.spawns.find((spawn) => spawn.enemyId === 'pebble')?.laneIndex ?? bossBaseLane(wave.index, content);
+  }
+  return 0;
+}
+
+function pebblePathForCurrentWave(state: RunState, content: GameContent): AxialCoord[] {
+  return pebblePathForLane(pebbleSpawnLaneIndex(state.currentWave, content));
+}
+
+function syncPebblePathProgress(enemy: EnemyInstance, path: AxialCoord[]): void {
+  const currentIndex = path.findIndex((tile) => sameCoord(tile, enemy.tile));
+  if (currentIndex >= 0) {
+    enemy.pathIndex = Math.max(enemy.pathIndex ?? 0, currentIndex);
+  }
+}
+
+function candidatePebbleBottleTiles(state: RunState, content: GameContent): AxialCoord[] {
+  const gridRadius = currentGridRadius(state, content);
+  const spawnLanes = currentSpawnLanes(state, content);
+  const landmarkTiles = WORLD_LANDMARK_IDS.map((landmarkId) => landmarkTileForWave(state.waveIndex, landmarkId, content));
+  const pathTiles = pebblePathForCurrentWave(state, content);
+  return createHexGrid(gridRadius)
+    .filter((tile) => hexDistance(tile, CENTER) >= 2)
+    .filter((tile) => hexDistance(tile, CENTER) < gridRadius)
+    .filter((tile) => !spawnLanes.some((lane) => sameCoord(lane, tile)))
+    .filter((tile) => !landmarkTiles.some((landmarkTile) => sameCoord(landmarkTile, tile)))
+    .filter((tile) => !pathTiles.some((pathTile) => sameCoord(pathTile, tile)))
+    .filter((tile) => !occupied(state, tile));
+}
+
+function spawnPebbleBottleTargets(state: RunState, content: GameContent): void {
+  const candidates = candidatePebbleBottleTiles(state, content);
+  for (let index = candidates.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomInt(state, 0, index);
+    [candidates[index], candidates[swapIndex]] = [candidates[swapIndex], candidates[index]];
+  }
+  state.pebbleBottleTargets = candidates.slice(0, PEBBLE_BOTTLE_TARGET_COUNT).map((tile) => ({
+    id: state.nextPebbleBottleTargetId++,
+    tile: { ...tile },
+    consumed: false
+  }));
+}
+
+function clearPebbleEncounterTargets(state: RunState): void {
+  state.pebbleBottleTargets = [];
+}
+
+function nearestPebbleBottleTarget(state: RunState, enemy: EnemyInstance): PebbleBottleTarget | null {
+  return activePebbleBottleTargets(state)
+    .sort((left, right) =>
+      (hexDistance(enemy.tile, left.tile) - hexDistance(enemy.tile, right.tile))
+      || (hexDistance(left.tile, CENTER) - hexDistance(right.tile, CENTER))
+      || (left.tile.r - right.tile.r)
+      || (left.tile.q - right.tile.q))[0] ?? null;
+}
+
+function consumePebbleBottleAtCurrentTile(state: RunState, enemy: EnemyInstance): void {
+  const bottle = state.pebbleBottleTargets.find((target) => !target.consumed && sameCoord(target.tile, enemy.tile));
+  if (!bottle) return;
+  bottle.consumed = true;
+  state.pebbleBottleStacks += 1;
+}
+
+function movePebbleTowardTile(
+  state: RunState,
+  enemy: EnemyInstance,
+  targetTile: AxialCoord,
+  content: GameContent
+): boolean {
+  const nextTile = DIRS
+    .map((dir) => add(enemy.tile, dir))
+    .filter((candidate) => hexDistance(candidate, CENTER) <= currentGridRadius(state, content))
+    .sort((left, right) =>
+      (hexDistance(left, targetTile) - hexDistance(right, targetTile))
+      || (hexDistance(left, CENTER) - hexDistance(right, CENTER))
+      || (left.r - right.r)
+      || (left.q - right.q))[0] ?? null;
+
+  if (!nextTile) {
+    enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+    return false;
+  }
+
+  if (boardDefenderAtTile(state, nextTile)) {
+    stepPebbleGrind(state, enemy, nextTile, content);
+    return true;
+  }
+
+  if (otherEnemyOccupiesTile(state, nextTile, enemy.instanceId)) {
+    enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+    return false;
+  }
+
+  moveEnemyToTile(state, enemy, nextTile, 'slither', PEBBLE_MOTION_DURATION_MS);
+  syncPebblePathProgress(enemy, pebblePathForCurrentWave(state, content));
+  consumePebbleBottleAtCurrentTile(state, enemy);
+  enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+  return true;
 }
 
 function hordeEnemies(state: RunState): EnemyInstance[] {
@@ -2788,7 +2922,7 @@ function enemyAttackDamage(state: RunState, enemy: EnemyInstance, content: GameC
     return archetype.damage + swarmDamageBonus(state);
   }
   if (archetype.behavior === 'pebble') {
-    return archetype.damage + pebbleDamageBonus(enemy);
+    return archetype.damage + pebbleBottleDamageBonus(state) + pebbleDamageBonus(enemy);
   }
   return archetype.damage;
 }
@@ -2903,7 +3037,7 @@ function stepPebbleGrind(state: RunState, enemy: EnemyInstance, blockedTile: Axi
   if (totalDamage > 0) {
     enemy.pebbleDevourStacks = Math.min(PEBBLE_DEVOUR_STACK_CAP, pebbleDevourStacks(enemy) + 1);
     const restored = Math.max(1, Math.round(totalDamage * PEBBLE_DEVOUR_HEAL_RATIO));
-    enemy.hp = Math.min(enemyMaxHp(enemy, content), enemy.hp + restored);
+    enemy.hp = Math.min(enemyMaxHp(state, enemy, content), enemy.hp + restored);
   }
 
   enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
@@ -2911,23 +3045,53 @@ function stepPebbleGrind(state: RunState, enemy: EnemyInstance, blockedTile: Axi
 
 function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent): void {
   const archetype = content.enemyArchetypes[enemy.archetypeId];
-  if (state.timeMs >= enemy.attackReadyAtMs && hexDistance(enemy.tile, CENTER) <= archetype.range) {
+  const bottleTarget = nearestPebbleBottleTarget(state, enemy);
+
+  if (bottleTarget && sameCoord(bottleTarget.tile, enemy.tile)) {
+    consumePebbleBottleAtCurrentTile(state, enemy);
+    enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
+    return;
+  }
+
+  if (!bottleTarget && state.timeMs >= enemy.attackReadyAtMs && hexDistance(enemy.tile, CENTER) <= archetype.range) {
     applyEnemyDamageToSauna(state, enemy, enemyAttackDamage(state, enemy, content));
     enemy.attackReadyAtMs = state.timeMs + archetype.attackCooldownMs;
     return;
   }
   if (state.timeMs < enemy.moveReadyAtMs) return;
-  const path = pebblePathForLane(enemy.spawnLaneIndex ?? 0);
+
+  if (bottleTarget) {
+    movePebbleTowardTile(state, enemy, bottleTarget.tile, content);
+    return;
+  }
+
+  const path = pebblePathForCurrentWave(state, content);
+  syncPebblePathProgress(enemy, path);
   const nextPathIndex = (enemy.pathIndex ?? 0) + 1;
   const nextTile = path[nextPathIndex] ?? null;
+
   if (!nextTile) return;
-  if (occupied(state, nextTile)) {
+
+  const onScriptedPath = path.some((tile) => sameCoord(tile, enemy.tile));
+  if (!onScriptedPath) {
+    movePebbleTowardTile(state, enemy, nextTile, content);
+    return;
+  }
+
+  if (boardDefenderAtTile(state, nextTile)) {
     stepPebbleGrind(state, enemy, nextTile, content);
     return;
   }
+
+  if (otherEnemyOccupiesTile(state, nextTile, enemy.instanceId)) {
+    enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
+    return;
+  }
+
   moveEnemyToTile(state, enemy, nextTile, 'slither', PEBBLE_MOTION_DURATION_MS);
-  enemy.pathIndex = nextPathIndex;
   enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
+  enemy.pathIndex = nextPathIndex;
+  consumePebbleBottleAtCurrentTile(state, enemy);
 }
 
 function stepElectricBather(state: RunState, enemy: EnemyInstance, content: GameContent): void {
@@ -3060,6 +3224,7 @@ function spawnEnemies(state: RunState, content: GameContent): void {
       continue;
     }
     const archetype = content.enemyArchetypes[spawn.enemyId];
+    const pebbleMaxHp = archetype.behavior === 'pebble' ? pebbleEncounterMaxHp(state) : undefined;
     state.enemies.push({
       instanceId: state.nextEnemyInstanceId++,
       archetypeId: spawn.enemyId,
@@ -3067,12 +3232,12 @@ function spawnEnemies(state: RunState, content: GameContent): void {
       tile: { ...lane },
       motion: {
         fromTile: spawnApproachTile(lane),
-        toTile: { ...lane },
-        startedAtMs: state.timeMs,
-        durationMs: SPAWN_SETTLE_DURATION_MS,
-        style: spawn.enemyId === 'pebble' ? 'slither' : 'step'
+          toTile: { ...lane },
+          startedAtMs: state.timeMs,
+          durationMs: SPAWN_SETTLE_DURATION_MS,
+          style: spawn.enemyId === 'pebble' ? 'slither' : 'step'
       },
-      hp: archetype.maxHp,
+      hp: pebbleMaxHp ?? archetype.maxHp,
       lastHitByDefenderId: null,
       attackReadyAtMs: state.timeMs + archetype.attackCooldownMs,
       moveReadyAtMs: state.timeMs + enemyMoveCooldownMsForSpawn(state, spawn.enemyId, content),
@@ -3084,6 +3249,7 @@ function spawnEnemies(state: RunState, content: GameContent): void {
             : Number.POSITIVE_INFINITY,
       pathIndex: archetype.behavior === 'pebble' ? 0 : null,
       pebbleDevourStacks: archetype.behavior === 'pebble' ? 0 : undefined,
+      pebbleEncounterMaxHp: pebbleMaxHp,
       spawnLaneIndex: spawn.laneIndex,
       spawnedByEnemyInstanceId: spawn.spawnedByEnemyInstanceId ?? null
     });
@@ -3109,6 +3275,11 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, message: strin
   state.autoplayReadyAtMs = state.timeMs + AUTOPLAY_DELAY_MS;
   state.currentWave = waveDef;
   state.pendingSpawns = waveDef.spawns.map((spawn) => ({ ...spawn }));
+  clearPebbleEncounterTargets(state);
+  if (isPebbleBossWave(waveDef)) {
+    state.pebbleEncounterCount += 1;
+    spawnPebbleBottleTargets(state, content);
+  }
   if (isEndUserHordeBossWave(waveDef)) {
     setEndUserHordeMomentum(state, END_USER_HORDE_START_MOMENTUM);
     state.endUserHordeNextSurgeAtMs = state.timeMs + END_USER_HORDE_SURGE_COOLDOWN_MS;
@@ -3121,6 +3292,7 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, message: strin
 function awardWave(state: RunState, content: GameContent): void {
   const clearedWave = state.currentWave;
   state.pendingFireballs = [];
+  clearPebbleEncounterTargets(state);
   resetEndUserHordeState(state);
   state.waveIndex += 1;
   const upcomingWave = createWaveDefinition(state.waveIndex, content);
@@ -4030,6 +4202,10 @@ export function createInitialState(
     waveSwapUsed: false,
     nextRegenTickAtMs: 1000,
     saunaRetreatReadyAtMs: 0,
+    pebbleBottleTargets: [],
+    pebbleBottleStacks: 0,
+    pebbleEncounterCount: 0,
+    nextPebbleBottleTargetId: 1,
     endUserHordeMomentum: 0,
     endUserHordeTier: 0,
     endUserHordeNextSurgeAtMs: 0,
@@ -4676,6 +4852,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     clearActiveHudPanel(next);
     next.activeAlcohols = [];
     next.pendingFireballs = [];
+    clearPebbleEncounterTargets(next);
     awardMeta(next);
     rollBeerShopOffersIntoState(next, content);
     next.message = 'The sauna went cold. Spend Steam, regroup, and prep the next shift.';
@@ -4744,6 +4921,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const worldLandmarks = WORLD_LANDMARK_IDS
     .map((landmarkId) => hudWorldLandmarkEntry(state, landmarkId, content))
     .filter((entry) => entry.visible);
+  const showPebbleBossStatus = state.phase === 'wave' && isPebbleBossWave(currentWave);
   const showEndUserHordeBossStatus = state.phase === 'wave' && isEndUserHordeBossWave(currentWave);
   const hud: HudViewModel = {
     phaseLabel:
@@ -4775,6 +4953,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     bossHint: bossHint(currentWave.bossId),
     bossMomentumLabel: showEndUserHordeBossStatus ? `${state.endUserHordeMomentum}/${END_USER_HORDE_MAX_MOMENTUM}` : null,
     bossMomentumTierLabel: showEndUserHordeBossStatus ? endUserHordeTierLabel(state.endUserHordeTier) : null,
+    pebbleBottleStacksLabel: showPebbleBossStatus ? `${state.pebbleBottleStacks}` : null,
+    pebbleBottlesRemainingLabel: showPebbleBossStatus ? `${activePebbleBottleTargets(state).length}/${PEBBLE_BOTTLE_TARGET_COUNT}` : null,
     nextWaveThreat: `${pressureLabel(currentWave.pressure)} pressure`,
     nextWavePattern: patternLabel(currentWave),
     pressureSignals: pressureSignals(state, content),
@@ -5020,7 +5200,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         lore: archetype.lore,
         isBoss,
         hp: selectedEnemy.hp,
-        maxHp: archetype.maxHp,
+        maxHp: enemyMaxHp(state, selectedEnemy, content),
         damage: enemyAttackDamage(state, selectedEnemy, content),
         range: archetype.range,
         attackCooldownMs: archetype.attackCooldownMs,
