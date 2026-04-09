@@ -728,14 +728,12 @@ function beerActiveSlotCapForLevel(level: number): number {
 function clearActiveHudPanel(state: RunState): void {
   state.activePanel = null;
   state.inventoryOpen = false;
-  state.recruitmentOpen = false;
   state.selectedWorldLandmarkId = null;
 }
 
 function setActiveHudPanel(state: RunState, panel: HudPanelId | null, landmarkId: WorldLandmarkId | null = null): void {
   state.activePanel = panel;
   state.inventoryOpen = panel === 'loot';
-  state.recruitmentOpen = panel === 'recruit';
   state.selectedWorldLandmarkId = landmarkId;
 }
 
@@ -3897,12 +3895,6 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
       body: 'A hero hit a milestone. Pick one branch before the run continues.'
     };
   }
-  if (state.recruitmentOpen) {
-    return {
-      title: 'Recruitment Market',
-      body: recruitmentStatusText(state, content)
-    };
-  }
   if (selectedLoot && selectedDefender) {
     return {
       title: 'Equip Opportunity',
@@ -3987,7 +3979,6 @@ export function createInitialState(
     phase: 'prep',
     overlayMode: showIntermission ? 'intermission' : 'none',
     inventoryOpen: false,
-    recruitmentOpen: false,
     activePanel: null,
     selectedWorldLandmarkId: null,
     introOpen,
@@ -4170,7 +4161,10 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     }
     case 'openHudPanel': {
       if (next.overlayMode === 'modifier_draft' || next.overlayMode === 'subclass_draft') return next;
-      if (action.panel === 'recruit' && !canAccessRecruitment(next)) return next;
+      if (action.panel === 'recruit') {
+        next.message = recruitmentStatusText(next, content);
+        return next;
+      }
       if (action.panel === 'metashop' && !metashopVisible(next)) return next;
       if (action.panel === 'beer_shop' && !beerShopUnlocked(next)) return next;
       if (next.activePanel === action.panel) {
@@ -4185,8 +4179,6 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         next.message = inventoryUnlocked(next)
           ? 'Loot and stash opened.'
           : 'Fresh loot is visible here. Overflow stash unlocks from the metashop.';
-      } else if (action.panel === 'recruit') {
-        next.message = recruitmentStatusText(next, content);
       }
       return next;
     }
@@ -4265,12 +4257,6 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     case 'toggleRecruitment':
       if (!canAccessRecruitment(next)) return next;
-      if (next.activePanel === 'recruit') {
-        clearActiveHudPanel(next);
-        next.selectedInventoryDropId = null;
-        return next;
-      }
-      setActiveHudPanel(next, 'recruit');
       next.message = recruitmentStatusText(next, content);
       return next;
     case 'hoverTile':
@@ -4374,9 +4360,6 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         next.message = 'Place at least one defender first.';
         return next;
       }
-      if (next.activePanel === 'recruit') {
-        clearActiveHudPanel(next);
-      }
       startWaveState(
         next,
         next.currentWave,
@@ -4395,7 +4378,6 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       }
       next.sisu.current -= cost;
       rollRecruitOffersIntoState(next, content);
-      setActiveHudPanel(next, 'recruit');
       next.message =
         next.recruitOffers.length > 0
           ? `The market rerolled. Three new recruits are up for sale, starting at ${Math.min(...next.recruitOffers.map((offer) => offer.price))} SISU.`
@@ -4435,7 +4417,6 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       offer.quality = recruitQuality(score);
       offer.price = recruitOfferPrice(offer.candidate, content);
       next.recruitRerollCountsByOfferId[offer.offerId] = (next.recruitRerollCountsByOfferId[offer.offerId] ?? 0) + 1;
-      setActiveHudPanel(next, 'recruit');
       next.message = `${previousName} rerolled into ${offer.candidate.name} ${offer.candidate.title} for ${cost} SISU.`;
       return next;
     }
@@ -4449,7 +4430,6 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.sisu.current -= cost;
       next.recruitLevelBonus += 1;
       next.recruitLevelUpCount += 1;
-      setActiveHudPanel(next, 'recruit');
       next.message = `Recruitment leveled up. Future rerolls now favor stronger starting levels.`;
       return next;
     }
@@ -4760,6 +4740,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const globalModifierSummary = globalModifierSummaryEntries(state, content);
   const draftGlobalModifiers = state.globalModifierDraftOffers
     .map((modifierId) => globalModifierDraftHudEntry(state, content.globalModifierDefinitions[modifierId], content));
+  const activePanel = state.activePanel === 'recruit' ? null : state.activePanel;
   const worldLandmarks = WORLD_LANDMARK_IDS
     .map((landmarkId) => hudWorldLandmarkEntry(state, landmarkId, content))
     .filter((entry) => entry.visible);
@@ -4781,12 +4762,12 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
               : 'Run Over',
     statusText: state.message,
     overlayMode: state.overlayMode,
-    activePanel: state.activePanel,
+    activePanel,
     isPaused: state.overlayMode === 'paused',
     showIntermission: state.overlayMode === 'intermission',
     introOpen: state.introOpen,
     autoplayEnabled: state.autoplayEnabled,
-    canAutoplay: canStartWaveNow(state) && state.activePanel === null && !state.introOpen,
+    canAutoplay: canStartWaveNow(state) && activePanel === null && !state.introOpen,
     waveNumber: currentWave.index,
     enemiesRemaining: state.pendingSpawns.length + state.enemies.length,
     isBossWave: currentWave.isBoss,
@@ -4806,7 +4787,6 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     inventoryCount: state.inventory.length,
     inventoryCap: inventoryCap(state, content),
     inventoryOpen: inventoryUnlocked(state) ? state.inventoryOpen : false,
-    recruitmentOpen: state.recruitmentOpen,
     hasRecentLoot: state.recentDropId !== null,
     autoAssignUnlocked: hasLootAutoAssign(state),
     autoAssignEnabled: state.autoAssignEnabled && hasLootAutoAssign(state),

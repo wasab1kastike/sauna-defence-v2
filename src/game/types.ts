@@ -488,7 +488,6 @@ export interface RunState {
   phase: Phase;
   overlayMode: OverlayMode;
   inventoryOpen: boolean;
-  recruitmentOpen: boolean;
   activePanel: HudPanelId | null;
   selectedWorldLandmarkId: WorldLandmarkId | null;
   introOpen: boolean;
@@ -852,7 +851,6 @@ export interface HudViewModel {
   inventoryCount: number;
   inventoryCap: number;
   inventoryOpen: boolean;
-  recruitmentOpen: boolean;
   hasRecentLoot: boolean;
   autoAssignUnlocked: boolean;
   autoAssignEnabled: boolean;

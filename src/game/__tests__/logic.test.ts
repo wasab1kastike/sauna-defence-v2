@@ -2458,47 +2458,46 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.inventoryOpen).toBe(true);
   });
 
-  it('keeps recruitment closed by default and toggles it open', () => {
+  it('keeps recruitment dock-only when toggleRecruitment is dispatched', () => {
     let state = prepState();
 
-    expect(state.recruitmentOpen).toBe(false);
+    expect(state.activePanel).toBeNull();
 
     state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
-    expect(state.recruitmentOpen).toBe(true);
+    expect(state.activePanel).toBeNull();
+    expect(state.message.length).toBeGreaterThan(0);
 
     state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
-    expect(state.recruitmentOpen).toBe(false);
+    expect(state.activePanel).toBeNull();
   });
 
-  it('opens recruitment during a live wave and while paused', () => {
+  it('keeps toggleRecruitment non-blocking during a live wave and while paused', () => {
     let state = prepState();
     state.phase = 'wave';
 
     state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
-    expect(state.recruitmentOpen).toBe(true);
+    expect(state.activePanel).toBeNull();
 
     state.overlayMode = 'paused';
     state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
-    expect(state.recruitmentOpen).toBe(false);
+    expect(state.activePanel).toBeNull();
 
     state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
-    expect(state.recruitmentOpen).toBe(true);
+    expect(state.activePanel).toBeNull();
   });
 
-  it('closes recruitment when opening inventory and closes inventory when opening recruitment', () => {
+  it('does not close the loot panel when toggleRecruitment is dispatched', () => {
     let state = prepState();
     state.meta.upgrades.inventory_slots = 1;
 
-    state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
-    expect(state.recruitmentOpen).toBe(true);
-
     state = applyAction(state, { type: 'toggleInventory' }, gameContent);
+    state = applyAction(state, { type: 'toggleInventory' }, gameContent);
+    expect(state.activePanel).toBe('loot');
     expect(state.inventoryOpen).toBe(true);
-    expect(state.recruitmentOpen).toBe(false);
 
     state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
-    expect(state.recruitmentOpen).toBe(true);
-    expect(state.inventoryOpen).toBe(false);
+    expect(state.activePanel).toBe('loot');
+    expect(state.inventoryOpen).toBe(true);
   });
 
   it('rolls and buys recruit offers during a live wave', () => {
@@ -2510,12 +2509,35 @@ describe('Sauna Defense V2 logic', () => {
 
     state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
     expect(state.recruitOffers).toHaveLength(3);
+    expect(state.activePanel).not.toBe('recruit');
 
     const offer = state.recruitOffers[0];
     state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
 
     expect(state.defenders.some((defender) => defender.id === offer.candidate.id)).toBe(true);
     expect(state.recruitOffers).toHaveLength(0);
+    expect(state.activePanel).not.toBe('recruit');
+  });
+
+  it('keeps recruit actions dock-native instead of reopening the old popup panel', () => {
+    let state = prepState();
+    state.sisu.current = 30;
+
+    state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
+    expect(state.activePanel).toBeNull();
+
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
+    expect(state.activePanel).not.toBe('recruit');
+
+    const offer = state.recruitOffers[0];
+    state = applyAction(state, { type: 'rerollRecruitOffer', offerId: offer.offerId }, gameContent);
+    expect(state.activePanel).not.toBe('recruit');
+
+    state = applyAction(state, { type: 'levelUpRecruitment' }, gameContent);
+    expect(state.activePanel).not.toBe('recruit');
+
+    const snapshot = createSnapshot({ ...state, activePanel: 'recruit' }, gameContent);
+    expect(snapshot.hud.activePanel).toBeNull();
   });
 
   it('requires a replacement target when buying with a full roster', () => {
@@ -4145,11 +4167,10 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.activePanel).toBeNull();
 
     state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
-    expect(state.activePanel).toBe('recruit');
-    expect(state.recruitmentOpen).toBe(true);
+    expect(state.activePanel).toBeNull();
 
     state = applyAction(state, { type: 'selectWorldLandmark', landmarkId: 'metashop' }, gameContent);
-    expect(state.activePanel).toBe('recruit');
+    expect(state.activePanel).toBeNull();
 
     state.meta.completedRuns = 1;
     state = applyAction(state, { type: 'selectWorldLandmark', landmarkId: 'metashop' }, gameContent);

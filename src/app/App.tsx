@@ -399,6 +399,9 @@ export function App() {
     if (!snapshot || !activePanel) {
       return null;
     }
+    if (activePanel === 'recruit') {
+      return null;
+    }
 
     const popupStyle = (activePanel === 'beer_shop' || activePanel === 'metashop')
       ? getLandmarkPopupStyle(snapshot, frameSize, activeLandmark)
@@ -532,83 +535,6 @@ export function App() {
             ) : <p className="panel-copy small-copy">Buy the Overflow Stash upgrade from the metashop to keep extra loot.</p>}
           </section>
           {renderSelectedLootDetail()}
-        </div>
-      );
-    } else if (activePanel === 'recruit') {
-      title = 'Recruitment Market';
-      subtitle = snapshot.hud.recruitmentStatusText;
-      content = (
-        <div className="popup-scroll-stack">
-          <section className="popup-section">
-            <div className="mini-tag-row">
-              <span className="mini-tag">Board {snapshot.hud.boardCount}/{snapshot.hud.boardCap}</span>
-                <span className="mini-tag">Reserve {snapshot.hud.readyBenchCount}</span>
-              <span className="mini-tag">SISU {snapshot.hud.sisu}</span>
-              <span className="mini-tag">Recruit Lvl +{snapshot.hud.recruitLevelBonus}</span>
-            </div>
-            <p className="panel-copy small-copy">
-              Targeted rerolls keep the main class and level, but reroll the hero identity and base attributes.
-            </p>
-            <div className="button-row tight">
-              <button
-                className="mini-button"
-                disabled={!snapshot.hud.canRollRecruitOffers}
-                onClick={() => dispatch({ type: 'rerollRecruitOffers' })}
-              >
-                {snapshot.hud.hasRecruitOffers ? 'Reroll 3 Offers' : 'Roll 3 Offers'} ({snapshot.hud.recruitRollCost} SISU)
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!snapshot.hud.canLevelUpRecruitment}
-                onClick={() => dispatch({ type: 'levelUpRecruitment' })}
-              >
-                Recruit Level Up ({snapshot.hud.recruitLevelUpCost} SISU)
-              </button>
-              {snapshot.hud.hasRecruitOffers ? (
-                <button className="ghost-button" onClick={() => dispatch({ type: 'clearRecruitOffers' })}>
-                  Clear Offers
-                </button>
-              ) : null}
-            </div>
-          </section>
-          <section className="popup-section">
-            <div className="section-head">
-              <strong>Current Offers</strong>
-              <span>{snapshot.hud.recruitOffers.length}</span>
-            </div>
-            {snapshot.hud.recruitOffers.length > 0 ? (
-              <div className="popup-list">
-                {snapshot.hud.recruitOffers.map((offer) => (
-                  <div key={offer.id} className={`popup-card offer-card offer-${offer.quality}`}>
-                    <div className="unit-row-top">
-                      <strong>
-                        {offer.name} <em>{offer.title}</em>
-                      </strong>
-                      <span className="mini-tag">{offer.quality}</span>
-                    </div>
-                    <small>{offer.roleName} Â· {offer.subclassName}</small>
-                    <small>{offer.lore}</small>
-                    <div className="mini-tag-row">
-                      <span className="mini-tag">Lvl {offer.level}</span>
-                      <span className="mini-tag">HP {offer.hp}</span>
-                      <span className="mini-tag">ATK {offer.damage}</span>
-                      <span className="mini-tag">Heal {offer.heal}</span>
-                      <span className="mini-tag">Range {offer.range}</span>
-                      <span className="mini-tag">Rerolls {offer.rerollCount}</span>
-                    </div>
-                    <div className="button-row tight">
-                      <button className="mini-button" onClick={() => dispatch({ type: 'recruitOffer', offerId: offer.id })}>
-                        Recruit For {offer.price} SISU
-                      </button>
-                      <button className="ghost-button small-ghost" onClick={() => dispatch({ type: 'rerollRecruitOffer', offerId: offer.id })}>
-                        Reroll ({offer.rerollCost} SISU)
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : <p className="panel-copy small-copy">No candidates waiting. Roll the market to scout three new heroes.</p>}
-          </section>
         </div>
       );
     } else if (activePanel === 'beer_shop') {
