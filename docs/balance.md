@@ -20,6 +20,8 @@ Wave 5+:
 - **Wave pressure** kasvattaa ei-boss-waveja aiempaa enemmän jokaisessa 5-wave syklissä (`cycleRamp + milestoneBonus`).
 - **Composition scaling** muuntaa paineen tiheämmäksi unit-mixiksi: bruten yläraja kasvaa syklin mukana ja korkeammilla sykleillä lisätään ylimääräisiä spawn pickejä.
 - **Spawn pacing** kiristyy syklin kasvaessa (`spawnIntervalMs` pienenee nopeammin), mutta kunnioittaa aina `minSpawnIntervalMs`-rajaa.
+- **Wave 10-20** siirtyy 6-lane volley -malliin: vihollisia tulee kaikista nykyisistä spawn-paikoista samalla beatilla, jolloin kenttä täyttyy aiempaa nopeammin.
+- **Wave 21-30** siirtyy overdrive-rampiin: spawn-count kasvaa nykyistä paljon jyrkemmin ja volleyt tihenevät edelleen, jotta late game näyttää ja tuntuu selvästi raskaammalta.
 
 Käytännön odote baseline-ajossa:
 - **Wave 5** ei vielakaan ole riisutulle deterministic-baseline-rosterille luotettava clear-checkpoint, vaikka Pebblen ensikohtaaminen on aiempaa pehmeampi ja myöhemmat encounterit skaalautuvat selvemmin tankki/hitaus-suuntaan.
@@ -60,6 +62,8 @@ Ankkurit (pyydetty ramp):
 - wave 10 = **30**
 - wave 15 = **60**
 - wave 20 = **100**
+- wave 25 = **140**
+- wave 30 = **190**
 
 | Wave | Spawns | Boss |
 |---:|---:|:---:|
@@ -83,16 +87,16 @@ Ankkurit (pyydetty ramp):
 | 18 | 84 | no |
 | 19 | 92 | no |
 | 20 | 100 | yes |
-| 21 | 102 | no |
-| 22 | 105 | no |
-| 23 | 107 | no |
-| 24 | 110 | no |
-| 25 | 112 | yes |
-| 26 | 114 | no |
-| 27 | 117 | no |
-| 28 | 119 | no |
-| 29 | 122 | no |
-| 30 | 124 | yes |
+| 21 | 108 | no |
+| 22 | 116 | no |
+| 23 | 124 | no |
+| 24 | 132 | no |
+| 25 | 140 | yes |
+| 26 | 150 | no |
+| 27 | 160 | no |
+| 28 | 170 | no |
+| 29 | 180 | no |
+| 30 | 190 | yes |
 
 ## PR-käytäntö balanssimuutoksille
 

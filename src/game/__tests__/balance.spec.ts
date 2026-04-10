@@ -1,6 +1,7 @@
 import { gameContent } from '../../content/gameContent';
 import {
   applyAction,
+  createWaveDefinition,
   createDefaultMetaProgress,
   createInitialState,
   stepState
@@ -185,8 +186,9 @@ describe('balance baseline regression metrics', () => {
 
   it('marks wave 5 Pebble as exceeding the stripped baseline roster', () => {
     const scenarios = getScenarios();
-    expect(scenarios.filter((scenario) => scenario.clearedWave5Boss)).toHaveLength(1);
+    expect(scenarios.filter((scenario) => scenario.clearedWave5Boss)).toHaveLength(2);
     expect(scenarios.find((scenario) => scenario.seed === 4242)?.clearedWave5Boss).toBe(true);
+    expect(scenarios.find((scenario) => scenario.seed === 1337)?.clearedWave5Boss).toBe(false);
   });
 
   it('locks checkpoint clear-time envelopes for waves 5/10/15', () => {
@@ -195,7 +197,7 @@ describe('balance baseline regression metrics', () => {
     const avgWave10 = Math.round(average(scenarios.map((scenario) => scenario.clearTimeMs[10])));
     const avgWave15 = Math.round(average(scenarios.map((scenario) => scenario.clearTimeMs[15])));
 
-    expect(avgWave5).toBe(8199);
+    expect(avgWave5).toBe(24966);
     expect(avgWave10).toBe(-1);
     expect(avgWave15).toBe(-1);
   });
@@ -210,12 +212,18 @@ describe('balance baseline regression metrics', () => {
     const avgHurlerSurvival = average(scenarios.map((scenario) => scenario.survivalRatioByRole.hurler));
     const avgMenderSurvival = average(scenarios.map((scenario) => scenario.survivalRatioByRole.mender));
 
-    expect(avgHpWave5).toBeCloseTo(24, 10);
+    expect(avgHpWave5).toBeCloseTo(42.22222222222222, 10);
     expect(avgHpWave10).toBe(0);
     expect(avgHpWave15).toBe(0);
 
-    expect(avgGuardianSurvival).toBeCloseTo(2 / 3, 10);
-    expect(avgMenderSurvival).toBeCloseTo(2 / 3, 10);
+    expect(avgGuardianSurvival).toBeCloseTo(0.5, 10);
+    expect(avgMenderSurvival).toBeCloseTo(1 / 3, 10);
     expect(avgHurlerSurvival).toBe(0);
+  });
+
+  it('locks the new late-game spawn count anchors', () => {
+    expect(createWaveDefinition(20, gameContent).spawns).toHaveLength(100);
+    expect(createWaveDefinition(25, gameContent).spawns).toHaveLength(140);
+    expect(createWaveDefinition(30, gameContent).spawns).toHaveLength(190);
   });
 });

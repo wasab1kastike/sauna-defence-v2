@@ -13,6 +13,7 @@ import { HudUtilityRail } from './components/HudUtilityRail';
 import { IntroOverlay } from './components/IntroOverlay';
 import { PatchNotesOverlay } from './components/PatchNotesOverlay';
 import { SelectionCard } from './components/SelectionCard';
+import { BEER_BUFF_TRACK_PATH, didBeerBuffActivate } from './audio';
 import {
   assetUrl,
   compactHintBody,
@@ -37,6 +38,8 @@ export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const runtimeRef = useRef<GameRuntime | null>(null);
+  const beerBuffAudioRef = useRef<HTMLAudioElement | null>(null);
+  const previousSnapshotRef = useRef<GameSnapshot | null>(null);
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
   const [guideSeen, setGuideSeen] = useState(() => {
@@ -101,6 +104,22 @@ export function App() {
       unsubscribe();
       runtime.stop();
       runtimeRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof Audio === 'undefined') {
+      return;
+    }
+
+    const audio = new Audio(assetUrl(BEER_BUFF_TRACK_PATH));
+    audio.preload = 'auto';
+    audio.volume = 0.85;
+    beerBuffAudioRef.current = audio;
+
+    return () => {
+      audio.pause();
+      beerBuffAudioRef.current = null;
     };
   }, []);
 
@@ -207,6 +226,18 @@ export function App() {
     }
     setPatchNotesChecked(true);
   }, [guideStep, patchNotesChecked, snapshot]);
+
+  useEffect(() => {
+    const previousSnapshot = previousSnapshotRef.current;
+    if (didBeerBuffActivate(previousSnapshot, snapshot)) {
+      const audio = beerBuffAudioRef.current;
+      if (audio) {
+        audio.currentTime = 0;
+        void audio.play().catch(() => undefined);
+      }
+    }
+    previousSnapshotRef.current = snapshot;
+  }, [snapshot]);
 
   useEffect(() => {
     if (!patchNotesOpen) {

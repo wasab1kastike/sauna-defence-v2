@@ -7,7 +7,7 @@ import type {
 } from './types';
 import { coordKey, hexDistance } from './geometry';
 
-const EXPANSION_STEP_LENGTH = 4;
+const EXPANSION_STEP_LENGTH = 3;
 const LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'beer_shop'];
 
 const BOARD_DIRECTIONS: Array<{
