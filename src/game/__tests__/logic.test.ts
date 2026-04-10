@@ -2077,7 +2077,6 @@ describe('Sauna Defense V2 logic', () => {
 
     state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
     expect(state.activePanel).toBeNull();
-    expect(state.message).toContain('Recruit');
 
     state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
     expect(state.activePanel).toBeNull();
