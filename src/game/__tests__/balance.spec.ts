@@ -183,9 +183,9 @@ describe('balance baseline regression metrics', () => {
     return cachedScenarios;
   };
 
-  it('keeps wave 5 boss clearable with baseline roster', () => {
+  it('marks wave 5 Pebble as exceeding the stripped baseline roster', () => {
     const scenarios = getScenarios();
-    expect(scenarios.every((scenario) => scenario.clearedWave5Boss)).toBe(true);
+    expect(scenarios.every((scenario) => !scenario.clearedWave5Boss)).toBe(true);
   });
 
   it('locks checkpoint clear-time envelopes for waves 5/10/15', () => {
@@ -194,8 +194,7 @@ describe('balance baseline regression metrics', () => {
     const avgWave10 = Math.round(average(scenarios.map((scenario) => scenario.clearTimeMs[10])));
     const avgWave15 = Math.round(average(scenarios.map((scenario) => scenario.clearTimeMs[15])));
 
-    expect(avgWave5).toBeGreaterThanOrEqual(4500);
-    expect(avgWave5).toBeLessThanOrEqual(26000);
+    expect(avgWave5).toBe(-1);
     expect(avgWave10).toBe(-1);
     expect(avgWave15).toBe(-1);
   });
@@ -210,7 +209,7 @@ describe('balance baseline regression metrics', () => {
     const avgHurlerSurvival = average(scenarios.map((scenario) => scenario.survivalRatioByRole.hurler));
     const avgMenderSurvival = average(scenarios.map((scenario) => scenario.survivalRatioByRole.mender));
 
-    expect(avgHpWave5).toBeGreaterThanOrEqual(45);
+    expect(avgHpWave5).toBe(0);
     expect(avgHpWave10).toBe(0);
     expect(avgHpWave15).toBe(0);
 

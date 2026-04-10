@@ -22,7 +22,7 @@ Wave 5+:
 - **Spawn pacing** kiristyy syklin kasvaessa (`spawnIntervalMs` pienenee nopeammin), mutta kunnioittaa aina `minSpawnIntervalMs`-rajaa.
 
 Käytännön odote baseline-ajossa:
-- **Wave 5** clearataan edelleen luotettavasti.
+- **Wave 5** ei ole enaa riisutulle baseline-rosterille luotettava clear-checkpoint Pebblen bottle-hunt + HP-skaalauksen jalkeen.
 - **Wave 10** ei enää ole baseline-rosterille vakaa clear-checkpoint (odotettu fail uuden rampin jälkeen).
 - **Wave 15** pysyy baseline-rosterille fail-checkpointina uuden cycle-rampin alla.
 
