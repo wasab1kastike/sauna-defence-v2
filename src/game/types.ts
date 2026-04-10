@@ -415,6 +415,7 @@ export interface EnemyInstance {
   tile: AxialCoord;
   motion?: UnitMotionState | null;
   hp: number;
+  waveScaledMaxHp?: number;
   lastHitByDefenderId: string | null;
   attackReadyAtMs: number;
   moveReadyAtMs: number;

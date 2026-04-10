@@ -1030,10 +1030,40 @@ function pebbleEffectiveMoveCooldownMs(state: RunState, enemy: EnemyInstance): n
 }
 
 function enemyMaxHp(state: RunState, enemy: EnemyInstance, content: GameContent): number {
-  if (enemy.archetypeId === 'pebble') {
-    return enemy.pebbleEncounterMaxHp ?? pebbleEncounterMaxHp(state);
+  if (enemy.waveScaledMaxHp != null) {
+    return enemy.waveScaledMaxHp;
   }
-  return content.enemyArchetypes[enemy.archetypeId].maxHp;
+  const archetype = content.enemyArchetypes[enemy.archetypeId];
+  const baseMaxHp = enemy.archetypeId === 'pebble'
+    ? enemy.pebbleEncounterMaxHp ?? pebbleEncounterMaxHp(state)
+    : archetype.maxHp;
+  return scaledEnemyMaxHp(baseMaxHp, state.currentWave.index, archetype.threat, content, state.currentWave.isBoss);
+}
+
+function syncEnemyWaveScaling(state: RunState, enemy: EnemyInstance, content: GameContent): void {
+  const archetype = content.enemyArchetypes[enemy.archetypeId];
+  const baseMaxHp = enemy.archetypeId === 'pebble'
+    ? enemy.pebbleEncounterMaxHp ?? pebbleEncounterMaxHp(state)
+    : archetype.maxHp;
+  const scaledMaxHp = scaledEnemyMaxHp(baseMaxHp, state.currentWave.index, archetype.threat, content, state.currentWave.isBoss);
+  const previousScaledMaxHp = enemy.waveScaledMaxHp;
+
+  if (previousScaledMaxHp == null) {
+    if (enemy.hp === baseMaxHp && scaledMaxHp > baseMaxHp) {
+      enemy.hp = scaledMaxHp;
+    }
+  } else if (previousScaledMaxHp !== scaledMaxHp) {
+    const hpRatio = enemy.hp / Math.max(1, previousScaledMaxHp);
+    enemy.hp = Math.max(1, Math.min(scaledMaxHp, Math.round(scaledMaxHp * hpRatio)));
+  }
+
+  enemy.waveScaledMaxHp = scaledMaxHp;
+}
+
+function syncEnemyWaveScalingForState(state: RunState, content: GameContent): void {
+  for (const enemy of state.enemies) {
+    syncEnemyWaveScaling(state, enemy, content);
+  }
 }
 
 function boardAlliesWithin(
@@ -1473,6 +1503,55 @@ function cycleNumber(index: number, content: GameContent): number {
 
 function slotInCycle(index: number, content: GameContent): number {
   return ((index - 1) % content.config.bossEvery) + 1;
+}
+
+function enemyHpMultiplier(index: number, content: GameContent, isBossWave: boolean): number {
+  const cycle = cycleNumber(index, content);
+  const slot = slotInCycle(index, content);
+  const lateCurve = Math.max(0, cycle - 4);
+  return 1
+    + cycle * 0.22
+    + Math.max(0, cycle - 2) * 0.15
+    + Math.max(0, slot - 1) * 0.05
+    + lateCurve * lateCurve * 0.04
+    + (isBossWave ? 0.24 + cycle * 0.04 : 0);
+}
+
+function enemyMaxHpFlatBonus(index: number, threat: number, content: GameContent, isBossWave: boolean): number {
+  const cycle = cycleNumber(index, content);
+  void content;
+  return cycle * threat * (isBossWave ? 3 : 2);
+}
+
+function scaledEnemyMaxHp(
+  baseMaxHp: number,
+  index: number,
+  threat: number,
+  content: GameContent,
+  isBossWave: boolean
+): number {
+  return Math.max(
+    1,
+    Math.round(
+      baseMaxHp * enemyHpMultiplier(index, content, isBossWave)
+      + enemyMaxHpFlatBonus(index, threat, content, isBossWave)
+    )
+  );
+}
+
+function enemyDamageBonus(index: number, content: GameContent, isBossWave: boolean): number {
+  const cycle = cycleNumber(index, content);
+  const slot = slotInCycle(index, content);
+  return cycle
+    + Math.floor(cycle / 2)
+    + Math.floor(Math.max(0, cycle - 4) / 2)
+    + Math.floor(Math.max(0, slot - 1) / 2)
+    + (isBossWave ? 1 + Math.floor(cycle / 3) : 0);
+}
+
+function scaledEnemyDamage(baseDamage: number, index: number, content: GameContent, isBossWave: boolean): number {
+  void content;
+  return Math.max(1, baseDamage + enemyDamageBonus(index, content, isBossWave));
 }
 
 function spawnIntervalMs(index: number, content: GameContent, modifier = 0): number {
@@ -3424,13 +3503,14 @@ function pebbleDamageBonus(enemy: EnemyInstance): number {
 
 function enemyAttackDamage(state: RunState, enemy: EnemyInstance, content: GameContent): number {
   const archetype = content.enemyArchetypes[enemy.archetypeId];
+  const scaledDamage = scaledEnemyDamage(archetype.damage, state.currentWave.index, content, state.currentWave.isBoss);
   if (archetype.behavior === 'swarm') {
-    return archetype.damage + swarmDamageBonus(state);
+    return scaledDamage + swarmDamageBonus(state);
   }
   if (archetype.behavior === 'pebble') {
-    return Math.max(1, archetype.damage - 2) + pebbleBottleDamageBonus(state) + pebbleDamageBonus(enemy);
+    return Math.max(1, scaledDamage - 2) + pebbleBottleDamageBonus(state) + pebbleDamageBonus(enemy);
   }
-  return archetype.damage;
+  return scaledDamage;
 }
 
 function enemyImpactFxKind(enemy: EnemyInstance): CombatFxKind {
@@ -3599,21 +3679,22 @@ function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent)
 
 function stepElectricBather(state: RunState, enemy: EnemyInstance, content: GameContent): void {
   const archetype = content.enemyArchetypes[enemy.archetypeId];
+  const scaledDamage = enemyAttackDamage(state, enemy, content);
   if (state.timeMs >= (enemy.nextAbilityAtMs ?? Number.POSITIVE_INFINITY)) {
     const targets = boardDefenders(state)
       .filter((defender) => defender.tile && hexDistance(enemy.tile, defender.tile) <= archetype.range)
       .sort((left, right) => (hexDistance(enemy.tile, left.tile as AxialCoord) - hexDistance(enemy.tile, right.tile as AxialCoord)) || (left.hp - right.hp));
 
     if (targets.length === 0) {
-      applyEnemyDamageToSauna(state, enemy, Math.max(3, Math.round(archetype.damage * 0.6)));
+      applyEnemyDamageToSauna(state, enemy, Math.max(3, Math.round(scaledDamage * 0.6)));
     } else {
       const [primary, ...rest] = targets;
-      applyEnemyDamageToDefender(state, enemy, primary, archetype.damage + 2, content);
+      applyEnemyDamageToDefender(state, enemy, primary, scaledDamage + 2, content);
       const chained = rest
         .filter((candidate) => candidate.tile && primary.tile && hexDistance(candidate.tile, primary.tile) <= 2)
         .slice(0, 2);
       for (const chainedTarget of chained) {
-        applyEnemyDamageToDefender(state, enemy, chainedTarget, Math.max(2, Math.round(archetype.damage * 0.72)), content);
+        applyEnemyDamageToDefender(state, enemy, chainedTarget, Math.max(2, Math.round(scaledDamage * 0.72)), content);
         if (chainedTarget.tile && primary.tile) {
           pushFx(state, 'chain', chainedTarget.tile, 260, primary.tile);
         }
@@ -3730,7 +3811,14 @@ function spawnEnemies(state: RunState, content: GameContent): void {
       continue;
     }
     const archetype = content.enemyArchetypes[spawn.enemyId];
-    const pebbleMaxHp = archetype.behavior === 'pebble' ? pebbleEncounterMaxHp(state) : undefined;
+    const pebbleEncounterHp = archetype.behavior === 'pebble' ? pebbleEncounterMaxHp(state) : undefined;
+    const spawnMaxHp = scaledEnemyMaxHp(
+      pebbleEncounterHp ?? archetype.maxHp,
+      state.currentWave.index,
+      archetype.threat,
+      content,
+      state.currentWave.isBoss
+    );
     state.enemies.push({
       instanceId: state.nextEnemyInstanceId++,
       archetypeId: spawn.enemyId,
@@ -3743,7 +3831,8 @@ function spawnEnemies(state: RunState, content: GameContent): void {
           durationMs: SPAWN_SETTLE_DURATION_MS,
           style: spawn.enemyId === 'pebble' ? 'slither' : 'step'
       },
-      hp: pebbleMaxHp ?? archetype.maxHp,
+      hp: spawnMaxHp,
+      waveScaledMaxHp: spawnMaxHp,
       lastHitByDefenderId: null,
       attackReadyAtMs: state.timeMs + archetype.attackCooldownMs,
       moveReadyAtMs: state.timeMs + enemyMoveCooldownMsForSpawn(state, spawn.enemyId, content),
@@ -3755,7 +3844,7 @@ function spawnEnemies(state: RunState, content: GameContent): void {
             : Number.POSITIVE_INFINITY,
       pathIndex: archetype.behavior === 'pebble' ? 0 : null,
       pebbleDevourStacks: archetype.behavior === 'pebble' ? 0 : undefined,
-      pebbleEncounterMaxHp: pebbleMaxHp,
+      pebbleEncounterMaxHp: pebbleEncounterHp,
       spawnLaneIndex: spawn.laneIndex,
       spawnedByEnemyInstanceId: spawn.spawnedByEnemyInstanceId ?? null
     });
@@ -5492,6 +5581,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     applyGlobalRegenTick(next, content);
     next.nextRegenTickAtMs += 1000;
   }
+  syncEnemyWaveScalingForState(next, content);
   spawnEnemies(next, content);
   triggerBossIntroSpeech(next, content);
   maybeTriggerEndUserHordeSurge(next, content);

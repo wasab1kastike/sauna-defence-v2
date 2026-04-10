@@ -197,6 +197,88 @@ describe('Sauna Defense V2 logic', () => {
     expect([21, 22, 23, 24, 25, 26, 27, 28, 29, 30].every((index) => createWaveDefinition(index, gameContent).spawns.length > previousLateCount(index))).toBe(true);
   });
 
+  it('scales late-wave enemy and boss stats far above archetype baselines', () => {
+    const state = prepState();
+    state.phase = 'wave';
+
+    state.currentWave = createWaveDefinition(44, gameContent);
+    state.selectedMapTarget = 'enemy';
+    state.selectedEnemyInstanceId = 1;
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'brute',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -2 },
+      hp: 162,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    let snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.selectedEnemy?.maxHp).toBe(162);
+    expect(snapshot.hud.selectedEnemy?.damage).toBe(22);
+
+    state.currentWave = createWaveDefinition(45, gameContent);
+    state.pebbleEncounterCount = 2;
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: 2499,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      pebbleEncounterMaxHp: 380,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.selectedEnemy?.maxHp).toBe(2499);
+    expect(snapshot.hud.selectedEnemy?.damage).toBe(29);
+  });
+
+  it('spawns late-wave enemies with scaled HP instead of archetype base HP', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.currentWave = createWaveDefinition(44, gameContent);
+    state.pendingSpawns = [{ atMs: 0, enemyId: 'brute', laneIndex: 0 }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies).toHaveLength(1);
+    expect(state.enemies[0]?.archetypeId).toBe('brute');
+    expect(state.enemies[0]?.hp).toBe(162);
+    expect(state.enemies[0]?.waveScaledMaxHp).toBe(162);
+  });
+
+  it('normalizes legacy unscaled normal enemies to the current wave HP curve', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.currentWave = createWaveDefinition(52, gameContent);
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -2 },
+      hp: gameContent.enemyArchetypes.raider.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies).toHaveLength(1);
+    expect(state.enemies[0]?.waveScaledMaxHp).toBeGreaterThan(gameContent.enemyArchetypes.raider.maxHp);
+    expect(state.enemies[0]?.hp).toBe(state.enemies[0]?.waveScaledMaxHp);
+  });
+
   it('makes Pebble ignore defenders and continue along its scripted path', () => {
     let state = prepState();
     const defender = state.defenders.find((entry) => entry.location === 'ready');
@@ -554,7 +636,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.bossHint).toContain('fast on bottles');
   });
 
-  it('spawns Pebble encounters with escalating max HP by encounter count', () => {
+  it('spawns Pebble encounters with escalating max HP by encounter count and boss-wave scaling', () => {
     const spawnPebbleAtEncounter = (encounterCount) => {
       let state = prepState();
       state.phase = 'wave';
@@ -566,9 +648,9 @@ describe('Sauna Defense V2 logic', () => {
       return state.enemies[0];
     };
 
-    expect(spawnPebbleAtEncounter(1)?.hp).toBe(260);
-    expect(spawnPebbleAtEncounter(2)?.hp).toBe(320);
-    expect(spawnPebbleAtEncounter(3)?.hp).toBe(380);
+    expect(spawnPebbleAtEncounter(1)?.hp).toBe(374);
+    expect(spawnPebbleAtEncounter(2)?.hp).toBe(461);
+    expect(spawnPebbleAtEncounter(3)?.hp).toBe(547);
   });
 
   it('uses the fast bottle-hunt cooldown for the first Pebble encounter', () => {
@@ -976,9 +1058,9 @@ describe('Sauna Defense V2 logic', () => {
     }];
 
     const bottleSnapshot = createSnapshot(state, gameContent);
-    expect(bottleSnapshot.hud.selectedEnemy?.maxHp).toBe(320);
+    expect(bottleSnapshot.hud.selectedEnemy?.maxHp).toBe(1178);
     expect(bottleSnapshot.hud.selectedEnemy?.moveCooldownMs).toBe(1460);
-    expect(bottleSnapshot.hud.selectedEnemy?.damage).toBe(10);
+    expect(bottleSnapshot.hud.selectedEnemy?.damage).toBe(20);
 
     state.pebbleBottleTargets = [];
     const pathSnapshot = createSnapshot(state, gameContent);
