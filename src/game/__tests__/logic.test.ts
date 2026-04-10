@@ -2713,6 +2713,28 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.activePanel).toBeNull();
   });
 
+  it('clears stale legacy recruit panel state when recruit actions run', () => {
+    let state = prepState();
+    state.sisu.current = 30;
+    state.activePanel = 'recruit';
+
+    state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
+    expect(state.activePanel).toBeNull();
+
+    const offer = state.recruitOffers[0];
+    state.activePanel = 'recruit';
+    state = applyAction(state, { type: 'rerollRecruitOffer', offerId: offer.offerId }, gameContent);
+    expect(state.activePanel).toBeNull();
+
+    state.activePanel = 'recruit';
+    state = applyAction(state, { type: 'levelUpRecruitment' }, gameContent);
+    expect(state.activePanel).toBeNull();
+
+    state.activePanel = 'recruit';
+    state = applyAction(state, { type: 'toggleRecruitment' }, gameContent);
+    expect(state.activePanel).toBeNull();
+  });
+
   it('requires a replacement target when buying with a full roster', () => {
     let state = prepState();
     state.sisu.current = 30;

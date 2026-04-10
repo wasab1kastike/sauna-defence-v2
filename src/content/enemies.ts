@@ -55,7 +55,7 @@ export const enemyArchetypes: GameContent['enemyArchetypes'] = {
       behavior: 'pebble',
       description: 'A giant tunneling worm boss that hunts beer bottles first, grinds through blockers, and gets nastier every time it feeds.',
       lore: 'Named Pebble by someone who had never seen a pebble before.',
-      maxHp: 260,
+      maxHp: 320,
       damage: 18,
       range: 1,
       attackCooldownMs: 1830,

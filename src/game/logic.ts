@@ -740,6 +740,12 @@ function clearActiveHudPanel(state: RunState): void {
   state.selectedWorldLandmarkId = null;
 }
 
+function clearLegacyRecruitPanelState(state: RunState): void {
+  if (state.activePanel === 'recruit') {
+    clearActiveHudPanel(state);
+  }
+}
+
 function setActiveHudPanel(state: RunState, panel: HudPanelId | null, landmarkId: WorldLandmarkId | null = null): void {
   state.activePanel = panel;
   state.inventoryOpen = panel === 'loot';
@@ -4433,6 +4439,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     case 'toggleRecruitment':
       if (!canAccessRecruitment(next)) return next;
+      clearLegacyRecruitPanelState(next);
       next.message = recruitmentStatusText(next, content);
       return next;
     case 'hoverTile':
@@ -4547,6 +4554,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     case 'rerollRecruitOffers':
     case 'rollRecruitOffers': {
       if (!canAccessRecruitment(next)) return next;
+      clearLegacyRecruitPanelState(next);
       const cost = recruitRollCost();
       if (next.sisu.current < cost) {
         next.message = 'Not enough SISU to reroll the market.';
@@ -4579,6 +4587,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     }
     case 'rerollRecruitOffer': {
       if (!canAccessRecruitment(next)) return next;
+      clearLegacyRecruitPanelState(next);
       const offer = next.recruitOffers.find((entry) => entry.offerId === action.offerId);
       if (!offer) return next;
       const cost = recruitOfferRerollCost(next, offer.offerId);
@@ -4598,6 +4607,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     }
     case 'levelUpRecruitment': {
       if (!canAccessRecruitment(next)) return next;
+      clearLegacyRecruitPanelState(next);
       const cost = recruitLevelUpCost(next.recruitLevelUpCount);
       if (next.sisu.current < cost) {
         next.message = `Not enough SISU to buy Recruitment Level Up (${cost}).`;
@@ -4611,6 +4621,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     }
     case 'recruitOffer': {
       if (!canAccessRecruitment(next)) return next;
+      clearLegacyRecruitPanelState(next);
       const offer = next.recruitOffers.find((entry) => entry.offerId === action.offerId);
       if (!offer) return next;
       const destination: RecruitDestination = action.destination ?? 'reserve';
@@ -4661,6 +4672,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     }
     case 'clearRecruitOffers':
       if (!canAccessRecruitment(next)) return next;
+      clearLegacyRecruitPanelState(next);
       next.recruitOffers = [];
       next.recruitRerollCountsByOfferId = {};
       clearActiveHudPanel(next);
