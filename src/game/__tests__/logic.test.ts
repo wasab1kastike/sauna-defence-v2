@@ -479,7 +479,7 @@ describe('Sauna Defense V2 logic', () => {
       return state.enemies[0];
     };
 
-    expect(spawnPebbleAtEncounter(1)?.hp).toBe(220);
+    expect(spawnPebbleAtEncounter(1)?.hp).toBe(260);
     expect(spawnPebbleAtEncounter(2)?.hp).toBe(320);
     expect(spawnPebbleAtEncounter(3)?.hp).toBe(380);
   });
@@ -511,7 +511,7 @@ describe('Sauna Defense V2 logic', () => {
       moveReadyAtMs: 0,
       nextAbilityAtMs: Number.POSITIVE_INFINITY,
       pathIndex: 0,
-      pebbleEncounterMaxHp: 220,
+      pebbleEncounterMaxHp: 260,
       spawnLaneIndex: 0,
       spawnedByEnemyInstanceId: null
     }];
@@ -519,7 +519,7 @@ describe('Sauna Defense V2 logic', () => {
     state = stepState(state, 16, gameContent);
 
     expect(state.enemies[0]?.tile).toEqual({ q: 1, r: -6 });
-    expect(state.enemies[0]?.moveReadyAtMs - state.timeMs).toBe(1180);
+    expect(state.enemies[0]?.moveReadyAtMs - state.timeMs).toBe(1320);
   });
 
   it('uses the slower path cooldown for the first Pebble encounter when no bottles remain', () => {
@@ -549,7 +549,7 @@ describe('Sauna Defense V2 logic', () => {
       moveReadyAtMs: 0,
       nextAbilityAtMs: Number.POSITIVE_INFINITY,
       pathIndex: 0,
-      pebbleEncounterMaxHp: 220,
+      pebbleEncounterMaxHp: 260,
       spawnLaneIndex: 0,
       spawnedByEnemyInstanceId: null
     }];
@@ -557,7 +557,7 @@ describe('Sauna Defense V2 logic', () => {
     state = stepState(state, 16, gameContent);
 
     expect(state.enemies[0]?.tile).toEqual({ q: 1, r: -5 });
-    expect(state.enemies[0]?.moveReadyAtMs - state.timeMs).toBe(1620);
+    expect(state.enemies[0]?.moveReadyAtMs - state.timeMs).toBe(1780);
   });
 
   it('increases Pebble bottle and path move cooldowns on later encounters', () => {
@@ -598,8 +598,61 @@ describe('Sauna Defense V2 logic', () => {
     const bottleState = stepState(buildPebbleState(true), 16, gameContent);
     const pathState = stepState(buildPebbleState(false), 16, gameContent);
 
-    expect(bottleState.enemies[0]?.moveReadyAtMs - bottleState.timeMs).toBe(1460);
-    expect(pathState.enemies[0]?.moveReadyAtMs - pathState.timeMs).toBe(1940);
+    expect(bottleState.enemies[0]?.moveReadyAtMs - bottleState.timeMs).toBe(1600);
+    expect(pathState.enemies[0]?.moveReadyAtMs - pathState.timeMs).toBe(2100);
+  });
+
+  it('grinds only the blocking defender instead of splashing adjacent allies', () => {
+    let state = prepState();
+    const blockers = state.defenders.filter((entry) => entry.location === 'ready').slice(0, 2);
+    const primaryStartHp = Math.min(20, blockers[0].stats.maxHp);
+    const secondaryStartHp = Math.min(20, blockers[1].stats.maxHp);
+    blockers[0].location = 'board';
+    blockers[0].tile = { q: 1, r: -5 };
+    blockers[0].homeTile = { q: 1, r: -5 };
+    blockers[0].hp = primaryStartHp;
+    blockers[0].stats.defense = 0;
+    blockers[0].attackReadyAtMs = 999999;
+    blockers[1].location = 'board';
+    blockers[1].tile = { q: 1, r: -4 };
+    blockers[1].homeTile = { q: 1, r: -4 };
+    blockers[1].hp = secondaryStartHp;
+    blockers[1].stats.defense = 0;
+    blockers[1].attackReadyAtMs = 999999;
+    state.phase = 'wave';
+    state.currentWave = {
+      index: 5,
+      isBoss: true,
+      rewardSisu: 7,
+      pressure: 18,
+      pattern: 'boss_breach',
+      bossId: 'pebble',
+      bossCategory: 'breach',
+      spawns: [{ atMs: 0, enemyId: 'pebble', laneIndex: 0 }]
+    };
+    state.pendingSpawns = [];
+    state.pebbleEncounterCount = 1;
+    state.pebbleBottleTargets = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: 260,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      pebbleEncounterMaxHp: 260,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.defenders.find((entry) => entry.id === blockers[0].id)?.hp).toBeLessThan(primaryStartHp);
+    expect(state.defenders.find((entry) => entry.id === blockers[1].id)?.hp).toBe(secondaryStartHp);
   });
 
   it('lets the player pick a board defender directly from the canvas', () => {
@@ -760,11 +813,12 @@ describe('Sauna Defense V2 logic', () => {
 
     const bottleSnapshot = createSnapshot(state, gameContent);
     expect(bottleSnapshot.hud.selectedEnemy?.maxHp).toBe(320);
-    expect(bottleSnapshot.hud.selectedEnemy?.moveCooldownMs).toBe(1320);
+    expect(bottleSnapshot.hud.selectedEnemy?.moveCooldownMs).toBe(1460);
+    expect(bottleSnapshot.hud.selectedEnemy?.damage).toBe(10);
 
     state.pebbleBottleTargets = [];
     const pathSnapshot = createSnapshot(state, gameContent);
-    expect(pathSnapshot.hud.selectedEnemy?.moveCooldownMs).toBe(1780);
+    expect(pathSnapshot.hud.selectedEnemy?.moveCooldownMs).toBe(1940);
   });
 
   it('surfaces defender kill counts in selected-hero HUD data', () => {

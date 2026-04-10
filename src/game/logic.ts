@@ -186,12 +186,11 @@ const PEBBLE_DEVOUR_DAMAGE_PER_STACK = 2;
 const PEBBLE_DEVOUR_HEAL_RATIO = 0.35;
 const PEBBLE_BOTTLE_TARGET_COUNT = 3;
 const PEBBLE_BOTTLE_DAMAGE_PER_STACK = 2;
-const PEBBLE_FIRST_ENCOUNTER_MAX_HP = 220;
 const PEBBLE_BASE_MAX_HP = 260;
 const PEBBLE_MAX_HP_STEP = 60;
-const PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_MS = 1180;
+const PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_MS = 1320;
 const PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_STEP = 140;
-const PEBBLE_PATH_MOVE_COOLDOWN_MS = 1620;
+const PEBBLE_PATH_MOVE_COOLDOWN_MS = 1780;
 const PEBBLE_PATH_MOVE_COOLDOWN_STEP = 160;
 const LIVE_SAUNA_RETREAT_SISU_COST = 3;
 const LIVE_SAUNA_RETREAT_COOLDOWN_MS = 12000;
@@ -916,9 +915,6 @@ function pebbleEncounterTierForEnemy(state: RunState, enemy: EnemyInstance): num
 }
 
 function pebbleEncounterMaxHp(state: RunState): number {
-  if (Math.max(1, state.pebbleEncounterCount) === 1) {
-    return PEBBLE_FIRST_ENCOUNTER_MAX_HP;
-  }
   return PEBBLE_BASE_MAX_HP + pebbleEncounterTier(state) * PEBBLE_MAX_HP_STEP;
 }
 
@@ -3171,7 +3167,7 @@ function enemyAttackDamage(state: RunState, enemy: EnemyInstance, content: GameC
     return archetype.damage + swarmDamageBonus(state);
   }
   if (archetype.behavior === 'pebble') {
-    return archetype.damage + pebbleBottleDamageBonus(state) + pebbleDamageBonus(enemy);
+    return Math.max(1, archetype.damage - 2) + pebbleBottleDamageBonus(state) + pebbleDamageBonus(enemy);
   }
   return archetype.damage;
 }
@@ -3263,14 +3259,9 @@ function stepSwarmUser(state: RunState, enemy: EnemyInstance, content: GameConte
 
 function stepPebbleGrind(state: RunState, enemy: EnemyInstance, blockedTile: AxialCoord, content: GameContent): void {
   const damage = enemyAttackDamage(state, enemy, content);
-  const splashDamage = Math.max(1, Math.floor(damage * 0.5));
   const impacted = boardDefenders(state)
-    .filter((defender) => defender.tile && (sameCoord(defender.tile, blockedTile) || hexDistance(defender.tile, blockedTile) === 1))
-    .sort((left, right) => {
-      const leftIsPrimary = left.tile && sameCoord(left.tile, blockedTile) ? 0 : 1;
-      const rightIsPrimary = right.tile && sameCoord(right.tile, blockedTile) ? 0 : 1;
-      return leftIsPrimary - rightIsPrimary || left.hp - right.hp;
-    });
+    .filter((defender) => defender.tile && sameCoord(defender.tile, blockedTile))
+    .sort((left, right) => left.hp - right.hp);
 
   if (impacted.length === 0) {
     enemy.moveReadyAtMs = state.timeMs + pebblePathMoveCooldownMs(state, enemy);
@@ -3279,8 +3270,7 @@ function stepPebbleGrind(state: RunState, enemy: EnemyInstance, blockedTile: Axi
 
   let totalDamage = 0;
   for (const defender of impacted) {
-    const isPrimary = defender.tile && sameCoord(defender.tile, blockedTile);
-    totalDamage += applyEnemyDamageToDefender(state, enemy, defender, isPrimary ? damage : splashDamage, content);
+    totalDamage += applyEnemyDamageToDefender(state, enemy, defender, damage, content);
   }
 
   if (totalDamage > 0) {

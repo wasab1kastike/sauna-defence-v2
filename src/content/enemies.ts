@@ -56,7 +56,7 @@ export const enemyArchetypes: GameContent['enemyArchetypes'] = {
       description: 'A tunneling worm boss that rushes beer bottles on its first visit, then returns as a bigger, tankier and slower breach threat.',
       lore: 'Named Pebble by someone who had never seen a pebble before.',
       maxHp: 260,
-      damage: 14,
+      damage: 12,
       range: 1,
       attackCooldownMs: 1980,
       moveCooldownMs: 1620,
