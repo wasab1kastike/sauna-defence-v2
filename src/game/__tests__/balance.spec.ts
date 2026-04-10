@@ -195,7 +195,7 @@ describe('balance baseline regression metrics', () => {
     const avgWave10 = Math.round(average(scenarios.map((scenario) => scenario.clearTimeMs[10])));
     const avgWave15 = Math.round(average(scenarios.map((scenario) => scenario.clearTimeMs[15])));
 
-    expect(avgWave5).toBe(10799);
+    expect(avgWave5).toBe(8199);
     expect(avgWave10).toBe(-1);
     expect(avgWave15).toBe(-1);
   });
@@ -210,12 +210,12 @@ describe('balance baseline regression metrics', () => {
     const avgHurlerSurvival = average(scenarios.map((scenario) => scenario.survivalRatioByRole.hurler));
     const avgMenderSurvival = average(scenarios.map((scenario) => scenario.survivalRatioByRole.mender));
 
-    expect(avgHpWave5).toBeCloseTo(23.444444444444443, 10);
+    expect(avgHpWave5).toBeCloseTo(24, 10);
     expect(avgHpWave10).toBe(0);
     expect(avgHpWave15).toBe(0);
 
-    expect(avgGuardianSurvival).toBeCloseTo(1 / 3, 10);
-    expect(avgMenderSurvival).toBe(0);
+    expect(avgGuardianSurvival).toBeCloseTo(2 / 3, 10);
+    expect(avgMenderSurvival).toBeCloseTo(2 / 3, 10);
     expect(avgHurlerSurvival).toBe(0);
   });
 });

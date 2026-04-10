@@ -5,7 +5,7 @@ import type {
   RunState,
   WorldLandmarkId
 } from './types';
-import { coordKey, createHexGrid, hexDistance } from './geometry';
+import { coordKey, hexDistance } from './geometry';
 
 const EXPANSION_STEP_LENGTH = 4;
 const LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'beer_shop'];
@@ -36,16 +36,21 @@ export interface BoardFootprint {
   buildRadius: number;
 }
 
-function scale(coord: AxialCoord, amount: number): AxialCoord {
-  return { q: coord.q * amount, r: coord.r * amount };
-}
-
 function directionConfig(direction: BoardExpansionDirection) {
   return BOARD_DIRECTIONS.find((entry) => entry.id === direction)!;
 }
 
 function sortTiles(tiles: Iterable<AxialCoord>): AxialCoord[] {
   return [...tiles].sort((left, right) => (left.r - right.r) || (left.q - right.q));
+}
+
+interface DirectionBounds {
+  qMin: number;
+  qMax: number;
+  rMin: number;
+  rMax: number;
+  sMin: number;
+  sMax: number;
 }
 
 function mixSeed(seed: number, salt: number): number {
@@ -55,10 +60,6 @@ function mixSeed(seed: number, salt: number): number {
   return (value ^ (value >>> 16)) >>> 0;
 }
 
-function baseSpawnTile(direction: BoardExpansionDirection, content: GameContent): AxialCoord {
-  return scale(directionConfig(direction).vector, content.config.gridRadius);
-}
-
 function expansionCounts(expansions: BoardExpansionDirection[]): Record<BoardExpansionDirection, number> {
   return BOARD_DIRECTIONS.reduce((acc, entry) => {
     acc[entry.id] = expansions.filter((direction) => direction === entry.id).length;
@@ -66,55 +67,88 @@ function expansionCounts(expansions: BoardExpansionDirection[]): Record<BoardExp
   }, {} as Record<BoardExpansionDirection, number>);
 }
 
+function boundsForRadius(
+  radius: number,
+  counts: Record<BoardExpansionDirection, number>
+): DirectionBounds {
+  return {
+    qMin: -radius - counts.southwest * EXPANSION_STEP_LENGTH,
+    qMax: radius + counts.northeast * EXPANSION_STEP_LENGTH,
+    rMin: -radius - counts.north * EXPANSION_STEP_LENGTH,
+    rMax: radius + counts.south * EXPANSION_STEP_LENGTH,
+    sMin: -radius - counts.northwest * EXPANSION_STEP_LENGTH,
+    sMax: radius + counts.southeast * EXPANSION_STEP_LENGTH
+  };
+}
+
+function tilesWithinBounds(bounds: DirectionBounds): AxialCoord[] {
+  const tiles: AxialCoord[] = [];
+  for (let q = bounds.qMin; q <= bounds.qMax; q += 1) {
+    const rStart = Math.max(bounds.rMin, bounds.sMin - q);
+    const rEnd = Math.min(bounds.rMax, bounds.sMax - q);
+    for (let r = rStart; r <= rEnd; r += 1) {
+      tiles.push({ q, r });
+    }
+  }
+  return sortTiles(tiles);
+}
+
+function sideSortKey(direction: BoardExpansionDirection, tile: AxialCoord): [number, number] {
+  switch (direction) {
+    case 'north':
+    case 'south':
+      return [tile.q, tile.r];
+    case 'northeast':
+    case 'southwest':
+      return [tile.r, tile.q];
+    case 'southeast':
+    case 'northwest':
+      return [tile.q, tile.r];
+    default:
+      return [tile.r, tile.q];
+  }
+}
+
+function sideTilesForDirection(
+  tiles: AxialCoord[],
+  bounds: DirectionBounds,
+  direction: BoardExpansionDirection
+): AxialCoord[] {
+  const sideTiles = tiles.filter((tile) => {
+    switch (direction) {
+      case 'north':
+        return tile.r === bounds.rMin;
+      case 'northeast':
+        return tile.q === bounds.qMax;
+      case 'southeast':
+        return tile.q + tile.r === bounds.sMax;
+      case 'south':
+        return tile.r === bounds.rMax;
+      case 'southwest':
+        return tile.q === bounds.qMin;
+      case 'northwest':
+        return tile.q + tile.r === bounds.sMin;
+      default:
+        return false;
+    }
+  });
+
+  return sideTiles.sort((left, right) => {
+    const [leftPrimary, leftSecondary] = sideSortKey(direction, left);
+    const [rightPrimary, rightSecondary] = sideSortKey(direction, right);
+    return (leftPrimary - rightPrimary) || (leftSecondary - rightSecondary);
+  });
+}
+
 function footprintForExpansions(expansions: BoardExpansionDirection[], content: GameContent): BoardFootprint {
-  const tileMap = new Map<string, AxialCoord>();
-  const buildableKeys = new Set<string>();
-  const baseRadius = content.config.gridRadius;
-  const baseBuildRadius = content.config.buildRadius;
-
-  for (const tile of createHexGrid(baseRadius)) {
-    tileMap.set(coordKey(tile), tile);
-    const distance = hexDistance(tile, { q: 0, r: 0 });
-    if (distance > 0 && distance <= baseBuildRadius) {
-      buildableKeys.add(coordKey(tile));
-    }
-  }
-
-  for (const entry of BOARD_DIRECTIONS) {
-    const tile = baseSpawnTile(entry.id, content);
-    buildableKeys.delete(coordKey(tile));
-  }
-
   const counts = expansionCounts(expansions);
-  for (const entry of BOARD_DIRECTIONS) {
-    const count = counts[entry.id];
-    if (count <= 0) {
-      continue;
-    }
-
-    const tipDistance = baseRadius + count * EXPANSION_STEP_LENGTH;
-    for (let distance = baseRadius; distance < tipDistance; distance += 1) {
-      const tile = scale(entry.vector, distance);
-      tileMap.set(coordKey(tile), tile);
-      if (distance > 0) {
-        buildableKeys.add(coordKey(tile));
-      }
-    }
-
-    for (let distance = baseRadius + 1; distance <= tipDistance; distance += 1) {
-      const tile = scale(entry.vector, distance);
-      tileMap.set(coordKey(tile), tile);
-    }
-
-    const tipTile = scale(entry.vector, tipDistance);
-    buildableKeys.delete(coordKey(tipTile));
-  }
-
-  const tiles = sortTiles(tileMap.values());
-  const buildableTiles = tiles.filter((tile) => buildableKeys.has(coordKey(tile)));
+  const boardBounds = boundsForRadius(content.config.gridRadius, counts);
+  const buildBounds = boundsForRadius(content.config.buildRadius, counts);
+  const tiles = tilesWithinBounds(boardBounds);
+  const buildableTiles = tilesWithinBounds(buildBounds).filter((tile) => hexDistance(tile, { q: 0, r: 0 }) > 0);
   const spawnTiles = BOARD_DIRECTIONS.map((entry) => {
-    const tipDistance = baseRadius + counts[entry.id] * EXPANSION_STEP_LENGTH;
-    return scale(entry.vector, tipDistance);
+    const sideTiles = sideTilesForDirection(tiles, boardBounds, entry.id);
+    return { ...sideTiles[Math.floor(sideTiles.length / 2)] };
   });
 
   return {
@@ -165,7 +199,7 @@ export function currentBuildRadius(state: RunState, content: GameContent): numbe
 }
 
 export function spawnLanesForWave(_index: number, content: GameContent): AxialCoord[] {
-  return BOARD_DIRECTIONS.map((entry) => baseSpawnTile(entry.id, content));
+  return footprintForExpansions([], content).spawnTiles;
 }
 
 export function currentSpawnLanes(state: RunState, content: GameContent): AxialCoord[] {
