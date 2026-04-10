@@ -9,6 +9,7 @@ import {
   globalModifierDefinitions,
   itemDefinitions,
   metaUpgrades,
+  nameMasteries,
   namePools,
   skillDefinitions
 } from './items';
@@ -23,6 +24,7 @@ export const gameContent: GameContent = {
   alcoholDefinitions,
   globalModifierDefinitions,
   metaUpgrades,
+  nameMasteries,
   namePools,
   speech
 };

@@ -1,6 +1,7 @@
 import { act, createElement } from 'react';
 import {
   formatPatchNotesDate,
+  GUIDE_STEPS,
   getHudUtilityButtons,
   getLandmarkPopupPlacement,
   getSelectionCardTitle,
@@ -106,6 +107,10 @@ describe('App popup helpers', () => {
     expect(formatPatchNotesDate('not-a-date')).toBe('not-a-date');
   });
 
+  it('uses Sauna Kiosk in guide copy for board landmarks', () => {
+    expect(GUIDE_STEPS.some((step) => step.body.includes('Sauna Kiosk'))).toBe(true);
+  });
+
   it('lets players browse older patch notes inside the modal', async () => {
     const reactActEnv = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
     const previousActFlag = reactActEnv.IS_REACT_ACT_ENVIRONMENT;
@@ -133,18 +138,20 @@ describe('App popup helpers', () => {
     expect(container.textContent).toContain(`Versio ${allPatchNotes[1].version}`);
     expect(newerButton().disabled).toBe(false);
 
-    await act(async () => {
-      olderButton().dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
+    for (let index = 2; index < allPatchNotes.length; index += 1) {
+      await act(async () => {
+        olderButton().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      expect(container.textContent).toContain(`Versio ${allPatchNotes[index].version}`);
+    }
 
-    expect(container.textContent).toContain(`Versio ${allPatchNotes[2].version}`);
     expect(olderButton().disabled).toBe(true);
 
     await act(async () => {
       newerButton().dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(container.textContent).toContain(`Versio ${allPatchNotes[1].version}`);
+    expect(container.textContent).toContain(`Versio ${allPatchNotes[allPatchNotes.length - 2].version}`);
 
     await act(async () => {
       root.unmount();

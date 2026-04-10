@@ -151,6 +151,21 @@ export type MetaUpgradeId =
   | 'beer_shop_level'
   | 'sauna_auto_deploy'
   | 'sauna_slap_swap';
+export type MetaUpgradeSectionId = 'core' | 'loot' | 'sauna' | 'beer_shop';
+export type NameMasteryCategory = 'title' | 'surname';
+export type TitleMasteryId =
+  | 'laudekuningas'
+  | 'loylylordi'
+  | 'vihtavelho'
+  | 'kiuaskuiskaaja'
+  | 'hoyryruhtinas';
+export type SurnameMasteryId =
+  | 'kivinen'
+  | 'saarinen'
+  | 'askala'
+  | 'lehtinen'
+  | 'ekberg';
+export type NameMasteryId = TitleMasteryId | SurnameMasteryId;
 
 export interface UnitStats {
   maxHp: number;
@@ -437,6 +452,20 @@ export interface MetaUpgradeDefinition {
   id: MetaUpgradeId;
   name: string;
   description: string;
+  section: MetaUpgradeSectionId;
+  baseCost: number;
+  costStep: number;
+  maxLevel: number;
+}
+
+export interface NameMasteryDefinition {
+  id: NameMasteryId;
+  category: NameMasteryCategory;
+  name: string;
+  description: string;
+  matchValue: string;
+  effectStat: GlobalModifierEffectStat;
+  amountPerRank: number;
   baseCost: number;
   costStep: number;
   maxLevel: number;
@@ -459,6 +488,10 @@ export interface MetaProgress {
   completedRuns: number;
   shopUnlocked: boolean;
   upgrades: Record<MetaUpgradeId, number>;
+  activeTitleMasteryId: TitleMasteryId | null;
+  activeSurnameMasteryId: SurnameMasteryId | null;
+  titleMasteryLevels: Record<TitleMasteryId, number>;
+  surnameMasteryLevels: Record<SurnameMasteryId, number>;
 }
 
 export interface RunPreferences {
@@ -522,6 +555,7 @@ export interface GameContent {
   alcoholDefinitions: Record<AlcoholId, AlcoholDefinition>;
   globalModifierDefinitions: Record<GlobalModifierId, GlobalModifierDefinition>;
   metaUpgrades: Record<MetaUpgradeId, MetaUpgradeDefinition>;
+  nameMasteries: Record<NameMasteryId, NameMasteryDefinition>;
   namePools: NamePools;
   speech: SpeechContent;
 }
@@ -766,6 +800,21 @@ export interface HudMetaUpgradeEntry {
   nextEffectText: string | null;
 }
 
+export interface HudNameMasteryEntry {
+  id: NameMasteryId;
+  category: NameMasteryCategory;
+  name: string;
+  description: string;
+  level: number;
+  cost: number | null;
+  affordable: boolean;
+  active: boolean;
+  canActivate: boolean;
+  softcapReached: boolean;
+  effectText: string;
+  nextEffectText: string | null;
+}
+
 export interface HudBeerShopOfferEntry {
   id: number;
   alcoholId: AlcoholId;
@@ -969,6 +1018,8 @@ export interface HudViewModel {
   showSubclassDraft: boolean;
   wavePreview: WavePreviewEntry[];
   metaUpgrades: HudMetaUpgradeEntry[];
+  titleMasteries: HudNameMasteryEntry[];
+  surnameMasteries: HudNameMasteryEntry[];
   worldLandmarks: HudWorldLandmarkEntry[];
 }
 
@@ -982,6 +1033,7 @@ export interface GameSnapshot {
   alcoholDefinitions: GameContent['alcoholDefinitions'];
   globalModifierDefinitions: GameContent['globalModifierDefinitions'];
   metaUpgrades: GameContent['metaUpgrades'];
+  nameMasteries: GameContent['nameMasteries'];
   hud: HudViewModel;
   tiles: AxialCoord[];
   buildableTiles: AxialCoord[];
@@ -1029,6 +1081,8 @@ export type InputAction =
   | { type: 'destroyEquippedSkill'; defenderId: string; skillId: SkillId }
   | { type: 'dismissRecentDrop' }
   | { type: 'buyMetaUpgrade'; upgradeId: MetaUpgradeId }
+  | { type: 'setActiveNameMastery'; masteryId: NameMasteryId }
+  | { type: 'buyNameMasteryRank'; masteryId: NameMasteryId }
   | { type: 'buyBeerShopOffer'; offerId: number }
   | { type: 'removeActiveAlcohol'; alcoholId: AlcoholId }
   | { type: 'unlockMetaShop' }

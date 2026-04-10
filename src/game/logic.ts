@@ -21,6 +21,7 @@ import type {
   GlobalModifierId,
   GlobalModifierDefinition,
   GlobalModifierEffectStat,
+  HudNameMasteryEntry,
   HudPanelId,
   HudViewModel,
   HudWorldLandmarkEntry,
@@ -30,6 +31,7 @@ import type {
   LootKind,
   MetaProgress,
   MetaUpgradeId,
+  NameMasteryId,
   PendingFireball,
   PebbleBottleTarget,
   RecruitDestination,
@@ -37,10 +39,12 @@ import type {
   RecruitOffer,
   RunPreferences,
   RunState,
+  SurnameMasteryId,
   SkillId,
   SpeechBubbleInstance,
   SpeechSpeakerRef,
   SubclassDraftRequest,
+  TitleMasteryId,
   UnitMotionState,
   UnitStats,
   WaveDefinition,
@@ -127,6 +131,21 @@ const REPEATABLE_META_UPGRADE_IDS: MetaUpgradeId[] = [
   'item_slots',
   'beer_shop_level'
 ];
+const TITLE_MASTERY_IDS: TitleMasteryId[] = [
+  'laudekuningas',
+  'loylylordi',
+  'vihtavelho',
+  'kiuaskuiskaaja',
+  'hoyryruhtinas'
+];
+const SURNAME_MASTERY_IDS: SurnameMasteryId[] = [
+  'kivinen',
+  'saarinen',
+  'askala',
+  'lehtinen',
+  'ekberg'
+];
+const META_SHOP_LABEL = 'Sauna Kiosk';
 const CENTER: AxialCoord = { q: 0, r: 0 };
 const WORLD_LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'beer_shop'];
 const RECRUIT_MARKET_SLOT_COUNT = 4;
@@ -514,6 +533,26 @@ function createLandmarkTilesForState(state: RunState, content: GameContent): Rec
   return resolveCreateLandmarkTilesForState(state, content);
 }
 
+function createDefaultTitleMasteryLevels(): Record<TitleMasteryId, number> {
+  return {
+    laudekuningas: 0,
+    loylylordi: 0,
+    vihtavelho: 0,
+    kiuaskuiskaaja: 0,
+    hoyryruhtinas: 0
+  };
+}
+
+function createDefaultSurnameMasteryLevels(): Record<SurnameMasteryId, number> {
+  return {
+    kivinen: 0,
+    saarinen: 0,
+    askala: 0,
+    lehtinen: 0,
+    ekberg: 0
+  };
+}
+
 export function createDefaultMetaProgress(): MetaProgress {
   return {
     steam: 0,
@@ -531,7 +570,11 @@ export function createDefaultMetaProgress(): MetaProgress {
       beer_shop_level: 0,
       sauna_auto_deploy: 0,
       sauna_slap_swap: 0
-    }
+    },
+    activeTitleMasteryId: null,
+    activeSurnameMasteryId: null,
+    titleMasteryLevels: createDefaultTitleMasteryLevels(),
+    surnameMasteryLevels: createDefaultSurnameMasteryLevels()
   };
 }
 
@@ -861,6 +904,54 @@ function beerActiveSlotCapForLevel(level: number): number {
   if (level <= 0) return 1;
   if (level <= 2) return 2;
   return 3 + Math.floor(Math.max(0, level - 3) / 3);
+}
+
+function isTitleMasteryId(masteryId: NameMasteryId): masteryId is TitleMasteryId {
+  return TITLE_MASTERY_IDS.includes(masteryId as TitleMasteryId);
+}
+
+function nameMasteryLevel(state: RunState, masteryId: NameMasteryId): number {
+  return isTitleMasteryId(masteryId)
+    ? state.meta.titleMasteryLevels[masteryId]
+    : state.meta.surnameMasteryLevels[masteryId];
+}
+
+function activeNameMasteryId(state: RunState, masteryId: NameMasteryId): NameMasteryId | null {
+  return isTitleMasteryId(masteryId) ? state.meta.activeTitleMasteryId : state.meta.activeSurnameMasteryId;
+}
+
+function defenderTitlePrefix(defender: DefenderInstance): string {
+  return defender.title.split(' ')[0] ?? defender.title;
+}
+
+function defenderSurname(defender: DefenderInstance): string {
+  return defender.title.split(' ').slice(1).join(' ');
+}
+
+function addNamedStatBonus(target: Partial<UnitStats>, stat: GlobalModifierEffectStat, amount: number): Partial<UnitStats> {
+  target[stat] = (target[stat] ?? 0) + amount;
+  return target;
+}
+
+function nameMasteryTotals(state: RunState, defender: DefenderInstance, content: GameContent): Partial<UnitStats> {
+  const bonus: Partial<UnitStats> = {};
+  const titleMasteryId = state.meta.activeTitleMasteryId;
+  if (titleMasteryId) {
+    const titleDef = content.nameMasteries[titleMasteryId];
+    const titleLevel = state.meta.titleMasteryLevels[titleMasteryId];
+    if (titleLevel > 0 && defenderTitlePrefix(defender) === titleDef.matchValue) {
+      addNamedStatBonus(bonus, titleDef.effectStat, titleDef.amountPerRank * titleLevel);
+    }
+  }
+  const surnameMasteryId = state.meta.activeSurnameMasteryId;
+  if (surnameMasteryId) {
+    const surnameDef = content.nameMasteries[surnameMasteryId];
+    const surnameLevel = state.meta.surnameMasteryLevels[surnameMasteryId];
+    if (surnameLevel > 0 && defenderSurname(defender) === surnameDef.matchValue) {
+      addNamedStatBonus(bonus, surnameDef.effectStat, surnameDef.amountPerRank * surnameLevel);
+    }
+  }
+  return bonus;
 }
 
 function clearActiveHudPanel(state: RunState): void {
@@ -1239,20 +1330,32 @@ function derivedStats(
   const globalBonus = globalModifierTotals(state, content);
   const alcoholBonus = alcoholTotals(state, content);
   const auraBonus = subclassAuras(state, defender);
+  const masteryBonus = nameMasteryTotals(state, defender, content);
   const attackCooldownMs = Math.max(
     360,
-    base.attackCooldownMs + globalBonus.attackCooldownMs + (alcoholBonus.attackCooldownMs ?? 0) + auraBonus.attackCooldownMs
+    base.attackCooldownMs
+      + globalBonus.attackCooldownMs
+      + (alcoholBonus.attackCooldownMs ?? 0)
+      + auraBonus.attackCooldownMs
+      + (masteryBonus.attackCooldownMs ?? 0)
   );
   return {
-    maxHp: Math.max(6, base.maxHp + globalBonus.maxHp + (alcoholBonus.maxHp ?? 0) + auraBonus.maxHp),
-    damage: Math.max(1, base.damage + globalBonus.damage + (alcoholBonus.damage ?? 0) + auraBonus.damage),
-    heal: Math.max(0, base.heal + globalBonus.heal + (alcoholBonus.heal ?? 0) + auraBonus.heal),
-    range: Math.max(1, base.range + globalBonus.range + (alcoholBonus.range ?? 0) + auraBonus.range),
+    maxHp: Math.max(6, base.maxHp + globalBonus.maxHp + (alcoholBonus.maxHp ?? 0) + auraBonus.maxHp + (masteryBonus.maxHp ?? 0)),
+    damage: Math.max(1, base.damage + globalBonus.damage + (alcoholBonus.damage ?? 0) + auraBonus.damage + (masteryBonus.damage ?? 0)),
+    heal: Math.max(0, base.heal + globalBonus.heal + (alcoholBonus.heal ?? 0) + auraBonus.heal + (masteryBonus.heal ?? 0)),
+    range: Math.max(1, base.range + globalBonus.range + (alcoholBonus.range ?? 0) + auraBonus.range + (masteryBonus.range ?? 0)),
     attackCooldownMs: defender.battleHymnBuffExpiresAtMs > state.timeMs
       ? Math.max(360, Math.round((attackCooldownMs * 2) / 3))
       : attackCooldownMs,
-    defense: Math.max(0, base.defense + globalBonus.defense + (alcoholBonus.defense ?? 0) + auraBonus.defense),
-    regenHpPerSecond: Math.max(0, base.regenHpPerSecond + globalBonus.regenHpPerSecond + (alcoholBonus.regenHpPerSecond ?? 0) + auraBonus.regenHpPerSecond)
+    defense: Math.max(0, base.defense + globalBonus.defense + (alcoholBonus.defense ?? 0) + auraBonus.defense + (masteryBonus.defense ?? 0)),
+    regenHpPerSecond: Math.max(
+      0,
+      base.regenHpPerSecond
+        + globalBonus.regenHpPerSecond
+        + (alcoholBonus.regenHpPerSecond ?? 0)
+        + auraBonus.regenHpPerSecond
+        + (masteryBonus.regenHpPerSecond ?? 0)
+    )
   };
 }
 
@@ -1855,7 +1958,7 @@ function landmarkStatusText(state: RunState, landmarkId: WorldLandmarkId, conten
       }
       return metashopEnabled(state)
         ? 'Browse permanent upgrades between runs.'
-        : 'Kyläkauppa opens between runs only.';
+        : `${META_SHOP_LABEL} opens between runs only.`;
     case 'beer_shop':
       return `Bartender live with ${state.activeAlcohols.length}/${beerActiveSlotCapForTier(beerShopTier(state))} active drink slots filled.`;
     default:
@@ -1866,7 +1969,7 @@ function landmarkStatusText(state: RunState, landmarkId: WorldLandmarkId, conten
 function hudWorldLandmarkEntry(state: RunState, landmarkId: WorldLandmarkId, content: GameContent): HudWorldLandmarkEntry {
   return {
     id: landmarkId,
-    label: landmarkId === 'metashop' ? 'Kyläkauppa' : 'Beer Shop',
+    label: landmarkId === 'metashop' ? META_SHOP_LABEL : 'Beer Shop',
     tile: landmarkTileForState(state, landmarkId, content),
     visible: landmarkVisible(state, landmarkId),
     enabled: landmarkEnabled(state, landmarkId),
@@ -3028,23 +3131,73 @@ function pebblePathForCurrentWave(state: RunState, content: GameContent): AxialC
   return pebblePathForLane(pebbleSpawnLaneIndex(state.currentWave, content));
 }
 
-function syncPebblePathProgress(enemy: EnemyInstance, path: AxialCoord[]): void {
+function pebblePathIndexAtTile(tile: AxialCoord, path: AxialCoord[]): number {
+  return path.findIndex((pathTile) => sameCoord(pathTile, tile));
+}
+
+function syncPebblePathProgress(enemy: EnemyInstance, path: AxialCoord[]): number | null {
   const currentIndex = path.findIndex((tile) => sameCoord(tile, enemy.tile));
   if (currentIndex >= 0) {
     enemy.pathIndex = Math.max(enemy.pathIndex ?? 0, currentIndex);
+    return enemy.pathIndex;
   }
+  return null;
+}
+
+function resolvePebblePathReentryIndex(enemy: EnemyInstance, path: AxialCoord[]): number {
+  const onPathIndex = syncPebblePathProgress(enemy, path);
+  if (onPathIndex != null) {
+    return onPathIndex;
+  }
+
+  const previousProgress = Math.max(0, enemy.pathIndex ?? 0);
+  const entries = path.map((tile, index) => ({ tile, index }));
+  const forwardEntries = entries.filter(({ index }) => index >= previousProgress);
+  const candidates = forwardEntries.length > 0 ? forwardEntries : entries;
+
+  return candidates
+    .sort((left, right) =>
+      (hexDistance(enemy.tile, left.tile) - hexDistance(enemy.tile, right.tile))
+      || (hexDistance(left.tile, CENTER) - hexDistance(right.tile, CENTER))
+      || (right.index - left.index))[0]?.index ?? Math.max(0, path.length - 1);
 }
 
 function candidatePebbleBottleTiles(state: RunState, content: GameContent): AxialCoord[] {
-  const spawnLanes = currentSpawnLanes(state, content);
-  const landmarkTiles = WORLD_LANDMARK_IDS.map((landmarkId) => landmarkTileForState(state, landmarkId, content));
-  const pathTiles = pebblePathForCurrentWave(state, content);
-  return currentBoardFootprint(state, content).buildableTiles
-    .filter((tile) => hexDistance(tile, CENTER) >= 2)
-    .filter((tile) => !spawnLanes.some((lane) => sameCoord(lane, tile)))
-    .filter((tile) => !landmarkTiles.some((landmarkTile) => sameCoord(landmarkTile, tile)))
-    .filter((tile) => !pathTiles.some((pathTile) => sameCoord(pathTile, tile)))
-    .filter((tile) => !occupied(state, tile));
+  const buildableTiles = currentBoardFootprint(state, content).buildableTiles;
+  const spawnKeys = new Set(currentSpawnLanes(state, content).map(coordKey));
+  const landmarkKeys = new Set(WORLD_LANDMARK_IDS.map((landmarkId) => coordKey(landmarkTileForState(state, landmarkId, content))));
+  const pathKeys = new Set(pebblePathForCurrentWave(state, content).map(coordKey));
+  const candidateBuckets = [
+    buildableTiles.filter((tile) => {
+      const distance = hexDistance(tile, CENTER);
+      return distance >= 2 && distance <= content.config.buildRadius;
+    }),
+    buildableTiles.filter((tile) => hexDistance(tile, CENTER) >= 1)
+  ];
+  const candidates: AxialCoord[] = [];
+  const seen = new Set<string>();
+
+  for (const bucket of candidateBuckets) {
+    const eligible = bucket
+      .filter((tile) => !spawnKeys.has(coordKey(tile)))
+      .filter((tile) => !landmarkKeys.has(coordKey(tile)))
+      .filter((tile) => !pathKeys.has(coordKey(tile)))
+      .filter((tile) => !occupied(state, tile));
+
+    for (let index = eligible.length - 1; index > 0; index -= 1) {
+      const swapIndex = randomInt(state, 0, index);
+      [eligible[index], eligible[swapIndex]] = [eligible[swapIndex], eligible[index]];
+    }
+
+    for (const tile of eligible) {
+      const key = coordKey(tile);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push(tile);
+    }
+  }
+
+  return candidates;
 }
 
 function spawnPebbleBottleTargets(state: RunState, content: GameContent): void {
@@ -3309,17 +3462,20 @@ function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent)
   }
 
   const path = pebblePathForCurrentWave(state, content);
-  syncPebblePathProgress(enemy, path);
-  const nextPathIndex = (enemy.pathIndex ?? 0) + 1;
+  const onScriptedPath = pebblePathIndexAtTile(enemy.tile, path) >= 0;
+  if (!onScriptedPath) {
+    const reentryIndex = resolvePebblePathReentryIndex(enemy, path);
+    const reentryTile = path[reentryIndex] ?? null;
+    if (!reentryTile) return;
+    movePebbleTowardTile(state, enemy, reentryTile, content);
+    return;
+  }
+
+  const currentPathIndex = syncPebblePathProgress(enemy, path) ?? 0;
+  const nextPathIndex = currentPathIndex + 1;
   const nextTile = path[nextPathIndex] ?? null;
 
   if (!nextTile) return;
-
-  const onScriptedPath = path.some((tile) => sameCoord(tile, enemy.tile));
-  if (!onScriptedPath) {
-    movePebbleTowardTile(state, enemy, nextTile, content);
-    return;
-  }
 
   if (boardDefenderAtTile(state, nextTile)) {
     stepPebbleGrind(state, enemy, nextTile, content);
@@ -3593,21 +3749,77 @@ function applyGlobalRegenTick(state: RunState, content: GameContent): void {
   }
 }
 
+function scaledSoftcapCost(level: number, baseCost: number, costStep: number, maxLevel: number, repeatable: boolean): number | null {
+  if (level >= maxLevel && !repeatable) return null;
+  const baseLevelCost = baseCost + costStep * level;
+  if (!repeatable || level < maxLevel) {
+    return baseLevelCost;
+  }
+  const postCapLevel = level - maxLevel + 1;
+  const surchargeStep = Math.max(4, costStep || Math.ceil(baseCost * 0.8));
+  return baseLevelCost + Math.floor((postCapLevel * (postCapLevel + 1) * surchargeStep) / 2);
+}
+
 function metaCost(state: RunState, upgradeId: MetaUpgradeId, content: GameContent): number | null {
   const def = content.metaUpgrades[upgradeId];
-  const level = state.meta.upgrades[upgradeId];
-  if (level >= def.maxLevel && !isRepeatableMetaUpgrade(upgradeId)) return null;
-  const baseCost = def.baseCost + def.costStep * level;
-  if (!isRepeatableMetaUpgrade(upgradeId) || level < def.maxLevel) {
-    return baseCost;
-  }
-  const postCapLevel = level - def.maxLevel + 1;
-  const surchargeStep = Math.max(4, def.costStep || Math.ceil(def.baseCost * 0.8));
-  return baseCost + Math.floor((postCapLevel * (postCapLevel + 1) * surchargeStep) / 2);
+  return scaledSoftcapCost(
+    state.meta.upgrades[upgradeId],
+    def.baseCost,
+    def.costStep,
+    def.maxLevel,
+    isRepeatableMetaUpgrade(upgradeId)
+  );
+}
+
+function nameMasteryCost(state: RunState, masteryId: NameMasteryId, content: GameContent): number {
+  const def = content.nameMasteries[masteryId];
+  return scaledSoftcapCost(nameMasteryLevel(state, masteryId), def.baseCost, def.costStep, def.maxLevel, true) ?? def.baseCost;
 }
 
 function metaUpgradeSoftcapReached(state: RunState, upgradeId: MetaUpgradeId, content: GameContent): boolean {
   return isRepeatableMetaUpgrade(upgradeId) && state.meta.upgrades[upgradeId] > metaSoftcapLevel(upgradeId, content);
+}
+
+function nameMasterySoftcapReached(state: RunState, masteryId: NameMasteryId, content: GameContent): boolean {
+  return nameMasteryLevel(state, masteryId) > content.nameMasteries[masteryId].maxLevel;
+}
+
+function masteryStatLabel(stat: GlobalModifierEffectStat): string {
+  switch (stat) {
+    case 'maxHp':
+      return 'Max HP';
+    case 'damage':
+      return 'Damage';
+    case 'heal':
+      return 'Heal';
+    case 'range':
+      return 'Range';
+    case 'attackCooldownMs':
+      return 'ms attack cooldown';
+    case 'defense':
+      return 'Defense';
+    case 'regenHpPerSecond':
+      return 'HP regen/s';
+    default:
+      return 'stat';
+  }
+}
+
+function formatMasteryAmount(amount: number, stat: GlobalModifierEffectStat): string {
+  const prefix = amount > 0 ? '+' : '';
+  return `${prefix}${amount} ${masteryStatLabel(stat)}`;
+}
+
+function nameMasteryEffectText(state: RunState, masteryId: NameMasteryId, content: GameContent): string {
+  const def = content.nameMasteries[masteryId];
+  const level = nameMasteryLevel(state, masteryId);
+  const total = def.amountPerRank * level;
+  return `Matching heroes gain ${formatMasteryAmount(total, def.effectStat)} total (${formatMasteryAmount(def.amountPerRank, def.effectStat)} per rank).`;
+}
+
+function nextNameMasteryEffectText(masteryId: NameMasteryId, content: GameContent): string {
+  const def = content.nameMasteries[masteryId];
+  return `Next: ${formatMasteryAmount(def.amountPerRank, def.effectStat)}`;
 }
 
 function nextMetaUpgradeEffectText(state: RunState, upgradeId: MetaUpgradeId): string | null {
@@ -3659,6 +3871,26 @@ function nextMetaUpgradeEffectText(state: RunState, upgradeId: MetaUpgradeId): s
     default:
       return null;
   }
+}
+
+function hudNameMasteryEntry(state: RunState, masteryId: NameMasteryId, content: GameContent): HudNameMasteryEntry {
+  const definition = content.nameMasteries[masteryId];
+  const level = nameMasteryLevel(state, masteryId);
+  const cost = nameMasteryCost(state, masteryId, content);
+  return {
+    id: masteryId,
+    category: definition.category,
+    name: definition.name,
+    description: definition.description,
+    level,
+    cost,
+    affordable: state.meta.steam >= cost,
+    active: activeNameMasteryId(state, masteryId) === masteryId,
+    canActivate: level > 0,
+    softcapReached: nameMasterySoftcapReached(state, masteryId, content),
+    effectText: nameMasteryEffectText(state, masteryId, content),
+    nextEffectText: nextNameMasteryEffectText(masteryId, content)
+  };
 }
 
 function getInventoryDrop(state: RunState, dropId: number | null): InventoryDrop | null {
@@ -4286,8 +4518,8 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
       return {
         title: state.phase === 'lost' ? 'Shop Locked' : 'Run Lobby',
         body: state.phase === 'lost'
-          ? 'You unlocked the between-run lobby, but the actual Kyläkauppa still needs one Steam-powered grand opening.'
-          : 'No Kyläkauppa before the first run. Survive one shift first, then decide if the grand opening is worth the Steam.'
+          ? `You unlocked the between-run lobby, but the actual ${META_SHOP_LABEL} still needs one Steam-powered grand opening.`
+          : `No ${META_SHOP_LABEL} before the first run. Survive one shift first, then decide if the grand opening is worth the Steam.`
       };
     }
     return {
@@ -4622,7 +4854,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         }
         next.message = inventoryUnlocked(next)
           ? 'Loot and stash opened.'
-          : 'Fresh loot is visible here. Overflow stash unlocks from the Kyläkauppa.';
+          : `Fresh loot is visible here. Overflow stash unlocks from the ${META_SHOP_LABEL}.`;
       }
       return next;
     }
@@ -4696,7 +4928,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       setActiveHudPanel(next, 'loot');
       if (!inventoryUnlocked(next)) {
         next.inventoryOpen = false;
-        next.message = 'Overflow Stash unlocks from the Kyläkauppa.';
+        next.message = `Overflow Stash unlocks from the ${META_SHOP_LABEL}.`;
       }
       return next;
     case 'toggleRecruitment':
@@ -5031,6 +5263,43 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.message = `${content.metaUpgrades[action.upgradeId].name} purchased.`;
       return next;
     }
+    case 'setActiveNameMastery': {
+      if (next.overlayMode !== 'intermission' || !next.meta.shopUnlocked) return next;
+      const definition = content.nameMasteries[action.masteryId];
+      if (!definition || nameMasteryLevel(next, action.masteryId) <= 0) return next;
+      if (definition.category === 'title') {
+        next.meta.activeTitleMasteryId = action.masteryId as TitleMasteryId;
+      } else {
+        next.meta.activeSurnameMasteryId = action.masteryId as SurnameMasteryId;
+      }
+      next.message = `${definition.name} mastery is now active.`;
+      return next;
+    }
+    case 'buyNameMasteryRank': {
+      if (next.overlayMode !== 'intermission' || !next.meta.shopUnlocked) return next;
+      if (next.phase === 'lost') {
+        awardMeta(next);
+      }
+      const definition = content.nameMasteries[action.masteryId];
+      if (!definition) return next;
+      const cost = nameMasteryCost(next, action.masteryId, content);
+      if (next.meta.steam < cost) {
+        next.message = `Not enough Steam for ${definition.name} mastery.`;
+        return next;
+      }
+      next.meta.steam -= cost;
+      if (definition.category === 'title') {
+        const masteryId = action.masteryId as TitleMasteryId;
+        next.meta.titleMasteryLevels[masteryId] += 1;
+        next.meta.activeTitleMasteryId ??= masteryId;
+      } else {
+        const masteryId = action.masteryId as SurnameMasteryId;
+        next.meta.surnameMasteryLevels[masteryId] += 1;
+        next.meta.activeSurnameMasteryId ??= masteryId;
+      }
+      next.message = `${definition.name} mastery advanced to rank ${nameMasteryLevel(next, action.masteryId)}.`;
+      return next;
+    }
     case 'buyBeerShopOffer': {
       if (!beerShopUnlocked(next)) return next;
       const offer = next.beerShopOffers.find((entry) => entry.offerId === action.offerId);
@@ -5067,12 +5336,12 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     case 'unlockMetaShop': {
       if (next.overlayMode !== 'intermission' || next.meta.shopUnlocked) return next;
       if (next.meta.steam < content.config.metaShopUnlockCost) {
-        next.message = 'Not enough Steam to open the Kyläkauppa yet.';
+        next.message = `Not enough Steam to open the ${META_SHOP_LABEL} yet.`;
         return next;
       }
       next.meta.steam -= content.config.metaShopUnlockCost;
       next.meta.shopUnlocked = true;
-      next.message = 'The Kyläkauppa shutters creak open for future runs.';
+      next.message = `The ${META_SHOP_LABEL} shutters creak open for future runs.`;
       return next;
     }
     case 'toggleAutoplay':
@@ -5535,6 +5804,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         nextEffectText: nextMetaUpgradeEffectText(state, upgradeId)
       };
     }),
+    titleMasteries: TITLE_MASTERY_IDS.map((masteryId) => hudNameMasteryEntry(state, masteryId, content)),
+    surnameMasteries: SURNAME_MASTERY_IDS.map((masteryId) => hudNameMasteryEntry(state, masteryId, content)),
     worldLandmarks
   };
   return {
@@ -5552,6 +5823,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     alcoholDefinitions: content.alcoholDefinitions,
     globalModifierDefinitions: content.globalModifierDefinitions,
     metaUpgrades: content.metaUpgrades,
+    nameMasteries: content.nameMasteries,
     hud,
     tiles,
     buildableTiles,

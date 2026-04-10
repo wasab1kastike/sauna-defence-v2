@@ -7,7 +7,7 @@ Peli sisältää nyt metaprogression, shop-järjestelmiä ja useita pysyviä ava
 
 - **Run-kohtainen puolustuslooppi:** valitse puolustajia, sijoita laudalle, käynnistä aaltoja ja käytä SISU-aktiivia oikeaan aikaan.
 - **Metaprogressio:** Steam-valuutta, completed run -seuranta, unlockit ja pysyvät päivitykset tallennetaan localStorageen.
-- **Shopit ja world landmarkit:** Beer Shop / Metashop avautuvat etenemisen kautta ja näkyvät kartalla klikattavina kohteina.
+- **Shopit ja world landmarkit:** Beer Shop / Sauna Kiosk avautuvat etenemisen kautta ja näkyvät kartalla klikattavina kohteina.
 - **HUD + onboarding:** moderni topbar, oikean reunan toiminnot, opastekortit ja guide-stepit uuteen layoutiin.
 - **GitHub Pages -julkaisu:** suora deploy `main`-branchista domainiin `https://artobest.com/`.
 

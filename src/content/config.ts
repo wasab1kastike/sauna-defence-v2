@@ -33,7 +33,7 @@ export const config: GameConfig = {
     spawnIntervalStepMs: 65,
     lowSisuThreshold: 4,
     lowSaunaHintRatio: 0.45,
-    metaShopUnlockCost: 6,
+    metaShopUnlockCost: 5,
     spawnLanes: [
       { q: 0, r: -6 },
       { q: 6, r: -6 },

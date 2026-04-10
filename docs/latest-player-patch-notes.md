@@ -1,21 +1,21 @@
 # Latest Player Patch Notes
 
-Version 0.1.2 (2026-04-10)
+Version 0.1.3 (2026-04-10)
 
-Sauna oppi pitamaan classit tallessa, ja patch notes muistaa nyt vanhatkin loylyt. Taman paivityksen jalkeen voit selailla release-historiaa ilman GitHub-retkea.
+Sauna Kiosk heitti vanhan metakaupan nurkkaan ja avasi nimekkaammalle endless-grindille oman tiskin. Nyt voit virittaa pysyvan title- ja surname-fokuksen samalla kun koko meta-kaupan hinnat ja osiot ovat selkeammat.
 
 ## Uutta
 
-- Patch Notes -ikkunassa voi nyt selailla vanhempia releaseja suoraan `Vanhempi`- ja `Uudempi`-napeilla.
-- Sauna reroll pitaa nyt heroisi paaclassin, subclass-branchit, levelin, XP:n ja loadoutin tallessa samalla kun identiteetti ja base-stat-rollit menevat uusiksi.
+- Sauna Kioskissa on nyt `Name Masteries` -osio, jossa voit ostaa pysyvia rankeja yhdelle aktiiviselle title-linjalle ja yhdelle aktiiviselle surname-linjalle.
+- Aktiivisen title- ja surname-fokuksen voi vaihtaa ilmaiseksi intermissionissa, joten voit rakentaa seuraavan runin rosteria kohti haluttua nimisynergiaa.
 
 ## Parannuksia
 
-- Karttaa voi nyt pannata vapaammin ylos ja alas, ja alapalkki huomioidaan clampissa jotta kaupat eivat jaa dockin alle piiloon.
-- Kylakauppa ja Beer Shop spawnivat nyt deterministisesti saunan lahelle eivatka katoa kartan reunoille.
-- Boss-clearit avaavat karttaa nyt yhteen suuntaan kerrallaan, ja jokainen bossi maksaa varman `4 Steam` palkinnon.
+- Sauna Kiosk korvaa vanhan Metashop/Kylakauppa-nimen kaikessa pelaajalle nakyvassa UI:ssa.
+- Meta-kauppa on nyt jaettu selkeammin osioihin: `Core`, `Loot`, `Sauna`, `Beer Shop` ja `Name Masteries`.
+- Useiden varhaisten meta-upgradejen hinnat laskivat hieman, jotta endless-progression ensiaskeleet aukeavat nopeammin.
 
 ## Korjauksia
 
-- Pebblen ensikohtaaminen ei enaa jyrsi splash-damagea viereisiin puolustajiin, ja sen tempo on rauhallisempi vaikka kesto pysyy ennallaan.
-- Patch notes -sisalto generoidaan nyt release-historiaksi, joten uusin versio ja in-game notes eivat jaa eri aikakausille.
+- Repeatable-polut kertovat nyt paremmin softcapin ylityksesta eivatka huku yhden pitkän listan sisaan.
+- Sauna Kioskin uuden progression buffit paivittyvat oikein myos silloin, kun hero rerollaa uuden titlen tai sukunimen.

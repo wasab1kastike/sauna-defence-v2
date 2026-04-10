@@ -473,39 +473,44 @@ export const metaUpgrades: GameContent['metaUpgrades'] = {
       id: 'roster_capacity',
       name: 'More Weirdos',
       description: 'Increase both roster capacity and how many defenders can fit on the board.',
-      baseCost: 6,
-      costStep: 6,
+      section: 'core',
+      baseCost: 5,
+      costStep: 5,
       maxLevel: 5
     },
     inventory_slots: {
       id: 'inventory_slots',
       name: 'Overflow Stash',
       description: 'Unlock the loot stash, then expand how many overflow drops it can hold.',
-      baseCost: 5,
-      costStep: 5,
-      maxLevel: 4
+      section: 'core',
+      baseCost: 4,
+      costStep: 4,
+      maxLevel: 5
     },
     loot_luck: {
       id: 'loot_luck',
       name: 'Sticky Fingers',
       description: 'Increase overall drop chance.',
-      baseCost: 6,
-      costStep: 6,
+      section: 'loot',
+      baseCost: 4,
+      costStep: 4,
       maxLevel: 5
     },
     loot_rarity: {
       id: 'loot_rarity',
       name: 'Boss Sniffer',
       description: 'Shift drops toward better rarities.',
-      baseCost: 8,
-      costStep: 7,
+      section: 'loot',
+      baseCost: 6,
+      costStep: 5,
       maxLevel: 5
     },
     loot_auto_assign: {
       id: 'loot_auto_assign',
       name: 'Auto Assign',
       description: 'Unlock a toggle that auto-equips loot into free item and skill slots.',
-      baseCost: 8,
+      section: 'loot',
+      baseCost: 6,
       costStep: 0,
       maxLevel: 1
     },
@@ -513,7 +518,8 @@ export const metaUpgrades: GameContent['metaUpgrades'] = {
       id: 'loot_auto_upgrade',
       name: 'Auto Upgrade',
       description: 'Unlock a toggle that keeps rebuilding the best available item and skill loadouts.',
-      baseCost: 12,
+      section: 'loot',
+      baseCost: 10,
       costStep: 0,
       maxLevel: 1
     },
@@ -521,15 +527,17 @@ export const metaUpgrades: GameContent['metaUpgrades'] = {
       id: 'item_slots',
       name: 'More Pockets Per Hero',
       description: 'Give every defender one more item slot.',
-      baseCost: 9,
-      costStep: 7,
-      maxLevel: 3
+      section: 'loot',
+      baseCost: 7,
+      costStep: 6,
+      maxLevel: 4
     },
     beer_shop_unlock: {
       id: 'beer_shop_unlock',
       name: 'Beer Shop',
       description: 'Unlock the bartender and his risky run-long drinks between runs.',
-      baseCost: 9,
+      section: 'beer_shop',
+      baseCost: 8,
       costStep: 0,
       maxLevel: 1
     },
@@ -537,15 +545,17 @@ export const metaUpgrades: GameContent['metaUpgrades'] = {
       id: 'beer_shop_level',
       name: 'Beer Shop Level',
       description: 'Increase bartender stock and unlock more active drink slots.',
-      baseCost: 7,
-      costStep: 6,
+      section: 'beer_shop',
+      baseCost: 6,
+      costStep: 5,
       maxLevel: 5
     },
     sauna_auto_deploy: {
       id: 'sauna_auto_deploy',
       name: 'Auto Deploy',
       description: 'When a board hero dies, the sauna hero jumps in automatically.',
-      baseCost: 10,
+      section: 'sauna',
+      baseCost: 8,
       costStep: 0,
       maxLevel: 1
     },
@@ -553,9 +563,133 @@ export const metaUpgrades: GameContent['metaUpgrades'] = {
       id: 'sauna_slap_swap',
       name: 'Slap Swap',
       description: 'Once per wave, a badly hurt board hero swaps with the sauna hero.',
-      baseCost: 16,
+      section: 'sauna',
+      baseCost: 12,
       costStep: 0,
       maxLevel: 1
+    }
+  };
+
+export const nameMasteries: GameContent['nameMasteries'] = {
+    laudekuningas: {
+      id: 'laudekuningas',
+      category: 'title',
+      name: 'Laudekuningas',
+      description: 'Matching heroes grow harder to push off the benches.',
+      matchValue: 'Laudekuningas',
+      effectStat: 'maxHp',
+      amountPerRank: 6,
+      baseCost: 4,
+      costStep: 4,
+      maxLevel: 5
+    },
+    loylylordi: {
+      id: 'loylylordi',
+      category: 'title',
+      name: 'Loylylordi',
+      description: 'Matching heroes hit harder with every rank.',
+      matchValue: 'Loylylordi',
+      effectStat: 'damage',
+      amountPerRank: 1,
+      baseCost: 4,
+      costStep: 4,
+      maxLevel: 5
+    },
+    vihtavelho: {
+      id: 'vihtavelho',
+      category: 'title',
+      name: 'Vihtavelho',
+      description: 'Matching heroes push a little more healing through the steam.',
+      matchValue: 'Vihtavelho',
+      effectStat: 'heal',
+      amountPerRank: 1,
+      baseCost: 4,
+      costStep: 4,
+      maxLevel: 5
+    },
+    kiuaskuiskaaja: {
+      id: 'kiuaskuiskaaja',
+      category: 'title',
+      name: 'Kiuaskuiskaaja',
+      description: 'Matching heroes attack faster once the heat is on.',
+      matchValue: 'Kiuaskuiskaaja',
+      effectStat: 'attackCooldownMs',
+      amountPerRank: -35,
+      baseCost: 4,
+      costStep: 4,
+      maxLevel: 5
+    },
+    hoyryruhtinas: {
+      id: 'hoyryruhtinas',
+      category: 'title',
+      name: 'Hoyryruhtinas',
+      description: 'Matching heroes learn to stand their ground under pressure.',
+      matchValue: 'Hoyryruhtinas',
+      effectStat: 'defense',
+      amountPerRank: 1,
+      baseCost: 4,
+      costStep: 4,
+      maxLevel: 5
+    },
+    kivinen: {
+      id: 'kivinen',
+      category: 'surname',
+      name: 'Kivinen',
+      description: 'Matching heroes brace like old stones.',
+      matchValue: 'Kivinen',
+      effectStat: 'defense',
+      amountPerRank: 1,
+      baseCost: 4,
+      costStep: 4,
+      maxLevel: 5
+    },
+    saarinen: {
+      id: 'saarinen',
+      category: 'surname',
+      name: 'Saarinen',
+      description: 'Matching heroes recover with calmer pacing.',
+      matchValue: 'Saarinen',
+      effectStat: 'regenHpPerSecond',
+      amountPerRank: 1,
+      baseCost: 4,
+      costStep: 4,
+      maxLevel: 5
+    },
+    askala: {
+      id: 'askala',
+      category: 'surname',
+      name: 'Askala',
+      description: 'Matching heroes push a little more raw damage per hit.',
+      matchValue: 'Askala',
+      effectStat: 'damage',
+      amountPerRank: 1,
+      baseCost: 4,
+      costStep: 4,
+      maxLevel: 5
+    },
+    lehtinen: {
+      id: 'lehtinen',
+      category: 'surname',
+      name: 'Lehtinen',
+      description: 'Matching heroes shave time off every attack cycle.',
+      matchValue: 'Lehtinen',
+      effectStat: 'attackCooldownMs',
+      amountPerRank: -25,
+      baseCost: 4,
+      costStep: 4,
+      maxLevel: 5
+    },
+    ekberg: {
+      id: 'ekberg',
+      category: 'surname',
+      name: 'Ekberg',
+      description: 'Matching heroes carry extra staying power into the fight.',
+      matchValue: 'Ekberg',
+      effectStat: 'maxHp',
+      amountPerRank: 4,
+      baseCost: 4,
+      costStep: 4,
+      maxLevel: 5
     }
   };
 

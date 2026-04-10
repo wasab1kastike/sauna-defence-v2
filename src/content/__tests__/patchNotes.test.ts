@@ -23,6 +23,7 @@ describe('player patch notes content', () => {
   it('exposes patch note history newest first', () => {
     expect(allPatchNotes.length).toBeGreaterThan(1);
     expect(allPatchNotes[0]).toEqual(latestPatchNotes);
-    expect(allPatchNotes.map((entry) => entry.version)).toEqual(['0.1.2', '0.1.1', '0.1.0']);
+    expect(allPatchNotes.map((entry) => entry.version)).toEqual(['0.1.3', '0.1.2', '0.1.1', '0.1.0']);
+    expect(JSON.stringify(latestPatchNotes)).toContain('Sauna Kiosk');
   });
 });

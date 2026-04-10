@@ -29,6 +29,40 @@ All notable changes to this project are documented in this file.
 ### Breaking
 - [internal] Ei viela merkintoja.
 
+## 0.1.3 - 2026-04-10
+
+### Player Notes
+
+#### Intro
+Sauna Kiosk heitti vanhan metakaupan nurkkaan ja avasi nimekkaammalle endless-grindille oman tiskin. Nyt voit virittaa pysyvan title- ja surname-fokuksen samalla kun koko meta-kaupan hinnat ja osiot ovat selkeammat.
+
+#### New Features
+- Sauna Kioskissa on nyt `Name Masteries` -osio, jossa voit ostaa pysyvia rankeja yhdelle aktiiviselle title-linjalle ja yhdelle aktiiviselle surname-linjalle.
+- Aktiivisen title- ja surname-fokuksen voi vaihtaa ilmaiseksi intermissionissa, joten voit rakentaa seuraavan runin rosteria kohti haluttua nimisynergiaa.
+
+#### General Improvements
+- Sauna Kiosk korvaa vanhan Metashop/Kylakauppa-nimen kaikessa pelaajalle nakyvassa UI:ssa.
+- Meta-kauppa on nyt jaettu selkeammin osioihin: `Core`, `Loot`, `Sauna`, `Beer Shop` ja `Name Masteries`.
+- Useiden varhaisten meta-upgradejen hinnat laskivat hieman, jotta endless-progression ensiaskeleet aukeavat nopeammin.
+
+#### General Fixes
+- Repeatable-polut kertovat nyt paremmin softcapin ylityksesta eivatka huku yhden pitkän listan sisaan.
+- Sauna Kioskin uuden progression buffit paivittyvat oikein myos silloin, kun hero rerollaa uuden titlen tai sukunimen.
+
+### Added
+- [player] Sauna Kiosk now offers persistent Name Masteries for curated title and surname lines, with one active title focus and one active surname focus at a time.
+
+### Changed
+- [player] The former metashop is now presented as Sauna Kiosk across the board, while internal `metashop` ids stay unchanged for compatibility.
+- [player] Meta upgrades are now grouped into clearer sections and early Steam pricing has been lowered for roster, stash, loot, sauna, and beer progress.
+- [player] Title and surname masteries stack with existing items, subclasses, alcohols, and global modifiers whenever a hero matches the active focus names.
+
+### Fixed
+- [player] Matching-name bonuses now update dynamically after identity rerolls instead of requiring any separate refresh.
+
+### Breaking
+- [internal] Ei viela merkintoja.
+
 ## 0.1.2 - 2026-04-10
 
 ### Player Notes
@@ -42,7 +76,7 @@ Sauna oppi pitamaan classit tallessa, ja patch notes muistaa nyt vanhatkin loyly
 
 #### General Improvements
 - Karttaa voi nyt pannata vapaammin ylos ja alas, ja alapalkki huomioidaan clampissa jotta kaupat eivat jaa dockin alle piiloon.
-- Kylakauppa ja Beer Shop spawnivat nyt deterministisesti saunan lahelle eivatka katoa kartan reunoille.
+- Sauna Kiosk ja Beer Shop spawnivat nyt deterministisesti saunan lahelle eivatka katoa kartan reunoille.
 - Boss-clearit avaavat karttaa nyt yhteen suuntaan kerrallaan, ja jokainen bossi maksaa varman `4 Steam` palkinnon.
 
 #### General Fixes
@@ -56,7 +90,7 @@ Sauna oppi pitamaan classit tallessa, ja patch notes muistaa nyt vanhatkin loyly
 ### Changed
 - [player] Sauna reroll now preserves main class, subclass branches, level, XP, items, skills, and kills while rerolling only identity, portrait, lore, and class-appropriate stat rolls.
 - [player] Board camera now allows more vertical travel and respects the bottom dock safe area so nearby landmarks stay visible.
-- [player] Metashop and Beer Shop now spawn on deterministic nearby tiles around the sauna instead of outer-edge anchors.
+- [player] Sauna Kiosk and Beer Shop now spawn on deterministic nearby tiles around the sauna instead of outer-edge anchors.
 - [player] Balance pass increased enemies per wave by scaling non-boss composition with cycle (higher brute cap + extra spawn picks), making each 5-wave block visibly denser.
 - [player] Wave ramp now escalates to explicit spawn-density anchors (wave 6=15, wave 10=30, wave 15=60, wave 20=100), while tutorial waves 1-4 stay unchanged for onboarding.
 - [player] Defender selection now uses a scroll-bounded character card so core hero stats stay visible in the first viewport slice while longer loadouts continue below.

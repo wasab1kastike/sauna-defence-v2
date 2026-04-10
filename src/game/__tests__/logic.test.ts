@@ -12,6 +12,54 @@ import {
 import { boardExpansionDirectionVector } from '../boardGeometry';
 import { getTileViewportPosition, pickDefenderAtCanvasPoint, pickTileAtCanvasPoint } from '../render';
 
+function directionBoundaryValue(tile, direction) {
+  switch (direction) {
+    case 'north':
+    case 'south':
+      return tile.r;
+    case 'northeast':
+    case 'southwest':
+      return tile.q;
+    case 'southeast':
+    case 'northwest':
+      return tile.q + tile.r;
+    default:
+      throw new Error(`Unsupported direction ${direction}`);
+  }
+}
+
+function directionBoundaryTarget(radius, direction) {
+  switch (direction) {
+    case 'north':
+    case 'southwest':
+    case 'northwest':
+      return -radius;
+    case 'northeast':
+    case 'southeast':
+    case 'south':
+      return radius;
+    default:
+      throw new Error(`Unsupported direction ${direction}`);
+  }
+}
+
+function sortBoundaryTiles(tiles, direction) {
+  return [...tiles].sort((left, right) => {
+    switch (direction) {
+      case 'north':
+      case 'south':
+      case 'southeast':
+      case 'northwest':
+        return (left.q - right.q) || (left.r - right.r);
+      case 'northeast':
+      case 'southwest':
+        return (left.r - right.r) || (left.q - right.q);
+      default:
+        return (left.r - right.r) || (left.q - right.q);
+    }
+  });
+}
+
 function prepState() {
   const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
   const buildDefender = (templateId, index, location) => {
@@ -601,6 +649,83 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(bottleState.enemies[0]?.moveReadyAtMs - bottleState.timeMs).toBe(1600);
     expect(pathState.enemies[0]?.moveReadyAtMs - pathState.timeMs).toBe(2100);
+  });
+
+  it('rejoins Pebble to the forward scripted path after the last bottle is gone', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.currentWave = {
+      index: 5,
+      isBoss: true,
+      rewardSisu: 7,
+      pressure: 18,
+      pattern: 'boss_breach',
+      bossId: 'pebble',
+      bossCategory: 'breach',
+      spawns: [{ atMs: 0, enemyId: 'pebble', laneIndex: 0 }]
+    };
+    state.pendingSpawns = [];
+    state.pebbleEncounterCount = 1;
+    state.pebbleBottleTargets = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 3, r: -2 },
+      hp: 260,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 1,
+      pebbleEncounterMaxHp: 260,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies[0]?.tile).toEqual({ q: 2, r: -2 });
+    expect(state.enemies[0]?.pathIndex).toBe(5);
+  });
+
+  it('rejoins Pebble to the deeper current path segment on expanded boards after bottle detours', () => {
+    let state = prepState();
+    state.boardExpansionDirections = ['north'];
+    state.phase = 'wave';
+    state.currentWave = {
+      index: 5,
+      isBoss: true,
+      rewardSisu: 7,
+      pressure: 18,
+      pattern: 'boss_breach',
+      bossId: 'pebble',
+      bossCategory: 'breach',
+      spawns: [{ atMs: 0, enemyId: 'pebble', laneIndex: 0 }]
+    };
+    state.pendingSpawns = [];
+    state.pebbleEncounterCount = 1;
+    state.pebbleBottleTargets = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 2, r: -6 },
+      hp: 260,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      pebbleEncounterMaxHp: 260,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies[0]?.tile).toEqual({ q: 2, r: -5 });
+    expect(state.enemies[0]?.pathIndex).toBe(2);
   });
 
   it('grinds only the blocking defender instead of splashing adjacent allies', () => {
@@ -2155,6 +2280,23 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.meta.upgrades.inventory_slots).toBe(1);
   });
 
+  it('surfaces Sauna Kiosk and the rebalanced meta prices in the HUD', () => {
+    const state = prepState();
+    state.phase = 'lost';
+    state.overlayMode = 'intermission';
+    state.meta.completedRuns = 1;
+
+    const snapshot = createSnapshot(state, gameContent);
+    const saunaKiosk = snapshot.hud.worldLandmarks.find((entry) => entry.id === 'metashop');
+
+    expect(saunaKiosk?.label).toBe('Sauna Kiosk');
+    expect(snapshot.hud.metaShopUnlockCost).toBe(5);
+    expect(snapshot.hud.metaUpgrades.find((entry) => entry.id === 'roster_capacity')?.cost).toBe(5);
+    expect(snapshot.hud.metaUpgrades.find((entry) => entry.id === 'inventory_slots')?.cost).toBe(4);
+    expect(snapshot.hud.metaUpgrades.find((entry) => entry.id === 'beer_shop_unlock')?.cost).toBe(8);
+    expect(snapshot.hud.metaUpgrades.find((entry) => entry.id === 'sauna_slap_swap')?.cost).toBe(12);
+  });
+
   it('applies More Weirdos to the next run after buying it in the metashop', () => {
     let state = prepState();
     state.phase = 'lost';
@@ -2173,6 +2315,57 @@ describe('Sauna Defense V2 logic', () => {
     const snapshot = createSnapshot(state, gameContent);
     expect(snapshot.hud.rosterCap).toBe(gameContent.config.baseRosterCap + 1);
     expect(snapshot.hud.boardCap).toBe(gameContent.config.boardCap + 1);
+  });
+
+  it('lets the player buy and switch title and surname masteries independently', () => {
+    let state = prepState();
+    state.phase = 'lost';
+    state.overlayMode = 'intermission';
+    state.meta.shopUnlocked = true;
+    state.meta.steam = 30;
+
+    state = applyAction(state, { type: 'buyNameMasteryRank', masteryId: 'laudekuningas' }, gameContent);
+    state = applyAction(state, { type: 'buyNameMasteryRank', masteryId: 'askala' }, gameContent);
+    state = applyAction(state, { type: 'buyNameMasteryRank', masteryId: 'vihtavelho' }, gameContent);
+    state = applyAction(state, { type: 'setActiveNameMastery', masteryId: 'vihtavelho' }, gameContent);
+
+    expect(state.meta.titleMasteryLevels.laudekuningas).toBe(1);
+    expect(state.meta.titleMasteryLevels.vihtavelho).toBe(1);
+    expect(state.meta.surnameMasteryLevels.askala).toBe(1);
+    expect(state.meta.activeTitleMasteryId).toBe('vihtavelho');
+    expect(state.meta.activeSurnameMasteryId).toBe('askala');
+  });
+
+  it('applies active title and surname masteries only to matching heroes and updates when names change', () => {
+    const state = prepState();
+    const buffed = state.defenders[0];
+    const control = state.defenders[1];
+
+    buffed.title = 'Laudekuningas Askala';
+    control.title = 'Vihtavelho Ekberg';
+    state.meta.activeTitleMasteryId = 'laudekuningas';
+    state.meta.activeSurnameMasteryId = 'askala';
+    state.meta.titleMasteryLevels.laudekuningas = 2;
+    state.meta.surnameMasteryLevels.askala = 3;
+    state.selectedMapTarget = 'defender';
+    state.selectedDefenderId = buffed.id;
+
+    let snapshot = createSnapshot(state, gameContent);
+
+    expect(snapshot.hud.selectedDefender?.maxHp).toBe(buffed.stats.maxHp + 12);
+    expect(snapshot.hud.selectedDefender?.damage).toBe(buffed.stats.damage + 3);
+
+    state.selectedDefenderId = control.id;
+    snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.selectedDefender?.maxHp).toBe(control.stats.maxHp);
+    expect(snapshot.hud.selectedDefender?.damage).toBe(control.stats.damage);
+
+    buffed.title = 'Vihtavelho Ekberg';
+    state.selectedDefenderId = buffed.id;
+    snapshot = createSnapshot(state, gameContent);
+
+    expect(snapshot.hud.selectedDefender?.maxHp).toBe(buffed.stats.maxHp);
+    expect(snapshot.hud.selectedDefender?.damage).toBe(buffed.stats.damage);
   });
 
   it('auto deploys the sauna defender when a board defender dies', () => {
@@ -3345,12 +3538,31 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.boardExpansionDirections).toHaveLength(1);
     expect(snapshot.config.gridRadius).toBe(10);
     expect(snapshot.config.buildRadius).toBe(9);
-    expect(snapshot.tiles).toHaveLength(131);
+    expect(snapshot.tiles).toHaveLength(145);
+    expect(snapshot.buildableTiles).toHaveLength(104);
     expect(snapshot.spawnTiles).toHaveLength(6);
-    const expansionVector = boardExpansionDirectionVector(state.boardExpansionDirections[0]);
-    expect(snapshot.spawnTiles).toContainEqual({ q: expansionVector.q * 10, r: expansionVector.r * 10 });
-    expect(snapshot.buildableTiles).toContainEqual({ q: expansionVector.q * 6, r: expansionVector.r * 6 });
-    expect(snapshot.buildableTiles).toContainEqual({ q: expansionVector.q * 9, r: expansionVector.r * 9 });
+    const expansionDirection = state.boardExpansionDirections[0];
+    const oldArmTip = boardExpansionDirectionVector(expansionDirection);
+    const expandedBuildFrontier = sortBoundaryTiles(
+      snapshot.buildableTiles.filter(
+        (tile) => directionBoundaryValue(tile, expansionDirection) === directionBoundaryTarget(snapshot.config.buildRadius, expansionDirection)
+      ),
+      expansionDirection
+    );
+    const expandedSpawnFrontier = sortBoundaryTiles(
+      snapshot.tiles.filter(
+        (tile) => directionBoundaryValue(tile, expansionDirection) === directionBoundaryTarget(snapshot.config.gridRadius, expansionDirection)
+      ),
+      expansionDirection
+    );
+    const expandedSpawnTile = snapshot.spawnTiles.find(
+      (tile) => directionBoundaryValue(tile, expansionDirection) === directionBoundaryTarget(snapshot.config.gridRadius, expansionDirection)
+    );
+
+    expect(expandedBuildFrontier).toHaveLength(2);
+    expect(expandedSpawnFrontier).toHaveLength(3);
+    expect(expandedSpawnTile).toEqual(expandedSpawnFrontier[1]);
+    expect(expandedSpawnTile).not.toEqual({ q: oldArmTip.q * 10, r: oldArmTip.r * 10 });
   });
 
   it('keeps landmarks near the sauna, on buildable tiles, off the spawn frontier, and stable after expansion', () => {
@@ -3400,15 +3612,52 @@ describe('Sauna Defense V2 logic', () => {
     expect(beerShop!.tile).toEqual(initialBeerShop!.tile);
   });
 
-  it('allows picking tiles on the new expansion arm after a boss clear', () => {
+  it('allows picking tiles on the new expansion edge after a boss clear', () => {
     const state = prepState();
     state.boardExpansionDirections = ['north'];
     const snapshot = createSnapshot(state, gameContent);
     const rect = { left: 0, top: 0, width: 900, height: 700 } as DOMRect;
-    const armTile = { q: 0, r: -8 };
-    const point = getTileViewportPosition(snapshot, rect.width, rect.height, armTile);
+    const edgeTile = { q: 4, r: -9 };
+    const point = getTileViewportPosition(snapshot, rect.width, rect.height, edgeTile);
 
-    expect(pickTileAtCanvasPoint(snapshot, rect, point.x, point.y)).toEqual(armTile);
+    expect(pickTileAtCanvasPoint(snapshot, rect, point.x, point.y)).toEqual(edgeTile);
+  });
+
+  it('spawns three visible Pebble bottle targets on valid board tiles when the wave starts', () => {
+    let state = prepState();
+    state.boardExpansionDirections = ['north'];
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.location = 'board';
+    defender.tile = { q: 0, r: -1 };
+    defender.homeTile = { q: 0, r: -1 };
+    state.currentWave = createWaveDefinition(5, gameContent);
+
+    state = applyAction(state, { type: 'startWave' }, gameContent);
+
+    const snapshot = createSnapshot(state, gameContent);
+    const spawnKeys = new Set(snapshot.spawnTiles.map((tile) => `${tile.q},${tile.r}`));
+    const buildableKeys = new Set(snapshot.buildableTiles.map((tile) => `${tile.q},${tile.r}`));
+    const landmarkKeys = new Set(snapshot.hud.worldLandmarks.map((entry) => `${entry.tile.q},${entry.tile.r}`));
+    const pebblePathKeys = new Set([
+      '0,-6',
+      '1,-5',
+      '2,-5',
+      '3,-4',
+      '3,-3',
+      '2,-2',
+      '1,-2',
+      '1,-1',
+      '0,-1'
+    ]);
+    const activeTargets = state.pebbleBottleTargets.filter((target) => !target.consumed);
+
+    expect(activeTargets).toHaveLength(3);
+    expect(new Set(activeTargets.map((target) => `${target.tile.q},${target.tile.r}`)).size).toBe(3);
+    expect(activeTargets.every((target) => buildableKeys.has(`${target.tile.q},${target.tile.r}`))).toBe(true);
+    expect(activeTargets.every((target) => !spawnKeys.has(`${target.tile.q},${target.tile.r}`))).toBe(true);
+    expect(activeTargets.every((target) => !landmarkKeys.has(`${target.tile.q},${target.tile.r}`))).toBe(true);
+    expect(activeTargets.every((target) => !pebblePathKeys.has(`${target.tile.q},${target.tile.r}`))).toBe(true);
+    expect(activeTargets.every((target) => hexDistance(target.tile, { q: 0, r: 0 }) <= gameContent.config.buildRadius)).toBe(true);
   });
 
   it('stores the picked global modifier and closes the boss reward overlay', () => {

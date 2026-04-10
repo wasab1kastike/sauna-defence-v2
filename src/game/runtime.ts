@@ -55,13 +55,32 @@ function loadMeta(storage?: Storage | null): MetaProgress {
       return createDefaultMetaProgress();
     }
     const parsed = JSON.parse(raw) as MetaProgress;
+    const defaults = createDefaultMetaProgress();
+    const activeTitleMasteryId =
+      typeof parsed.activeTitleMasteryId === 'string' && parsed.activeTitleMasteryId in defaults.titleMasteryLevels
+        ? parsed.activeTitleMasteryId
+        : null;
+    const activeSurnameMasteryId =
+      typeof parsed.activeSurnameMasteryId === 'string' && parsed.activeSurnameMasteryId in defaults.surnameMasteryLevels
+        ? parsed.activeSurnameMasteryId
+        : null;
     return {
       steam: Number.isFinite(parsed.steam) ? parsed.steam : 0,
       completedRuns: Number.isFinite(parsed.completedRuns) ? parsed.completedRuns : 0,
       shopUnlocked: parsed.shopUnlocked === true,
       upgrades: {
-        ...createDefaultMetaProgress().upgrades,
+        ...defaults.upgrades,
         ...parsed.upgrades
+      },
+      activeTitleMasteryId,
+      activeSurnameMasteryId,
+      titleMasteryLevels: {
+        ...defaults.titleMasteryLevels,
+        ...parsed.titleMasteryLevels
+      },
+      surnameMasteryLevels: {
+        ...defaults.surnameMasteryLevels,
+        ...parsed.surnameMasteryLevels
       }
     };
   } catch {
