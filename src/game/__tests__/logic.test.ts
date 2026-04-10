@@ -446,7 +446,142 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(snapshot.hud.bossName).toBe('Pebble');
     expect(snapshot.hud.nextWavePattern).toBe('Pebble');
-    expect(snapshot.hud.bossHint).toContain('Chases bottles');
+    expect(snapshot.hud.bossHint).toContain('fast on bottles');
+  });
+
+  it('spawns Pebble encounters with escalating max HP by encounter count', () => {
+    const spawnPebbleAtEncounter = (encounterCount) => {
+      let state = prepState();
+      state.phase = 'wave';
+      state.currentWave = createWaveDefinition(5, gameContent);
+      state.pendingSpawns = [{ atMs: 0, enemyId: 'pebble', laneIndex: 0 }];
+      state.enemies = [];
+      state.pebbleEncounterCount = encounterCount;
+      state = stepState(state, 16, gameContent);
+      return state.enemies[0];
+    };
+
+    expect(spawnPebbleAtEncounter(1)?.hp).toBe(260);
+    expect(spawnPebbleAtEncounter(2)?.hp).toBe(320);
+    expect(spawnPebbleAtEncounter(3)?.hp).toBe(380);
+  });
+
+  it('uses the fast bottle-hunt cooldown for the first Pebble encounter', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.currentWave = {
+      index: 5,
+      isBoss: true,
+      rewardSisu: 7,
+      pressure: 18,
+      pattern: 'boss_breach',
+      bossId: 'pebble',
+      bossCategory: 'breach',
+      spawns: [{ atMs: 0, enemyId: 'pebble', laneIndex: 0 }]
+    };
+    state.pendingSpawns = [];
+    state.pebbleEncounterCount = 1;
+    state.pebbleBottleTargets = [{ id: 1, tile: { q: 2, r: -6 }, consumed: false }];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: gameContent.enemyArchetypes.pebble.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      pebbleEncounterMaxHp: 260,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies[0]?.tile).toEqual({ q: 1, r: -6 });
+    expect(state.enemies[0]?.moveReadyAtMs - state.timeMs).toBe(1180);
+  });
+
+  it('uses the slower path cooldown for the first Pebble encounter when no bottles remain', () => {
+    let state = prepState();
+    state.phase = 'wave';
+    state.currentWave = {
+      index: 5,
+      isBoss: true,
+      rewardSisu: 7,
+      pressure: 18,
+      pattern: 'boss_breach',
+      bossId: 'pebble',
+      bossCategory: 'breach',
+      spawns: [{ atMs: 0, enemyId: 'pebble', laneIndex: 0 }]
+    };
+    state.pendingSpawns = [];
+    state.pebbleEncounterCount = 1;
+    state.pebbleBottleTargets = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: gameContent.enemyArchetypes.pebble.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 0,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      pebbleEncounterMaxHp: 260,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies[0]?.tile).toEqual({ q: 1, r: -5 });
+    expect(state.enemies[0]?.moveReadyAtMs - state.timeMs).toBe(1620);
+  });
+
+  it('increases Pebble bottle and path move cooldowns on later encounters', () => {
+    const buildPebbleState = (withBottleTarget) => {
+      const state = prepState();
+      state.phase = 'wave';
+      state.currentWave = {
+        index: 5,
+        isBoss: true,
+        rewardSisu: 7,
+        pressure: 18,
+        pattern: 'boss_breach',
+        bossId: 'pebble',
+        bossCategory: 'breach',
+        spawns: [{ atMs: 0, enemyId: 'pebble', laneIndex: 0 }]
+      };
+      state.pendingSpawns = [];
+      state.pebbleEncounterCount = 3;
+      state.pebbleBottleTargets = withBottleTarget ? [{ id: 1, tile: { q: 2, r: -6 }, consumed: false }] : [];
+      state.enemies = [{
+        instanceId: 1,
+        archetypeId: 'pebble',
+        tokenStyleId: 0,
+        tile: { q: 0, r: -6 },
+        hp: 380,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 0,
+        nextAbilityAtMs: Number.POSITIVE_INFINITY,
+        pathIndex: 0,
+        pebbleEncounterMaxHp: 380,
+        spawnLaneIndex: 0,
+        spawnedByEnemyInstanceId: null
+      }];
+      return state;
+    };
+
+    const bottleState = stepState(buildPebbleState(true), 16, gameContent);
+    const pathState = stepState(buildPebbleState(false), 16, gameContent);
+
+    expect(bottleState.enemies[0]?.moveReadyAtMs - bottleState.timeMs).toBe(1460);
+    expect(pathState.enemies[0]?.moveReadyAtMs - pathState.timeMs).toBe(1940);
   });
 
   it('lets the player pick a board defender directly from the canvas', () => {
@@ -580,6 +715,38 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.selectedEnemy?.isBoss).toBe(true);
     expect(snapshot.hud.selectedEnemy?.bossLabel).toBe('Boss');
     expect(snapshot.hud.actionTitle).toBe('Boss Profile');
+  });
+
+  it('surfaces Pebble live max HP and effective move cooldown in selected-enemy HUD data', () => {
+    const state = prepState();
+    state.currentWave = createWaveDefinition(25, gameContent);
+    state.pebbleEncounterCount = 2;
+    state.selectedMapTarget = 'enemy';
+    state.selectedEnemyInstanceId = 4;
+    state.pebbleBottleTargets = [{ id: 1, tile: { q: 2, r: -3 }, consumed: false }];
+    state.enemies = [{
+      instanceId: 4,
+      archetypeId: 'pebble',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -6 },
+      hp: 320,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: 0,
+      pebbleEncounterMaxHp: 320,
+      spawnLaneIndex: 0,
+      spawnedByEnemyInstanceId: null
+    }];
+
+    const bottleSnapshot = createSnapshot(state, gameContent);
+    expect(bottleSnapshot.hud.selectedEnemy?.maxHp).toBe(320);
+    expect(bottleSnapshot.hud.selectedEnemy?.moveCooldownMs).toBe(1320);
+
+    state.pebbleBottleTargets = [];
+    const pathSnapshot = createSnapshot(state, gameContent);
+    expect(pathSnapshot.hud.selectedEnemy?.moveCooldownMs).toBe(1780);
   });
 
   it('surfaces defender kill counts in selected-hero HUD data', () => {

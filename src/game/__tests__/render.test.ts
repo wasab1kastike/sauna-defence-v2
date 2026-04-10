@@ -4,6 +4,7 @@ import {
   collectFireballTelegraphTiles,
   getTileViewportPosition,
   pickEnemyAtCanvasPoint,
+  resolveEnemyRenderRadius,
   resolveEndUserHordeSpriteIndexes,
   resolveAnimatedHexPosition,
   resolveBossVisualProfile
@@ -118,6 +119,39 @@ describe('render helpers', () => {
     const point = getTileViewportPosition(snapshot, rect.width, rect.height, state.enemies[0].tile);
 
     expect(pickEnemyAtCanvasPoint(snapshot, rect, point.x, point.y)).toBe(44);
+  });
+
+  it('renders the first Pebble encounter smaller and later encounters larger', () => {
+    const buildSnapshot = (encounterMaxHp: number, encounterCount: number) => {
+      const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+      state.currentWave = createWaveDefinition(5, gameContent);
+      state.pebbleEncounterCount = encounterCount;
+      state.enemies = [{
+        instanceId: 44,
+        archetypeId: 'pebble',
+        tokenStyleId: 0,
+        tile: { q: 0, r: -6 },
+        hp: encounterMaxHp,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999,
+        nextAbilityAtMs: Number.POSITIVE_INFINITY,
+        pathIndex: 0,
+        pebbleEncounterMaxHp: encounterMaxHp,
+        spawnLaneIndex: 0,
+        spawnedByEnemyInstanceId: null
+      }];
+      return createSnapshot(state, gameContent);
+    };
+
+    const firstSnapshot = buildSnapshot(260, 1);
+    const laterSnapshot = buildSnapshot(380, 3);
+    const firstRadius = resolveEnemyRenderRadius(firstSnapshot, firstSnapshot.state.enemies[0], 900, 700);
+    const laterRadius = resolveEnemyRenderRadius(laterSnapshot, laterSnapshot.state.enemies[0], 900, 700);
+
+    expect(firstRadius).toBeGreaterThan(0);
+    expect(laterRadius).toBeGreaterThan(firstRadius);
+    expect(laterRadius / firstRadius).toBeCloseTo(1.125, 5);
   });
 
   it('exposes the full radius-2 fireball telegraph area for rendering', () => {

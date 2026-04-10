@@ -99,8 +99,11 @@ const END_USER_HORDE_SPRITE_URLS = [
 const PEBBLE_HEAD_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_head.png`;
 const PEBBLE_BODY_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_body.png`;
 const BEER_SHOP_SPRITE_URL = `${import.meta.env.BASE_URL}Buildings/olutkauppa.png`;
-const PEBBLE_BASE_RENDER_HP = 320;
-const PEBBLE_RENDER_HP_STEP = 40;
+const PEBBLE_BASE_RENDER_HP = 260;
+const PEBBLE_RENDER_HP_STEP = 60;
+const PEBBLE_BASE_RENDER_SCALE = 0.8;
+const PEBBLE_RENDER_SCALE_STEP = 0.05;
+const PEBBLE_RENDER_SCALE_CAP = 1;
 const DEFENDER_SPRITE_SHEET_URL = `${import.meta.env.BASE_URL}defenders/sauna-party-sheet.png`;
 const DEFENDER_ROLE_PORTRAITS: Record<DefenderTemplateId, number[]> = {
   guardian: [0],
@@ -152,6 +155,15 @@ export function collectPebbleBottleTiles(snapshot: GameSnapshot): AxialCoord[] {
 function pebbleRenderMaxHp(snapshot: GameSnapshot, enemy: EnemyInstance): number {
   return enemy.pebbleEncounterMaxHp
     ?? (PEBBLE_BASE_RENDER_HP + Math.max(0, Math.max(1, snapshot.state.pebbleEncounterCount) - 1) * PEBBLE_RENDER_HP_STEP);
+}
+
+function pebbleEncounterTierFromRenderMaxHp(maxHp: number): number {
+  return Math.max(0, Math.round((maxHp - PEBBLE_BASE_RENDER_HP) / PEBBLE_RENDER_HP_STEP));
+}
+
+function pebbleRenderScale(snapshot: GameSnapshot, enemy: EnemyInstance): number {
+  const tier = pebbleEncounterTierFromRenderMaxHp(pebbleRenderMaxHp(snapshot, enemy));
+  return Math.min(PEBBLE_RENDER_SCALE_CAP, PEBBLE_BASE_RENDER_SCALE + tier * PEBBLE_RENDER_SCALE_STEP);
 }
 
 function buildHexPath(ctx: CanvasRenderingContext2D, center: { x: number; y: number }, size: number) {
@@ -1197,10 +1209,10 @@ export function resolveBossVisualProfile(currentWave: WaveDefinition, archetypeI
   }
 }
 
-function enemyRenderRadius(layout: BoardLayout, enemy: EnemyInstance, bossProfile: BossVisualProfile): number {
+function enemyRenderRadius(layout: BoardLayout, enemy: EnemyInstance, bossProfile: BossVisualProfile, snapshot: GameSnapshot): number {
   return layout.hexSize * (
     bossProfile.bossId === 'pebble'
-      ? 0.92
+      ? pebbleRenderScale(snapshot, enemy)
       : bossProfile.presentation === 'boss_unit'
         ? 0.72
         : bossProfile.presentation === 'boss_horde_member'
@@ -1209,6 +1221,11 @@ function enemyRenderRadius(layout: BoardLayout, enemy: EnemyInstance, bossProfil
             ? 0.54
             : 0.45
   );
+}
+
+export function resolveEnemyRenderRadius(snapshot: GameSnapshot, enemy: EnemyInstance, width: number, height: number): number {
+  const layout = getBoardLayout(width, height, snapshot.config.gridRadius, DEFAULT_BOARD_CAMERA);
+  return enemyRenderRadius(layout, enemy, resolveBossVisualProfile(snapshot.state.currentWave, enemy.archetypeId), snapshot);
 }
 
 function resolveEnemyCanvasUnit(enemy: EnemyInstance, snapshot: GameSnapshot, layout: BoardLayout) {
@@ -1233,7 +1250,7 @@ function resolveEnemyCanvasUnit(enemy: EnemyInstance, snapshot: GameSnapshot, la
       x: animatedUnit.center.x + idleX,
       y: animatedUnit.center.y + idleY
     },
-    radius: enemyRenderRadius(layout, enemy, bossProfile)
+    radius: enemyRenderRadius(layout, enemy, bossProfile, snapshot)
   };
 }
 

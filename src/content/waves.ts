@@ -27,7 +27,7 @@ export const bossRotation: BossRotationEntry[] = [
     bossId: 'pebble',
     bossCategory: 'breach',
     name: 'Pebble',
-    hint: 'Massive beer worm. Chases bottles before the sauna, grinds through blockers, and shows up tankier each time it returns.'
+    hint: 'Small on the first visit, fast on bottles, then bigger, tankier and slower every time it returns.'
   },
   {
     bossId: 'end_user_horde',

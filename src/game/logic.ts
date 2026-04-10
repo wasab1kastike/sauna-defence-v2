@@ -174,8 +174,12 @@ const PEBBLE_DEVOUR_DAMAGE_PER_STACK = 2;
 const PEBBLE_DEVOUR_HEAL_RATIO = 0.35;
 const PEBBLE_BOTTLE_TARGET_COUNT = 3;
 const PEBBLE_BOTTLE_DAMAGE_PER_STACK = 2;
-const PEBBLE_BASE_MAX_HP = 320;
-const PEBBLE_MAX_HP_STEP = 40;
+const PEBBLE_BASE_MAX_HP = 260;
+const PEBBLE_MAX_HP_STEP = 60;
+const PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_MS = 1180;
+const PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_STEP = 140;
+const PEBBLE_PATH_MOVE_COOLDOWN_MS = 1620;
+const PEBBLE_PATH_MOVE_COOLDOWN_STEP = 160;
 const LIVE_SAUNA_RETREAT_SISU_COST = 3;
 const LIVE_SAUNA_RETREAT_COOLDOWN_MS = 12000;
 const BLINK_MOTION_DURATION_MS = 320;
@@ -756,8 +760,43 @@ function hasSubclass(defender: DefenderInstance, subclassId: DefenderSubclassId)
   return defender.subclassIds.includes(subclassId);
 }
 
+function pebbleEncounterTierFromCount(encounterCount: number): number {
+  return Math.max(0, Math.max(1, encounterCount) - 1);
+}
+
+function pebbleEncounterTierFromMaxHp(maxHp: number): number {
+  return Math.max(0, Math.round((maxHp - PEBBLE_BASE_MAX_HP) / PEBBLE_MAX_HP_STEP));
+}
+
+function pebbleEncounterTier(state: RunState): number {
+  return pebbleEncounterTierFromCount(state.pebbleEncounterCount);
+}
+
+function pebbleEncounterTierForEnemy(state: RunState, enemy: EnemyInstance): number {
+  if (enemy.archetypeId !== 'pebble') return 0;
+  return enemy.pebbleEncounterMaxHp != null
+    ? pebbleEncounterTierFromMaxHp(enemy.pebbleEncounterMaxHp)
+    : pebbleEncounterTier(state);
+}
+
 function pebbleEncounterMaxHp(state: RunState): number {
-  return PEBBLE_BASE_MAX_HP + Math.max(0, Math.max(1, state.pebbleEncounterCount) - 1) * PEBBLE_MAX_HP_STEP;
+  return PEBBLE_BASE_MAX_HP + pebbleEncounterTier(state) * PEBBLE_MAX_HP_STEP;
+}
+
+function pebbleBottleHuntMoveCooldownMs(state: RunState, enemy: EnemyInstance): number {
+  return PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_MS
+    + pebbleEncounterTierForEnemy(state, enemy) * PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_STEP;
+}
+
+function pebblePathMoveCooldownMs(state: RunState, enemy: EnemyInstance): number {
+  return PEBBLE_PATH_MOVE_COOLDOWN_MS
+    + pebbleEncounterTierForEnemy(state, enemy) * PEBBLE_PATH_MOVE_COOLDOWN_STEP;
+}
+
+function pebbleEffectiveMoveCooldownMs(state: RunState, enemy: EnemyInstance): number {
+  return nearestPebbleBottleTarget(state, enemy)
+    ? pebbleBottleHuntMoveCooldownMs(state, enemy)
+    : pebblePathMoveCooldownMs(state, enemy);
 }
 
 function enemyMaxHp(state: RunState, enemy: EnemyInstance, content: GameContent): number {
@@ -2893,6 +2932,7 @@ function movePebbleTowardTile(
   targetTile: AxialCoord,
   content: GameContent
 ): boolean {
+  const bottleHuntMoveCooldownMs = pebbleBottleHuntMoveCooldownMs(state, enemy);
   const nextTile = DIRS
     .map((dir) => add(enemy.tile, dir))
     .filter((candidate) => hexDistance(candidate, CENTER) <= currentGridRadius(state, content))
@@ -2903,7 +2943,7 @@ function movePebbleTowardTile(
       || (left.q - right.q))[0] ?? null;
 
   if (!nextTile) {
-    enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+    enemy.moveReadyAtMs = state.timeMs + bottleHuntMoveCooldownMs;
     return false;
   }
 
@@ -2913,14 +2953,14 @@ function movePebbleTowardTile(
   }
 
   if (otherEnemyOccupiesTile(state, nextTile, enemy.instanceId)) {
-    enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+    enemy.moveReadyAtMs = state.timeMs + bottleHuntMoveCooldownMs;
     return false;
   }
 
   moveEnemyToTile(state, enemy, nextTile, 'slither', PEBBLE_MOTION_DURATION_MS);
   syncPebblePathProgress(enemy, pebblePathForCurrentWave(state, content));
   consumePebbleBottleAtCurrentTile(state, enemy);
-  enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+  enemy.moveReadyAtMs = state.timeMs + bottleHuntMoveCooldownMs;
   return true;
 }
 
@@ -2952,6 +2992,12 @@ function enemyMoveCooldownMsForEnemy(state: RunState, enemy: EnemyInstance, cont
 }
 
 function enemyMoveCooldownMsForSpawn(state: RunState, enemyId: EnemyUnitId, content: GameContent): number {
+  if (enemyId === 'pebble') {
+    return pebbleBottleHuntMoveCooldownMs(state, {
+      archetypeId: 'pebble',
+      pebbleEncounterMaxHp: pebbleEncounterMaxHp(state)
+    } as EnemyInstance);
+  }
   const baseCooldownMs = content.enemyArchetypes[enemyId].moveCooldownMs;
   return enemyId === 'thirsty_user' ? hordeMoveCooldownMs(state, baseCooldownMs) : baseCooldownMs;
 }
@@ -3072,7 +3118,7 @@ function stepPebbleGrind(state: RunState, enemy: EnemyInstance, blockedTile: Axi
     });
 
   if (impacted.length === 0) {
-    enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+    enemy.moveReadyAtMs = state.timeMs + pebblePathMoveCooldownMs(state, enemy);
     return;
   }
 
@@ -3088,7 +3134,7 @@ function stepPebbleGrind(state: RunState, enemy: EnemyInstance, blockedTile: Axi
     enemy.hp = Math.min(enemyMaxHp(state, enemy, content), enemy.hp + restored);
   }
 
-  enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+  enemy.moveReadyAtMs = state.timeMs + pebblePathMoveCooldownMs(state, enemy);
 }
 
 function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent): void {
@@ -3097,7 +3143,7 @@ function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent)
 
   if (bottleTarget && sameCoord(bottleTarget.tile, enemy.tile)) {
     consumePebbleBottleAtCurrentTile(state, enemy);
-    enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
+    enemy.moveReadyAtMs = state.timeMs + pebbleBottleHuntMoveCooldownMs(state, enemy);
     return;
   }
 
@@ -3132,12 +3178,12 @@ function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent)
   }
 
   if (otherEnemyOccupiesTile(state, nextTile, enemy.instanceId)) {
-    enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
+    enemy.moveReadyAtMs = state.timeMs + pebblePathMoveCooldownMs(state, enemy);
     return;
   }
 
   moveEnemyToTile(state, enemy, nextTile, 'slither', PEBBLE_MOTION_DURATION_MS);
-  enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
+  enemy.moveReadyAtMs = state.timeMs + pebblePathMoveCooldownMs(state, enemy);
   enemy.pathIndex = nextPathIndex;
   consumePebbleBottleAtCurrentTile(state, enemy);
 }
@@ -5269,7 +5315,9 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         damage: enemyAttackDamage(state, selectedEnemy, content),
         range: archetype.range,
         attackCooldownMs: archetype.attackCooldownMs,
-        moveCooldownMs: archetype.moveCooldownMs,
+        moveCooldownMs: selectedEnemy.archetypeId === 'pebble'
+          ? pebbleEffectiveMoveCooldownMs(state, selectedEnemy)
+          : archetype.moveCooldownMs,
         threat: archetype.threat,
         behaviorLabel: enemyBehaviorLabel(archetype.id, archetype.behavior),
         bossLabel: selectedEnemyBossLabel(state.currentWave, selectedEnemy)
