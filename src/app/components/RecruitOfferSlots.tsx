@@ -26,23 +26,40 @@ export function RecruitOfferSlots({
               </div>
             </div>
             <small>{offer.roleName} - {offer.subclassName}</small>
+            {offer.lore ? <small>{offer.lore}</small> : null}
             <div className="mini-tag-row">
               <span className="mini-tag">Lvl {offer.level}</span>
               <span className="mini-tag">HP {offer.hp}</span>
               <span className="mini-tag">ATK {offer.damage}</span>
+              {offer.heal !== null && offer.heal > 0 ? <span className="mini-tag">Heal {offer.heal}</span> : null}
+              {offer.range !== null ? <span className="mini-tag">Range {offer.range}</span> : null}
             </div>
-            <button
-              className="mini-button"
-              disabled={!offer.canBuy || offer.id === null}
-              onClick={() => {
-                if (offer.id === null) {
-                  return;
-                }
-                dispatch({ type: 'recruitOffer', offerId: offer.id });
-              }}
-            >
-              {offer.price === 0 ? 'Recruit Free' : `Recruit ${offer.price} SISU`}
-            </button>
+            <div className="button-row tight">
+              <button
+                className="mini-button"
+                disabled={!offer.canBuy || offer.id === null}
+                onClick={() => {
+                  if (offer.id === null) {
+                    return;
+                  }
+                  dispatch({ type: 'recruitOffer', offerId: offer.id });
+                }}
+              >
+                {offer.price === 0 ? 'Recruit Free' : `Recruit ${offer.price} SISU`}
+              </button>
+              <button
+                className="secondary-button small-button"
+                disabled={!offer.canHireToSauna || offer.id === null}
+                onClick={() => {
+                  if (offer.id === null) {
+                    return;
+                  }
+                  dispatch({ type: 'recruitOffer', offerId: offer.id, destination: 'sauna' });
+                }}
+              >
+                {offer.hireToSaunaLabel}
+              </button>
+            </div>
           </div>
         ) : (
           <div key={`empty-slot-${slotIndex}`} className="market-card market-card-empty">

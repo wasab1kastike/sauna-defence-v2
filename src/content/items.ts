@@ -145,7 +145,7 @@ export const skillDefinitions: GameContent['skillDefinitions'] = {
       kind: 'skill',
       name: 'Blink Step',
       rarity: 'rare',
-      effectText: 'Below 50% HP, blink back to your home tile. Kills reset this 12s cooldown.',
+      effectText: 'If no target is in range, blink in for one attack. Below 50% HP, retreat home or near a healer. Kills reset this 12s cooldown.',
       flavorText: 'A deeply unwise technique for entering rooms dramatically.',
       artPath: 'loot/blink-step.png'
     },
@@ -172,7 +172,7 @@ export const skillDefinitions: GameContent['skillDefinitions'] = {
       kind: 'skill',
       name: 'Battle Hymn',
       rarity: 'epic',
-      effectText: 'Attacks also pulse a small heal into a nearby ally.',
+      effectText: 'On attack, grant self and adjacent allies +50% attack speed for 3s. 15s cooldown, reduced by 1s per kill.',
       flavorText: 'Half prayer, half terrace chant, all morale.',
       artPath: 'loot/battle-hymn.png'
     }
@@ -183,7 +183,7 @@ export const alcoholDefinitions: GameContent['alcoholDefinitions'] = {
       id: 'light_lager',
       name: 'Light Lager',
       flavorText: 'Crisp, brave, and just dumb enough to feel tactical.',
-      price: 2,
+      price: 8,
       artPath: 'loot/sauna-salt.png',
       positive: { damage: 1 },
       negative: { defense: 1 }
@@ -192,7 +192,7 @@ export const alcoholDefinitions: GameContent['alcoholDefinitions'] = {
       id: 'sauna_stout',
       name: 'Sauna Stout',
       flavorText: 'Heavy enough to count as emotional armor.',
-      price: 3,
+      price: 10,
       artPath: 'loot/coal-heart.png',
       positive: { maxHp: 8 },
       negative: { attackCooldownMs: 60 }
@@ -201,7 +201,7 @@ export const alcoholDefinitions: GameContent['alcoholDefinitions'] = {
       id: 'medic_mule',
       name: 'Medic Mule',
       flavorText: 'A healing classic with terrible depth perception.',
-      price: 3,
+      price: 10,
       artPath: 'loot/cedar-ring.png',
       positive: { heal: 2 },
       negative: { range: 1 }
@@ -210,7 +210,7 @@ export const alcoholDefinitions: GameContent['alcoholDefinitions'] = {
       id: 'sniper_cider',
       name: 'Sniper Cider',
       flavorText: 'Sees farther, stands shakier.',
-      price: 3,
+      price: 10,
       artPath: 'loot/bucket-boots.png',
       positive: { range: 1 },
       negative: { maxHp: 4 }
@@ -219,7 +219,7 @@ export const alcoholDefinitions: GameContent['alcoholDefinitions'] = {
       id: 'boiler_ipa',
       name: 'Boiler IPA',
       flavorText: 'Fast hands, dry throat, zero restraint.',
-      price: 3,
+      price: 11,
       artPath: 'loot/ember-amulet.png',
       positive: { attackCooldownMs: 60 },
       negative: { regenHpPerSecond: 1 }
@@ -228,7 +228,7 @@ export const alcoholDefinitions: GameContent['alcoholDefinitions'] = {
       id: 'birch_porter',
       name: 'Birch Porter',
       flavorText: 'Makes everyone sturdier and significantly less subtle.',
-      price: 2,
+      price: 8,
       artPath: 'loot/towel-wrap.png',
       positive: { defense: 1 },
       negative: { damage: 1 }
@@ -237,7 +237,7 @@ export const alcoholDefinitions: GameContent['alcoholDefinitions'] = {
       id: 'lucky_pils',
       name: 'Lucky Pils',
       flavorText: 'Loot gets luckier, decision-making gets worse.',
-      price: 4,
+      price: 13,
       artPath: 'loot/birch-charm.png',
       positive: { lootChance: 0.08 },
       negative: { rewardSisu: 1 }
@@ -246,7 +246,7 @@ export const alcoholDefinitions: GameContent['alcoholDefinitions'] = {
       id: 'overproof_koskenkorva',
       name: 'Overproof Koskenkorva',
       flavorText: 'Hits like a train, patches like an apology.',
-      price: 4,
+      price: 14,
       artPath: 'loot/iron-whisk.png',
       positive: { damage: 2 },
       negative: { heal: 2 }
@@ -473,39 +473,39 @@ export const metaUpgrades: GameContent['metaUpgrades'] = {
       id: 'roster_capacity',
       name: 'More Weirdos',
       description: 'Increase both roster capacity and how many defenders can fit on the board.',
-      baseCost: 4,
-      costStep: 4,
-      maxLevel: 3
+      baseCost: 6,
+      costStep: 6,
+      maxLevel: 5
     },
     inventory_slots: {
       id: 'inventory_slots',
       name: 'Overflow Stash',
       description: 'Unlock the loot stash, then expand how many overflow drops it can hold.',
-      baseCost: 3,
-      costStep: 3,
-      maxLevel: 3
+      baseCost: 5,
+      costStep: 5,
+      maxLevel: 4
     },
     loot_luck: {
       id: 'loot_luck',
       name: 'Sticky Fingers',
       description: 'Increase overall drop chance.',
-      baseCost: 4,
-      costStep: 4,
-      maxLevel: 3
+      baseCost: 6,
+      costStep: 6,
+      maxLevel: 5
     },
     loot_rarity: {
       id: 'loot_rarity',
       name: 'Boss Sniffer',
       description: 'Shift drops toward better rarities.',
-      baseCost: 5,
-      costStep: 5,
-      maxLevel: 3
+      baseCost: 8,
+      costStep: 7,
+      maxLevel: 5
     },
     loot_auto_assign: {
       id: 'loot_auto_assign',
       name: 'Auto Assign',
       description: 'Unlock a toggle that auto-equips loot into free item and skill slots.',
-      baseCost: 5,
+      baseCost: 8,
       costStep: 0,
       maxLevel: 1
     },
@@ -513,7 +513,7 @@ export const metaUpgrades: GameContent['metaUpgrades'] = {
       id: 'loot_auto_upgrade',
       name: 'Auto Upgrade',
       description: 'Unlock a toggle that keeps rebuilding the best available item and skill loadouts.',
-      baseCost: 8,
+      baseCost: 12,
       costStep: 0,
       maxLevel: 1
     },
@@ -521,15 +521,15 @@ export const metaUpgrades: GameContent['metaUpgrades'] = {
       id: 'item_slots',
       name: 'More Pockets Per Hero',
       description: 'Give every defender one more item slot.',
-      baseCost: 6,
-      costStep: 5,
-      maxLevel: 2
+      baseCost: 9,
+      costStep: 7,
+      maxLevel: 3
     },
     beer_shop_unlock: {
       id: 'beer_shop_unlock',
       name: 'Beer Shop',
       description: 'Unlock the bartender and his risky run-long drinks between runs.',
-      baseCost: 6,
+      baseCost: 9,
       costStep: 0,
       maxLevel: 1
     },
@@ -537,15 +537,15 @@ export const metaUpgrades: GameContent['metaUpgrades'] = {
       id: 'beer_shop_level',
       name: 'Beer Shop Level',
       description: 'Increase bartender stock and unlock more active drink slots.',
-      baseCost: 4,
-      costStep: 3,
-      maxLevel: 3
+      baseCost: 7,
+      costStep: 6,
+      maxLevel: 5
     },
     sauna_auto_deploy: {
       id: 'sauna_auto_deploy',
       name: 'Auto Deploy',
       description: 'When a board hero dies, the sauna hero jumps in automatically.',
-      baseCost: 7,
+      baseCost: 10,
       costStep: 0,
       maxLevel: 1
     },
@@ -553,7 +553,7 @@ export const metaUpgrades: GameContent['metaUpgrades'] = {
       id: 'sauna_slap_swap',
       name: 'Slap Swap',
       description: 'Once per wave, a badly hurt board hero swaps with the sauna hero.',
-      baseCost: 12,
+      baseCost: 16,
       costStep: 0,
       maxLevel: 1
     }

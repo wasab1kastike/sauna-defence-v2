@@ -88,9 +88,19 @@ const ENEMY_PORTRAIT_URLS = [
   `${import.meta.env.BASE_URL}enemies/enemy_steamhog4.png`,
   `${import.meta.env.BASE_URL}enemies/enemy_undead3.png`
 ];
+const END_USER_HORDE_SPRITE_URLS = [
+  `${import.meta.env.BASE_URL}enemies/end_user_horde_01.png`,
+  `${import.meta.env.BASE_URL}enemies/end_user_horde_02.png`,
+  `${import.meta.env.BASE_URL}enemies/end_user_horde_03.png`,
+  `${import.meta.env.BASE_URL}enemies/end_user_horde_04.png`,
+  `${import.meta.env.BASE_URL}enemies/end_user_horde_05.png`,
+  `${import.meta.env.BASE_URL}enemies/end_user_horde_06.png`
+];
 const PEBBLE_HEAD_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_head.png`;
 const PEBBLE_BODY_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_body.png`;
 const BEER_SHOP_SPRITE_URL = `${import.meta.env.BASE_URL}Buildings/olutkauppa.png`;
+const PEBBLE_BASE_RENDER_HP = 320;
+const PEBBLE_RENDER_HP_STEP = 40;
 const DEFENDER_SPRITE_SHEET_URL = `${import.meta.env.BASE_URL}defenders/sauna-party-sheet.png`;
 const DEFENDER_ROLE_PORTRAITS: Record<DefenderTemplateId, number[]> = {
   guardian: [0],
@@ -109,6 +119,7 @@ const ENEMY_ROLE_PORTRAITS: Record<EnemyUnitId, number[]> = {
 
 let defenderPortraits: Array<HTMLImageElement | null | undefined> | undefined;
 let enemyPortraits: Array<HTMLImageElement | null | undefined> | undefined;
+let endUserHordeSprites: Array<HTMLImageElement | null | undefined> | undefined;
 let defenderSpriteSheet: HTMLImageElement | null | undefined;
 const processedPortraits = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 let pebbleHeadSprite: HTMLImageElement | null | undefined;
@@ -127,6 +138,20 @@ export function collectFireballTelegraphTiles(snapshot: GameSnapshot): AxialCoor
     }
   }
   return [...tiles.values()];
+}
+
+export function collectPebbleBottleTiles(snapshot: GameSnapshot): AxialCoord[] {
+  if (!snapshot.state.currentWave.isBoss || snapshot.state.currentWave.bossId !== 'pebble') {
+    return [];
+  }
+  return snapshot.state.pebbleBottleTargets
+    .filter((target) => !target.consumed)
+    .map((target) => ({ ...target.tile }));
+}
+
+function pebbleRenderMaxHp(snapshot: GameSnapshot, enemy: EnemyInstance): number {
+  return enemy.pebbleEncounterMaxHp
+    ?? (PEBBLE_BASE_RENDER_HP + Math.max(0, Math.max(1, snapshot.state.pebbleEncounterCount) - 1) * PEBBLE_RENDER_HP_STEP);
 }
 
 function buildHexPath(ctx: CanvasRenderingContext2D, center: { x: number; y: number }, size: number) {
@@ -569,6 +594,33 @@ function getEnemyPortrait(index: number): HTMLImageElement | null {
     });
   }
   return enemyPortraits[index % enemyPortraits.length] ?? null;
+}
+
+function getEndUserHordeSprite(index: number): HTMLImageElement | null {
+  if (typeof Image === 'undefined') {
+    return null;
+  }
+  if (!endUserHordeSprites) {
+    endUserHordeSprites = END_USER_HORDE_SPRITE_URLS.map((url) => {
+      const image = new Image();
+      image.src = url;
+      return image;
+    });
+  }
+  return endUserHordeSprites[index % END_USER_HORDE_SPRITE_URLS.length] ?? null;
+}
+
+export function resolveEndUserHordeSpriteIndexes(instanceId: number): [number, number, number] {
+  const baseIndex = Math.abs(instanceId) % END_USER_HORDE_SPRITE_URLS.length;
+  return [
+    baseIndex,
+    (baseIndex + 2) % END_USER_HORDE_SPRITE_URLS.length,
+    (baseIndex + 4) % END_USER_HORDE_SPRITE_URLS.length
+  ];
+}
+
+export function canRenderEndUserHordeSprites(instanceId: number): boolean {
+  return resolveEndUserHordeSpriteIndexes(instanceId).every((index) => isDrawableImage(getEndUserHordeSprite(index)));
 }
 
 function getDefenderSpriteSheet(): HTMLImageElement | null {
@@ -1666,29 +1718,25 @@ function drawHordeMemberBoss(
   center: { x: number; y: number },
   radius: number,
   timeMs: number,
-  hordeCount: number
-) {
+  hordeCount: number,
+  instanceId: number
+): boolean {
+  if (!canRenderEndUserHordeSprites(instanceId)) {
+    return false;
+  }
+
+  const [frontIndex, leftIndex, rightIndex] = resolveEndUserHordeSpriteIndexes(instanceId);
+  const frontSprite = getEndUserHordeSprite(frontIndex);
+  const leftSprite = getEndUserHordeSprite(leftIndex);
+  const rightSprite = getEndUserHordeSprite(rightIndex);
   const intensity = clamp(hordeCount / 10, 0.35, 1);
   drawGroundShadow(ctx, { x: center.x, y: center.y + radius * 0.85 }, radius * 0.9, radius * 0.28, 'rgba(11, 8, 6, 0.35)');
   drawGlowDisc(ctx, center, radius * (1.5 + intensity * 0.4), 'rgba(255, 182, 126, 0.28)', 'rgba(183, 48, 24, 0)', 0.76);
-  for (let index = 0; index < 3; index += 1) {
-    const angle = timeMs * 0.002 + index * 2.1;
-    const offset = index === 0 ? 0 : radius * 0.26;
-    const memberCenter = {
-      x: center.x + Math.cos(angle) * offset,
-      y: center.y + Math.sin(angle * 1.3) * offset * 0.55
-    };
-    ctx.save();
-    ctx.translate(memberCenter.x, memberCenter.y);
-    ctx.fillStyle = index === 0 ? '#f1b082' : '#d98063';
-    ctx.beginPath();
-    ctx.arc(0, 0, radius * (index === 0 ? 0.4 : 0.28), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(84, 28, 16, 0.82)';
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-    ctx.restore();
-  }
+  const sway = Math.sin(timeMs * 0.003 + instanceId) * radius * 0.05;
+  drawBaselineSprite(ctx, leftSprite!, { x: center.x - radius * 0.34 + sway * 0.45, y: center.y + radius * 0.04 }, radius * 1.7, radius * 2.35, center.y + radius * 0.78, true);
+  drawBaselineSprite(ctx, rightSprite!, { x: center.x + radius * 0.32 - sway * 0.4, y: center.y + radius * 0.08 }, radius * 1.62, radius * 2.25, center.y + radius * 0.8, true);
+  drawBaselineSprite(ctx, frontSprite!, { x: center.x, y: center.y - radius * 0.02 + sway }, radius * 2.05, radius * 2.8, center.y + radius * 0.82, true);
+  return true;
 }
 
 function drawEnemyBossNameplate(
@@ -2104,6 +2152,57 @@ function drawWorldLandmarks(ctx: CanvasRenderingContext2D, snapshot: GameSnapsho
   }
 }
 
+function drawPebbleBottleTargets(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, layout: BoardLayout) {
+  for (const tile of collectPebbleBottleTiles(snapshot)) {
+    const center = axialToPixel(tile, layout);
+    const bob = Math.sin(snapshot.state.timeMs * 0.006 + tile.q * 0.7 + tile.r * 0.4) * layout.hexSize * 0.06;
+    const bottleHeight = layout.hexSize * 0.74;
+    const bottleWidth = layout.hexSize * 0.28;
+    const neckWidth = bottleWidth * 0.48;
+    const neckHeight = bottleHeight * 0.26;
+    const capHeight = bottleHeight * 0.1;
+
+    ctx.save();
+    ctx.translate(center.x, center.y + bob);
+
+    const glow = ctx.createRadialGradient(0, layout.hexSize * 0.1, layout.hexSize * 0.08, 0, layout.hexSize * 0.1, layout.hexSize * 0.72);
+    glow.addColorStop(0, 'rgba(255, 214, 134, 0.42)');
+    glow.addColorStop(1, 'rgba(255, 214, 134, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, layout.hexSize * 0.1, layout.hexSize * 0.72, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(26, 14, 8, 0.44)';
+    ctx.beginPath();
+    ctx.ellipse(0, layout.hexSize * 0.42, bottleWidth * 1.5, bottleWidth * 0.56, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#7a4320';
+    ctx.strokeStyle = '#f8cf73';
+    ctx.lineWidth = Math.max(1.4, layout.hexSize * 0.05);
+    ctx.beginPath();
+    ctx.moveTo(-bottleWidth, bottleHeight * 0.2);
+    ctx.lineTo(-neckWidth, -neckHeight);
+    ctx.lineTo(-neckWidth, -neckHeight - capHeight);
+    ctx.lineTo(neckWidth, -neckHeight - capHeight);
+    ctx.lineTo(neckWidth, -neckHeight);
+    ctx.lineTo(bottleWidth, bottleHeight * 0.2);
+    ctx.quadraticCurveTo(bottleWidth * 0.82, bottleHeight * 0.55, 0, bottleHeight * 0.6);
+    ctx.quadraticCurveTo(-bottleWidth * 0.82, bottleHeight * 0.55, -bottleWidth, bottleHeight * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(255, 230, 183, 0.72)';
+    ctx.beginPath();
+    ctx.ellipse(-bottleWidth * 0.26, bottleHeight * 0.06, bottleWidth * 0.22, bottleHeight * 0.26, -0.16, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
 export function paintSnapshot(
   ctx: CanvasRenderingContext2D,
   snapshot: GameSnapshot,
@@ -2186,6 +2285,7 @@ export function paintSnapshot(
 
   drawFireballTelegraphs(ctx, snapshot, layout);
   drawWorldLandmarks(ctx, snapshot, layout);
+  drawPebbleBottleTargets(ctx, snapshot, layout);
 
   const saunaCenter = axialToPixel({ q: 0, r: 0 }, layout);
   const saunaGlow = ctx.createRadialGradient(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.1, saunaCenter.x, saunaCenter.y, layout.hexSize * 1.4);
@@ -2303,7 +2403,15 @@ export function paintSnapshot(
       }
       drawEnemyBossNameplate(ctx, center, bossProfile.label ?? archetype.name, radius, bossProfile);
     } else if (bossProfile.presentation === 'boss_horde_member') {
-      drawHordeMemberBoss(ctx, center, radius, snapshot.state.timeMs, hordeCount);
+      const renderedHordeSprites = drawHordeMemberBoss(ctx, center, radius, snapshot.state.timeMs, hordeCount, enemy.instanceId);
+      if (!renderedHordeSprites) {
+        const hasPortrait = drawEnemyPortrait(ctx, center, radius, enemy.archetypeId, enemy.tokenStyleId);
+        if (!hasPortrait) {
+          drawTokenBase(ctx, center, radius, style, archetype.fill);
+          drawGlyph(ctx, center, radius, style.glyph, style.accent);
+          drawTokenLabel(ctx, center, radius, archetype.label, '#fff0e8');
+        }
+      }
     } else {
       const hasPortrait = drawEnemyPortrait(ctx, center, radius, enemy.archetypeId, enemy.tokenStyleId);
       if (!hasPortrait) {
@@ -2331,7 +2439,7 @@ export function paintSnapshot(
       ctx,
       center,
       layout.hexSize * (bossProfile.presentation === 'boss_unit' ? 1.56 : bossProfile.presentation === 'boss_horde_member' ? 1.2 : 1.04),
-      enemy.hp / archetype.maxHp,
+      enemy.hp / Math.max(1, enemy.archetypeId === 'pebble' ? pebbleRenderMaxHp(snapshot, enemy) : archetype.maxHp),
       bossProfile.presentation === 'boss_unit' ? '#ff9f85' : bossProfile.presentation === 'boss_horde_member' ? '#ffb189' : '#ff8772',
       bossProfile.presentation === 'boss_unit'
         ? {

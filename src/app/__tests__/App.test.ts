@@ -137,6 +137,15 @@ describe('App popup helpers', () => {
     expect(buttons.map((button) => button.id)).toEqual(['modifiers', 'loot']);
   });
 
+  it('normalizes a stale recruit popup panel back to dock-only HUD state', () => {
+    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+    state.activePanel = 'recruit';
+
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(snapshot.hud.activePanel).toBeNull();
+  });
+
   it('blocks gameplay hotkeys during intermission', () => {
     const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
     state.phase = 'lost';

@@ -1,33 +1,31 @@
 {
-  "version": "0.1.0",
-  "date": "2026-04-04",
-  "intro": "Sauna paasi patch notesit pienelle remonttikurssille, joten nyt kuulumiset pysyvat laatikoissaan eivatka karkaa loylykauhan mukana.",
+  "version": "0.1.1",
+  "date": "2026-04-09",
+  "intro": "Pebble loysi pullokorin ja recruit market oppi pysymaan omassa dockissaan. Taman paivityksen jalkeen uudet bossi- ja UI-muutokset ovat valmiit Pages-deployta varten.",
   "sections": [
     {
       "id": "new-features",
       "title": "Uutta",
       "items": [
-        "Patch notes loytyvat nyt suoraan pelin sisalta, joten tuorein saunajuoru ei jaa piiloon GitHubiin.",
-        "Ruudun kulmasta loytyy pieni build-merkinta, jos haluat tarkistaa milla versiolla kiuasta loylytetaan.",
-        "Savejen taustasiivous auttaa vanhoja runeja seuraamaan mukana ilman kasipelilla tehtavaa taikuutta."
+        "Pebble boss waves now spawn three beer bottles on the map. Pebble hunts them before the sauna, and each bottle it eats buffs later Pebble encounters in the same run.",
+        "End-User Horde uses its custom horde sprite pack when the branch is deployed to Pages."
       ]
     },
     {
       "id": "general-improvements",
       "title": "Parannuksia",
       "items": [
-        "Patch notes puhuvat nyt enemman pelaajaa kuin kehittajaa, joten paivitys on helpompi lukaista yhdella vilkaisulla.",
-        "Patch notes -ikkuna skaalautuu nyt siistimmin eri naytoille, eika teksti lahde omille teilleen kesken saunavuoron.",
-        "Version tiedot pysyvat nyt UI:ssa johdonmukaisemmin, jotta vanha ja uusi buildi eivat vaihda takkia kesken illan."
+        "Pebble now starts at 320 HP and comes back with +40 HP on each later Pebble encounter in the same run.",
+        "Boss HUD now surfaces Pebble bottle progress with live `Bottles` and `Bottle Stacks` tags during Pebble waves.",
+        "The latest player-facing patch notes now describe the boss and recruit-market changes for version 0.1.1."
       ]
     },
     {
       "id": "general-fixes",
       "title": "Korjauksia",
       "items": [
-        "Patch notes odottaa nyt kiltisti muiden overlayiden vuoroa, joten ruudulle ei kasaannu koko pukuhuone yhdella kertaa.",
-        "Ikkunan voi sulkea Escilla tai taustaa klikkaamalla, koska joka tilanteeseen ei tarvita kolmea lisaklikkausta ja pienta draamaa.",
-        "Pitkat rivit kietaistaan nyt siististi korttien sisaan, joten teksti ei karkaa laatikoista omalle avantouinnilleen."
+        "Recruitment market actions are now fully dock-native again. Refresh, per-offer reroll, level up, and buys clear any stale legacy recruit popup state instead of reopening the old right-side market panel.",
+        "Pebble bottle targets now render directly on the board, and selected Pebble stats reflect the live boss damage/max HP values instead of stale archetype-only numbers."
       ]
     }
   ]

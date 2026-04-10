@@ -12,7 +12,6 @@ import { GuideOverlay } from './components/GuideOverlay';
 import { HudUtilityRail } from './components/HudUtilityRail';
 import { IntroOverlay } from './components/IntroOverlay';
 import { PatchNotesOverlay } from './components/PatchNotesOverlay';
-import { RecruitOfferSlots } from './components/RecruitOfferSlots';
 import { SelectionCard } from './components/SelectionCard';
 import {
   assetUrl,
@@ -467,23 +466,20 @@ export function App() {
       return null;
     }
     return (
-        <SelectionCard
-          selectedDefender={selectedDefender}
-          selectedSauna={selectedSauna}
-          selectedEnemy={selectedEnemy}
-          canSendSelectedDefenderToSauna={Boolean(
-            selectedDefender
-            && selectedDefender.location === 'board'
-            && snapshot.state.phase === 'prep'
-          )}
-          sendSelectedDefenderToSaunaLabel={snapshot.state.saunaDefenderId ? 'Replace Sauna Hero' : 'Send To Sauna'}
-          dispatch={dispatch}
-        />
-      );
+      <SelectionCard
+        selectedDefender={selectedDefender}
+        selectedSauna={selectedSauna}
+        selectedEnemy={selectedEnemy}
+        dispatch={dispatch}
+      />
+    );
   };
 
   const renderPanelPopup = () => {
     if (!snapshot || !activePanel) {
+      return null;
+    }
+    if (activePanel === 'recruit') {
       return null;
     }
 
@@ -621,50 +617,6 @@ export function App() {
           {renderSelectedLootDetail()}
         </div>
       );
-    } else if (activePanel === 'recruit') {
-      title = 'Recruitment Market';
-      subtitle = snapshot.hud.recruitmentStatusText;
-      content = (
-        <div className="popup-scroll-stack">
-          <section className="popup-section">
-            <div className="mini-tag-row">
-              <span className="mini-tag">Board {snapshot.hud.boardCount}/{snapshot.hud.boardCap}</span>
-              <span className="mini-tag">Sauna {snapshot.hud.saunaOccupancyLabel}</span>
-              <span className="mini-tag">SISU {snapshot.hud.sisu}</span>
-              <span className="mini-tag">Recruit Lvl +{snapshot.hud.recruitLevelBonus}</span>
-            </div>
-          </section>
-          <section className="popup-section">
-            <div className="section-head">
-              <strong>Current Offers</strong>
-              <span>{snapshot.hud.freeRecruitSlots}/4</span>
-            </div>
-            <div className="market-layout market-layout-popup">
-              <RecruitOfferSlots
-                offers={snapshot.hud.recruitOffers}
-                dispatch={dispatch}
-                className="market-row market-row-popup"
-              />
-              <div className="market-action-stack market-action-stack-popup">
-                <button
-                  className="mini-button"
-                  disabled={!snapshot.hud.canRollRecruitOffers}
-                  onClick={() => dispatch({ type: 'rerollRecruitOffers' })}
-                >
-                  Refresh 4 Slots ({snapshot.hud.recruitRollCost} SISU)
-                </button>
-                <button
-                  className="secondary-button"
-                  disabled={!snapshot.hud.canLevelUpRecruitment}
-                  onClick={() => dispatch({ type: 'levelUpRecruitment' })}
-                >
-                  Recruit Level Up ({snapshot.hud.recruitLevelUpCost} SISU)
-                </button>
-              </div>
-            </div>
-          </section>
-        </div>
-      );
     } else if (activePanel === 'beer_shop') {
       title = 'Beer Shop';
       subtitle = activeLandmark?.statusText ?? 'Risky run-long booze with visible regret.';
@@ -740,7 +692,9 @@ export function App() {
       );
     } else if (activePanel === 'metashop') {
       title = 'Metashop';
-      subtitle = activeLandmark?.statusText ?? 'Permanent between-run upgrades.';
+      subtitle = activeLandmark?.statusText ?? 'Endless between-run progression with softcaps instead of hard endings.';
+      const repeatableUpgrades = snapshot.hud.metaUpgrades.filter((upgrade) => upgrade.repeatable);
+      const utilityUpgrades = snapshot.hud.metaUpgrades.filter((upgrade) => !upgrade.repeatable);
       content = (
         <div className="popup-scroll-stack">
           {!snapshot.hud.metaShopUnlocked ? (
@@ -759,30 +713,71 @@ export function App() {
               </div>
             </section>
           ) : (
-            <section className="popup-section">
-              <div className="mini-tag-row">
-                <span className="mini-tag">Banked Steam {snapshot.hud.bankedSteam}</span>
-                <span className="mini-tag">{snapshot.hud.showIntermission ? 'Purchases enabled' : 'Between runs only'}</span>
-              </div>
-              <div className="popup-list">
-                {snapshot.hud.metaUpgrades.map((upgrade) => (
-                  <div key={upgrade.id} className="popup-card">
-                    <div className="unit-row-top">
-                      <strong>{upgrade.name}</strong>
-                      <span className="mini-tag">Lvl {upgrade.level}</span>
+            <>
+              <section className="popup-section">
+                <div className="mini-tag-row">
+                  <span className="mini-tag">Banked Steam {snapshot.hud.bankedSteam}</span>
+                  <span className="mini-tag">{snapshot.hud.showIntermission ? 'Purchases enabled' : 'Between runs only'}</span>
+                  <span className="mini-tag">Repeatables keep scaling after softcap</span>
+                </div>
+                <p className="panel-copy small-copy">
+                  Repeatables never truly max out. Old caps now act as softcaps: costs keep climbing and gains arrive more slowly,
+                  while one-shot utility unlocks still finish normally.
+                </p>
+              </section>
+              <section className="popup-section">
+                <div className="section-head">
+                  <strong>Repeatable</strong>
+                  <span>{repeatableUpgrades.length}</span>
+                </div>
+                <div className="popup-list">
+                  {repeatableUpgrades.map((upgrade) => (
+                    <div key={upgrade.id} className="popup-card">
+                      <div className="unit-row-top">
+                        <strong>{upgrade.name}</strong>
+                        <div className="mini-tag-row">
+                          <span className="mini-tag">Lvl {upgrade.level}</span>
+                          {upgrade.softcapReached ? <span className="mini-tag">Softcap reached</span> : null}
+                        </div>
+                      </div>
+                      <small>{upgrade.description}</small>
+                      {upgrade.nextEffectText ? <small>{upgrade.nextEffectText}</small> : null}
+                      <button
+                        className="mini-button"
+                        disabled={!snapshot.hud.showIntermission || !upgrade.affordable}
+                        onClick={() => dispatch({ type: 'buyMetaUpgrade', upgradeId: upgrade.id })}
+                      >
+                        {`Buy${upgrade.cost !== null ? ` (${upgrade.cost} Steam)` : ''}`}
+                      </button>
                     </div>
-                    <small>{upgrade.description}</small>
-                    <button
-                      className="mini-button"
-                      disabled={!snapshot.hud.showIntermission || !upgrade.affordable || upgrade.maxed}
-                      onClick={() => dispatch({ type: 'buyMetaUpgrade', upgradeId: upgrade.id })}
-                    >
-                      {upgrade.maxed ? 'Maxed' : `Buy${upgrade.cost !== null ? ` (${upgrade.cost} Steam)` : ''}`}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </section>
+                  ))}
+                </div>
+              </section>
+              <section className="popup-section">
+                <div className="section-head">
+                  <strong>Utility Unlocks</strong>
+                  <span>{utilityUpgrades.length}</span>
+                </div>
+                <div className="popup-list">
+                  {utilityUpgrades.map((upgrade) => (
+                    <div key={upgrade.id} className="popup-card">
+                      <div className="unit-row-top">
+                        <strong>{upgrade.name}</strong>
+                        <span className="mini-tag">Lvl {upgrade.level}</span>
+                      </div>
+                      <small>{upgrade.description}</small>
+                      <button
+                        className="mini-button"
+                        disabled={!snapshot.hud.showIntermission || !upgrade.affordable || upgrade.maxed}
+                        onClick={() => dispatch({ type: 'buyMetaUpgrade', upgradeId: upgrade.id })}
+                      >
+                        {upgrade.maxed ? 'Maxed' : `Buy${upgrade.cost !== null ? ` (${upgrade.cost} Steam)` : ''}`}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </>
           )}
         </div>
       );
@@ -883,8 +878,12 @@ export function App() {
                 <p className="panel-copy small-copy hint-copy">{hintBody}</p>
                 <div className="mini-tag-row">
                   <span className="mini-tag">{snapshot.hud.nextWaveThreat}</span>
+                  {snapshot.hud.bossMomentumLabel ? <span className="mini-tag">Horde {snapshot.hud.bossMomentumLabel}</span> : null}
+                  {snapshot.hud.bossMomentumTierLabel ? <span className="mini-tag">{snapshot.hud.bossMomentumTierLabel}</span> : null}
+                  {snapshot.hud.pebbleBottlesRemainingLabel ? <span className="mini-tag">Bottles {snapshot.hud.pebbleBottlesRemainingLabel}</span> : null}
+                  {snapshot.hud.pebbleBottleStacksLabel ? <span className="mini-tag">Bottle Stacks {snapshot.hud.pebbleBottleStacksLabel}</span> : null}
                   <span className="mini-tag">Sauna {snapshot.hud.saunaOccupancyLabel}</span>
-                  <span className="mini-tag">Recruit Slots {snapshot.hud.freeRecruitSlots}</span>
+                <span className="mini-tag">Recruit Slots {snapshot.hud.freeRecruitSlots}</span>
                 </div>
               </div>
               <div className="hud-main-actions hud-action-buttons">

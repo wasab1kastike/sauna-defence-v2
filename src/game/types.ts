@@ -85,6 +85,7 @@ export type SkillId =
   | 'battle_hymn';
 export type LootKind = 'item' | 'skill';
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
+export type RecruitDestination = 'reserve' | 'sauna';
 export type AlcoholId =
   | 'light_lager'
   | 'sauna_stout'
@@ -369,8 +370,16 @@ export interface EnemyInstance {
   moveReadyAtMs: number;
   nextAbilityAtMs?: number;
   pathIndex?: number | null;
+  pebbleDevourStacks?: number;
+  pebbleEncounterMaxHp?: number;
   spawnLaneIndex?: number;
   spawnedByEnemyInstanceId?: number | null;
+}
+
+export interface PebbleBottleTarget {
+  id: number;
+  tile: AxialCoord;
+  consumed: boolean;
 }
 
 export interface WaveSpawn {
@@ -492,7 +501,6 @@ export interface RunState {
   phase: Phase;
   overlayMode: OverlayMode;
   inventoryOpen: boolean;
-  recruitmentOpen: boolean;
   activePanel: HudPanelId | null;
   selectedWorldLandmarkId: WorldLandmarkId | null;
   introOpen: boolean;
@@ -543,6 +551,14 @@ export interface RunState {
   saunaHp: number;
   waveSwapUsed: boolean;
   nextRegenTickAtMs: number;
+  saunaRetreatReadyAtMs: number;
+  pebbleBottleTargets: PebbleBottleTarget[];
+  pebbleBottleStacks: number;
+  pebbleEncounterCount: number;
+  nextPebbleBottleTargetId: number;
+  endUserHordeMomentum: number;
+  endUserHordeTier: number;
+  endUserHordeNextSurgeAtMs: number;
   autoAssignEnabled: boolean;
   autoUpgradeEnabled: boolean;
   autoplayEnabled: boolean;
@@ -649,6 +665,8 @@ export interface HudSelectedDefender {
   items: HudEquippedItemEntry[];
   skills: HudEquippedSkillEntry[];
   location: DefenderLocation;
+  canSaunaCommand: boolean;
+  saunaCommandLabel: string | null;
 }
 
 export interface HudSelectedSubclassEntry {
@@ -702,6 +720,9 @@ export interface HudMetaUpgradeEntry {
   cost: number | null;
   affordable: boolean;
   maxed: boolean;
+  repeatable: boolean;
+  softcapReached: boolean;
+  nextEffectText: string | null;
 }
 
 export interface HudBeerShopOfferEntry {
@@ -744,13 +765,19 @@ export interface HudRecruitOfferEntry {
   title: string | null;
   roleName: string | null;
   subclassName: string | null;
+  roleSummary: string | null;
+  lore: string | null;
   level: number | null;
   hp: number | null;
   damage: number | null;
+  heal: number | null;
+  range: number | null;
   empty: boolean;
   isFree: boolean;
   canBuy: boolean;
   hotkeyKey: string | null;
+  canHireToSauna: boolean;
+  hireToSaunaLabel: string;
 }
 
 export interface HudRecruitLevelOddsEntry {
@@ -826,6 +853,10 @@ export interface HudViewModel {
   isBossWave: boolean;
   bossName: string | null;
   bossHint: string | null;
+  bossMomentumLabel: string | null;
+  bossMomentumTierLabel: string | null;
+  pebbleBottleStacksLabel: string | null;
+  pebbleBottlesRemainingLabel: string | null;
   nextWaveThreat: string;
   nextWavePattern: string;
   pressureSignals: string[];
@@ -946,7 +977,7 @@ export type InputAction =
   | { type: 'rerollRecruitOffer'; offerId: number }
   | { type: 'levelUpRecruitment' }
   | { type: 'rollRecruitOffers' }
-  | { type: 'recruitOffer'; offerId: number }
+  | { type: 'recruitOffer'; offerId: number; destination?: RecruitDestination }
   | { type: 'clearRecruitOffers' }
   | { type: 'equipInventoryDrop'; dropId: number; defenderId: string }
   | { type: 'autoAssignInventoryDrop'; dropId: number }

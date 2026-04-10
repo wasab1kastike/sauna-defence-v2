@@ -30,6 +30,8 @@ import type {
   MetaProgress,
   MetaUpgradeId,
   PendingFireball,
+  PebbleBottleTarget,
+  RecruitDestination,
   Rarity,
   RecruitOffer,
   RunPreferences,
@@ -110,6 +112,14 @@ const META_IDS: MetaUpgradeId[] = [
   'sauna_auto_deploy',
   'sauna_slap_swap'
 ];
+const REPEATABLE_META_UPGRADE_IDS: MetaUpgradeId[] = [
+  'roster_capacity',
+  'inventory_slots',
+  'loot_luck',
+  'loot_rarity',
+  'item_slots',
+  'beer_shop_level'
+];
 const CENTER: AxialCoord = { q: 0, r: 0 };
 const WORLD_LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'beer_shop'];
 const RECRUIT_MARKET_SLOT_COUNT = 4;
@@ -147,8 +157,27 @@ const RARITY_WEIGHT_BY_WAVE: Record<number, Record<Rarity, number>> = {
 };
 const ELECTRIC_BATHER_ABILITY_COOLDOWN_MS = 5200;
 const ESCALATION_MANAGER_ABILITY_COOLDOWN_MS = 6000;
+const END_USER_HORDE_START_MOMENTUM = 3;
+const END_USER_HORDE_MAX_MOMENTUM = 12;
+const END_USER_HORDE_TIER_ONE_MIN = 4;
+const END_USER_HORDE_TIER_TWO_MIN = 8;
+const END_USER_HORDE_TIER_ONE_MOVE_BONUS_MS = 140;
+const END_USER_HORDE_TIER_TWO_MOVE_BONUS_MS = 220;
+const END_USER_HORDE_TIER_TWO_SWARM_CAP = 7;
+const END_USER_HORDE_BASE_SWARM_CAP = 5;
+const END_USER_HORDE_SURGE_COOLDOWN_MS = 4200;
+const END_USER_HORDE_SURGE_MOVE_READY_MS = 120;
 const STEP_MOTION_DURATION_MS = 240;
 const PEBBLE_MOTION_DURATION_MS = 520;
+const PEBBLE_DEVOUR_STACK_CAP = 6;
+const PEBBLE_DEVOUR_DAMAGE_PER_STACK = 2;
+const PEBBLE_DEVOUR_HEAL_RATIO = 0.35;
+const PEBBLE_BOTTLE_TARGET_COUNT = 3;
+const PEBBLE_BOTTLE_DAMAGE_PER_STACK = 2;
+const PEBBLE_BASE_MAX_HP = 320;
+const PEBBLE_MAX_HP_STEP = 40;
+const LIVE_SAUNA_RETREAT_SISU_COST = 3;
+const LIVE_SAUNA_RETREAT_COOLDOWN_MS = 12000;
 const BLINK_MOTION_DURATION_MS = 320;
 const SPAWN_SETTLE_DURATION_MS = 260;
 const PEBBLE_PATH_BASE: AxialCoord[] = [
@@ -348,6 +377,44 @@ function bossHint(bossId: BossId | null): string | null {
   return bossRotation.find((entry) => entry.bossId === bossId)?.hint ?? null;
 }
 
+function isPebbleBossWave(wave: WaveDefinition): boolean {
+  return wave.isBoss && wave.bossId === 'pebble';
+}
+
+function isEndUserHordeBossWave(wave: WaveDefinition): boolean {
+  return wave.isBoss && wave.bossId === 'end_user_horde';
+}
+
+function endUserHordeTierForMomentum(momentum: number): number {
+  if (momentum >= END_USER_HORDE_TIER_TWO_MIN) return 2;
+  if (momentum >= END_USER_HORDE_TIER_ONE_MIN) return 1;
+  return 0;
+}
+
+function endUserHordeTierLabel(tier: number): string {
+  switch (tier) {
+    case 2:
+      return 'Stampeding';
+    case 1:
+      return 'Pressuring';
+    case 0:
+    default:
+      return 'Building';
+  }
+}
+
+function setEndUserHordeMomentum(state: RunState, momentum: number): void {
+  const clamped = Math.max(0, Math.min(END_USER_HORDE_MAX_MOMENTUM, momentum));
+  state.endUserHordeMomentum = clamped;
+  state.endUserHordeTier = endUserHordeTierForMomentum(clamped);
+}
+
+function resetEndUserHordeState(state: RunState): void {
+  state.endUserHordeMomentum = 0;
+  state.endUserHordeTier = 0;
+  state.endUserHordeNextSurgeAtMs = 0;
+}
+
 function isWaveBossEnemy(currentWave: WaveDefinition, enemy: EnemyInstance): boolean {
   if (!currentWave.isBoss || !currentWave.bossId) return false;
   switch (currentWave.bossId) {
@@ -531,11 +598,11 @@ function weightedPick<T>(state: RunState, values: T[], weight: (value: T) => num
 }
 
 function rosterCap(state: RunState, content: GameContent): number {
-  return content.config.baseRosterCap + state.meta.upgrades.roster_capacity;
+  return content.config.baseRosterCap + rosterCapacityBonus(state.meta.upgrades.roster_capacity);
 }
 
 function boardCap(state: RunState, content: GameContent): number {
-  return content.config.boardCap + state.meta.upgrades.roster_capacity;
+  return content.config.boardCap + rosterCapacityBonus(state.meta.upgrades.roster_capacity);
 }
 
 function inventoryUnlocked(state: RunState): boolean {
@@ -544,7 +611,7 @@ function inventoryUnlocked(state: RunState): boolean {
 
 function inventoryCap(state: RunState, content: GameContent): number {
   if (!inventoryUnlocked(state)) return 0;
-  return content.config.baseInventoryCap + Math.max(0, state.meta.upgrades.inventory_slots - 1) * 2;
+  return content.config.baseInventoryCap + inventoryCapacityBonus(state.meta.upgrades.inventory_slots);
 }
 
 function headerItemCap(content: GameContent): number {
@@ -556,7 +623,7 @@ function headerSkillCap(content: GameContent): number {
 }
 
 function itemSlotCap(state: RunState, content: GameContent): number {
-  return content.config.baseItemSlots + state.meta.upgrades.item_slots;
+  return content.config.baseItemSlots + itemSlotBonus(state.meta.upgrades.item_slots);
 }
 
 function beerShopUnlocked(state: RunState): boolean {
@@ -568,32 +635,11 @@ function beerShopTier(state: RunState): number {
 }
 
 function beerOfferCountForTier(tier: number): number {
-  switch (tier) {
-    case 4:
-      return 6;
-    case 3:
-      return 5;
-    case 2:
-      return 4;
-    case 1:
-      return 3;
-    default:
-      return 0;
-  }
+  return tier <= 0 ? 0 : beerShopOfferCountForLevel(Math.max(0, tier - 1));
 }
 
 function beerActiveSlotCapForTier(tier: number): number {
-  switch (tier) {
-    case 4:
-      return 3;
-    case 3:
-    case 2:
-      return 2;
-    case 1:
-      return 1;
-    default:
-      return 0;
-  }
+  return tier <= 0 ? 0 : beerActiveSlotCapForLevel(Math.max(0, tier - 1));
 }
 
 function skillSlotCap(): number {
@@ -624,17 +670,71 @@ function hasLootAutoUpgrade(state: RunState): boolean {
   return state.meta.upgrades.loot_auto_upgrade > 0;
 }
 
+function isRepeatableMetaUpgrade(upgradeId: MetaUpgradeId): boolean {
+  return REPEATABLE_META_UPGRADE_IDS.includes(upgradeId);
+}
+
+function metaSoftcapLevel(upgradeId: MetaUpgradeId, content: GameContent): number {
+  return content.metaUpgrades[upgradeId].maxLevel;
+}
+
+function rosterCapacityBonus(level: number): number {
+  const softcap = 5;
+  return Math.min(level, softcap) + Math.floor(Math.max(0, level - softcap) / 2);
+}
+
+function inventoryCapacityBonus(level: number): number {
+  if (level <= 0) return 0;
+  return Math.min(Math.max(0, level - 1), 3) * 2 + Math.max(0, level - 4);
+}
+
+function lootLuckBonus(level: number): number {
+  return Math.min(level, 5) * 0.06 + Math.max(0, level - 5) * 0.03;
+}
+
+function lootRarityScore(level: number): number {
+  return Math.min(level, 5) + Math.floor(Math.max(0, level - 5) / 2);
+}
+
+function lootRarityWeights(level: number): Record<Rarity, number> {
+  const score = lootRarityScore(level);
+  return {
+    common: Math.max(16, 70 - score * 7),
+    rare: Math.max(18, 22 + score * 4),
+    epic: Math.max(4, score >= 1 ? 4 + score * 2 : 3),
+    legendary: Math.max(0, score >= 4 ? (score - 3) * 2 : 0)
+  };
+}
+
+function itemSlotBonus(level: number): number {
+  return Math.min(level, 3) + Math.floor(Math.max(0, level - 3) / 2);
+}
+
+function beerShopOfferCountForLevel(level: number): number {
+  return 3 + Math.min(level, 3) + Math.floor(Math.max(0, level - 3) / 2);
+}
+
+function beerActiveSlotCapForLevel(level: number): number {
+  if (level <= 0) return 1;
+  if (level <= 2) return 2;
+  return 3 + Math.floor(Math.max(0, level - 3) / 3);
+}
+
 function clearActiveHudPanel(state: RunState): void {
   state.activePanel = null;
   state.inventoryOpen = false;
-  state.recruitmentOpen = false;
   state.selectedWorldLandmarkId = null;
+}
+
+function clearLegacyRecruitPanelState(state: RunState): void {
+  if (state.activePanel === 'recruit') {
+    clearActiveHudPanel(state);
+  }
 }
 
 function setActiveHudPanel(state: RunState, panel: HudPanelId | null, landmarkId: WorldLandmarkId | null = null): void {
   state.activePanel = panel;
   state.inventoryOpen = panel === 'loot';
-  state.recruitmentOpen = panel === 'recruit';
   state.selectedWorldLandmarkId = landmarkId;
 }
 
@@ -656,7 +756,14 @@ function hasSubclass(defender: DefenderInstance, subclassId: DefenderSubclassId)
   return defender.subclassIds.includes(subclassId);
 }
 
-function enemyMaxHp(enemy: EnemyInstance, content: GameContent): number {
+function pebbleEncounterMaxHp(state: RunState): number {
+  return PEBBLE_BASE_MAX_HP + Math.max(0, Math.max(1, state.pebbleEncounterCount) - 1) * PEBBLE_MAX_HP_STEP;
+}
+
+function enemyMaxHp(state: RunState, enemy: EnemyInstance, content: GameContent): number {
+  if (enemy.archetypeId === 'pebble') {
+    return enemy.pebbleEncounterMaxHp ?? pebbleEncounterMaxHp(state);
+  }
   return content.enemyArchetypes[enemy.archetypeId].maxHp;
 }
 
@@ -1380,6 +1487,14 @@ function occupied(state: RunState, tile: AxialCoord): boolean {
     state.enemies.some((enemy) => sameCoord(enemy.tile, tile));
 }
 
+function boardDefenderAtTile(state: RunState, tile: AxialCoord): DefenderInstance | null {
+  return boardDefenders(state).find((defender) => defender.tile && sameCoord(defender.tile, tile)) ?? null;
+}
+
+function otherEnemyOccupiesTile(state: RunState, tile: AxialCoord, enemyInstanceId: number): boolean {
+  return state.enemies.some((enemy) => enemy.instanceId !== enemyInstanceId && sameCoord(enemy.tile, tile));
+}
+
 function isBuildable(tile: AxialCoord, buildRadius: number, spawnLanes: AxialCoord[]): boolean {
   const dist = hexDistance(tile, CENTER);
   return dist > 0 && dist <= buildRadius &&
@@ -1569,8 +1684,69 @@ function canRollRecruitOffers(state: RunState): boolean {
   );
 }
 
+function hasSelectedSaunaReplacement(state: RunState): boolean {
+  return state.selectedMapTarget === 'sauna';
+}
+
 function pendingReadyRecruit(state: RunState): DefenderInstance | null {
   return state.defenders.find((defender) => defender.location === 'ready') ?? null;
+}
+
+function canHireRecruitToSauna(state: RunState, offer: RecruitOffer, content: GameContent): boolean {
+  if (!canAccessRecruitment(state) || state.sisu.current < offer.price) return false;
+  const pending = pendingReadyRecruit(state);
+  if (pending && boardDefenders(state).length < boardCap(state, content)) return false;
+  const saunaDefender = getDefender(state, state.saunaDefenderId);
+  if (saunaDefender && saunaDefender.location === 'sauna') {
+    return hasSelectedSaunaReplacement(state);
+  }
+  return livingDefenders(state).length < rosterCap(state, content);
+}
+
+function hireRecruitToSaunaLabel(state: RunState, offer: RecruitOffer, content: GameContent): string {
+  const saunaDefender = getDefender(state, state.saunaDefenderId);
+  if (saunaDefender && saunaDefender.location === 'sauna') {
+    return hasSelectedSaunaReplacement(state) ? `Hire To Sauna (${offer.price})` : 'Select Sauna To Replace';
+  }
+  if (livingDefenders(state).length >= rosterCap(state, content)) {
+    return 'Roster Full';
+  }
+  return `Hire To Sauna (${offer.price})`;
+}
+
+function canLiveRetreatDefenderToSauna(state: RunState, defender: DefenderInstance): boolean {
+  const saunaDefender = getDefender(state, state.saunaDefenderId);
+  return (
+    defender.location === 'board' &&
+    state.phase === 'wave' &&
+    state.overlayMode === 'none' &&
+    (!saunaDefender || saunaDefender.location !== 'sauna') &&
+    state.sisu.current >= LIVE_SAUNA_RETREAT_SISU_COST &&
+    state.timeMs >= state.saunaRetreatReadyAtMs
+  );
+}
+
+function canCommandDefenderToSauna(state: RunState, defender: DefenderInstance): boolean {
+  if (defender.location !== 'board' || state.overlayMode !== 'none') return false;
+  if (state.phase === 'prep') return true;
+  return canLiveRetreatDefenderToSauna(state, defender);
+}
+
+function saunaCommandLabel(state: RunState, defender: DefenderInstance): string | null {
+  if (defender.location !== 'board') return null;
+  const saunaDefender = getDefender(state, state.saunaDefenderId);
+  if (state.phase === 'prep' && state.overlayMode === 'none') {
+    return saunaDefender && saunaDefender.location === 'sauna'
+      ? `Swap ${defender.name} Into Sauna`
+      : `Send ${defender.name} To Sauna`;
+  }
+  if (state.phase !== 'wave' || state.overlayMode !== 'none') return null;
+  if (saunaDefender && saunaDefender.location === 'sauna') return 'Sauna occupied';
+  if (state.sisu.current < LIVE_SAUNA_RETREAT_SISU_COST) return `Need ${LIVE_SAUNA_RETREAT_SISU_COST} SISU`;
+  if (state.timeMs < state.saunaRetreatReadyAtMs) {
+    return `Retreat ${Math.ceil((state.saunaRetreatReadyAtMs - state.timeMs) / 1000)}s`;
+  }
+  return `Live Retreat (${LIVE_SAUNA_RETREAT_SISU_COST} SISU)`;
 }
 
 function canRerollSaunaDefender(state: RunState): boolean {
@@ -1741,6 +1917,23 @@ function fillDefenderToMax(state: RunState, defender: DefenderInstance, content:
 
 function addRecruitToReserve(state: RunState, defender: DefenderInstance, content: GameContent): void {
   addRecruitToReserveFromModule(state, defender, content, recruitmentDeps);
+}
+
+function moveRecruitToSauna(state: RunState, defender: DefenderInstance): void {
+  defender.location = 'sauna';
+  defender.tile = null;
+  defender.homeTile = null;
+  clearUnitMotion(defender);
+  state.saunaDefenderId = defender.id;
+}
+
+function performLiveRetreatToSauna(state: RunState, defender: DefenderInstance): void {
+  defender.location = 'sauna';
+  defender.tile = null;
+  clearUnitMotion(defender);
+  state.saunaDefenderId = defender.id;
+  state.sisu.current -= LIVE_SAUNA_RETREAT_SISU_COST;
+  state.saunaRetreatReadyAtMs = state.timeMs + LIVE_SAUNA_RETREAT_COOLDOWN_MS;
 }
 
 function createRecruitOffer(state: RunState, content: GameContent): RecruitOffer {
@@ -2068,11 +2261,13 @@ function maybeDrop(state: RunState, enemyId: EnemyUnitId, content: GameContent):
   const chance =
     isBossLootEnemy(enemyId)
       ? content.config.bossLootChance
-      : content.config.baseLootChance + state.meta.upgrades.loot_luck * 0.06 + (alcoholBonus.lootChance ?? 0);
+      : content.config.baseLootChance + lootLuckBonus(state.meta.upgrades.loot_luck) + (alcoholBonus.lootChance ?? 0);
   if (rng(state) > chance) return;
-  const rarityRoll = rng(state);
-  const rarityBoost = state.meta.upgrades.loot_rarity * 0.08;
-  const rarity = rarityRoll > 0.93 - rarityBoost ? 'epic' : rarityRoll > 0.62 - rarityBoost ? 'rare' : 'common';
+  const rarity = weightedPick(
+    state,
+    RARITY_ORDER,
+    (entry) => lootRarityWeights(state.meta.upgrades.loot_rarity)[entry]
+  ) ?? 'common';
   const kind = rng(state) < (rarity === 'epic' ? 0.5 : 0.32) ? 'skill' : 'item';
   const chosen =
     kind === 'item'
@@ -2178,6 +2373,9 @@ function resolveEnemyDeaths(state: RunState, content: GameContent): void {
           state.message = levelMessage;
         }
       }
+    }
+    if (isEndUserHordeBossWave(state.currentWave) && enemy.archetypeId === 'thirsty_user') {
+      setEndUserHordeMomentum(state, state.endUserHordeMomentum - 3);
     }
     maybeDrop(state, enemy.archetypeId, content);
   }
@@ -2441,7 +2639,7 @@ function applySubclassAttackEffects(
     }
   }
 
-  if (hasSubclass(defender, 'last_ladle') && primaryTarget.hp > 0 && primaryTarget.hp / Math.max(1, enemyMaxHp(primaryTarget, content)) < 0.5) {
+  if (hasSubclass(defender, 'last_ladle') && primaryTarget.hp > 0 && primaryTarget.hp / Math.max(1, enemyMaxHp(state, primaryTarget, content)) < 0.5) {
     applyEnemyHitWithFx(state, defender, primaryTarget, primaryDamage * 0.7, 'volley', defender.tile);
   }
 
@@ -2518,7 +2716,7 @@ function performDefenderBasicAttack(
   if (hasSubclass(defender, 'bucket_sniper') && hexDistance(defender.tile, target.tile) === stats.range) {
     hitDamage += 2;
   }
-  if (hasSubclass(defender, 'white_heat_gunner') && target.hp / Math.max(1, enemyMaxHp(target, content)) <= 0.4) {
+  if (hasSubclass(defender, 'white_heat_gunner') && target.hp / Math.max(1, enemyMaxHp(state, target, content)) <= 0.4) {
     hitDamage += 4;
   }
   if (hasSubclass(defender, 'spark_juggler')) {
@@ -2613,17 +2811,166 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
 }
 
 function pebblePathForLane(laneIndex: number): AxialCoord[] {
-  return PEBBLE_PATH_BASE.map((coord) => rotateCoord(coord, laneIndex));
+  return PEBBLE_PATH_BASE.map((coord) => rotateCoord(coord, ((laneIndex % 6) + 6) % 6));
+}
+
+function activePebbleBottleTargets(state: RunState): PebbleBottleTarget[] {
+  return state.pebbleBottleTargets.filter((target) => !target.consumed);
+}
+
+function pebbleBottleDamageBonus(state: RunState): number {
+  return state.pebbleBottleStacks * PEBBLE_BOTTLE_DAMAGE_PER_STACK;
+}
+
+function pebbleSpawnLaneIndex(wave: WaveDefinition, content: GameContent): number {
+  if (isPebbleBossWave(wave)) {
+    return wave.spawns.find((spawn) => spawn.enemyId === 'pebble')?.laneIndex ?? bossBaseLane(wave.index, content);
+  }
+  return 0;
+}
+
+function pebblePathForCurrentWave(state: RunState, content: GameContent): AxialCoord[] {
+  return pebblePathForLane(pebbleSpawnLaneIndex(state.currentWave, content));
+}
+
+function syncPebblePathProgress(enemy: EnemyInstance, path: AxialCoord[]): void {
+  const currentIndex = path.findIndex((tile) => sameCoord(tile, enemy.tile));
+  if (currentIndex >= 0) {
+    enemy.pathIndex = Math.max(enemy.pathIndex ?? 0, currentIndex);
+  }
+}
+
+function candidatePebbleBottleTiles(state: RunState, content: GameContent): AxialCoord[] {
+  const gridRadius = currentGridRadius(state, content);
+  const spawnLanes = currentSpawnLanes(state, content);
+  const landmarkTiles = WORLD_LANDMARK_IDS.map((landmarkId) => landmarkTileForWave(state.waveIndex, landmarkId, content));
+  const pathTiles = pebblePathForCurrentWave(state, content);
+  return createHexGrid(gridRadius)
+    .filter((tile) => hexDistance(tile, CENTER) >= 2)
+    .filter((tile) => hexDistance(tile, CENTER) < gridRadius)
+    .filter((tile) => !spawnLanes.some((lane) => sameCoord(lane, tile)))
+    .filter((tile) => !landmarkTiles.some((landmarkTile) => sameCoord(landmarkTile, tile)))
+    .filter((tile) => !pathTiles.some((pathTile) => sameCoord(pathTile, tile)))
+    .filter((tile) => !occupied(state, tile));
+}
+
+function spawnPebbleBottleTargets(state: RunState, content: GameContent): void {
+  const candidates = candidatePebbleBottleTiles(state, content);
+  for (let index = candidates.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomInt(state, 0, index);
+    [candidates[index], candidates[swapIndex]] = [candidates[swapIndex], candidates[index]];
+  }
+  state.pebbleBottleTargets = candidates.slice(0, PEBBLE_BOTTLE_TARGET_COUNT).map((tile) => ({
+    id: state.nextPebbleBottleTargetId++,
+    tile: { ...tile },
+    consumed: false
+  }));
+}
+
+function clearPebbleEncounterTargets(state: RunState): void {
+  state.pebbleBottleTargets = [];
+}
+
+function nearestPebbleBottleTarget(state: RunState, enemy: EnemyInstance): PebbleBottleTarget | null {
+  return activePebbleBottleTargets(state)
+    .sort((left, right) =>
+      (hexDistance(enemy.tile, left.tile) - hexDistance(enemy.tile, right.tile))
+      || (hexDistance(left.tile, CENTER) - hexDistance(right.tile, CENTER))
+      || (left.tile.r - right.tile.r)
+      || (left.tile.q - right.tile.q))[0] ?? null;
+}
+
+function consumePebbleBottleAtCurrentTile(state: RunState, enemy: EnemyInstance): void {
+  const bottle = state.pebbleBottleTargets.find((target) => !target.consumed && sameCoord(target.tile, enemy.tile));
+  if (!bottle) return;
+  bottle.consumed = true;
+  state.pebbleBottleStacks += 1;
+}
+
+function movePebbleTowardTile(
+  state: RunState,
+  enemy: EnemyInstance,
+  targetTile: AxialCoord,
+  content: GameContent
+): boolean {
+  const nextTile = DIRS
+    .map((dir) => add(enemy.tile, dir))
+    .filter((candidate) => hexDistance(candidate, CENTER) <= currentGridRadius(state, content))
+    .sort((left, right) =>
+      (hexDistance(left, targetTile) - hexDistance(right, targetTile))
+      || (hexDistance(left, CENTER) - hexDistance(right, CENTER))
+      || (left.r - right.r)
+      || (left.q - right.q))[0] ?? null;
+
+  if (!nextTile) {
+    enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+    return false;
+  }
+
+  if (boardDefenderAtTile(state, nextTile)) {
+    stepPebbleGrind(state, enemy, nextTile, content);
+    return true;
+  }
+
+  if (otherEnemyOccupiesTile(state, nextTile, enemy.instanceId)) {
+    enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+    return false;
+  }
+
+  moveEnemyToTile(state, enemy, nextTile, 'slither', PEBBLE_MOTION_DURATION_MS);
+  syncPebblePathProgress(enemy, pebblePathForCurrentWave(state, content));
+  consumePebbleBottleAtCurrentTile(state, enemy);
+  enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+  return true;
+}
+
+function hordeEnemies(state: RunState): EnemyInstance[] {
+  return state.enemies.filter((enemy) => enemy.archetypeId === 'thirsty_user');
 }
 
 function swarmDamageBonus(state: RunState): number {
-  return Math.min(5, state.enemies.filter((enemy) => enemy.archetypeId === 'thirsty_user').length);
+  const cap = isEndUserHordeBossWave(state.currentWave) && state.endUserHordeTier >= 2
+    ? END_USER_HORDE_TIER_TWO_SWARM_CAP
+    : END_USER_HORDE_BASE_SWARM_CAP;
+  return Math.min(cap, hordeEnemies(state).length);
+}
+
+function hordeMoveCooldownMs(state: RunState, baseCooldownMs: number): number {
+  if (!isEndUserHordeBossWave(state.currentWave)) return baseCooldownMs;
+  if (state.endUserHordeTier >= 2) {
+    return Math.max(120, baseCooldownMs - END_USER_HORDE_TIER_TWO_MOVE_BONUS_MS);
+  }
+  if (state.endUserHordeTier >= 1) {
+    return Math.max(120, baseCooldownMs - END_USER_HORDE_TIER_ONE_MOVE_BONUS_MS);
+  }
+  return baseCooldownMs;
+}
+
+function enemyMoveCooldownMsForEnemy(state: RunState, enemy: EnemyInstance, content: GameContent): number {
+  const baseCooldownMs = content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+  return enemy.archetypeId === 'thirsty_user' ? hordeMoveCooldownMs(state, baseCooldownMs) : baseCooldownMs;
+}
+
+function enemyMoveCooldownMsForSpawn(state: RunState, enemyId: EnemyUnitId, content: GameContent): number {
+  const baseCooldownMs = content.enemyArchetypes[enemyId].moveCooldownMs;
+  return enemyId === 'thirsty_user' ? hordeMoveCooldownMs(state, baseCooldownMs) : baseCooldownMs;
+}
+
+function pebbleDevourStacks(enemy: EnemyInstance): number {
+  return enemy.archetypeId === 'pebble' ? Math.min(PEBBLE_DEVOUR_STACK_CAP, enemy.pebbleDevourStacks ?? 0) : 0;
+}
+
+function pebbleDamageBonus(enemy: EnemyInstance): number {
+  return pebbleDevourStacks(enemy) * PEBBLE_DEVOUR_DAMAGE_PER_STACK;
 }
 
 function enemyAttackDamage(state: RunState, enemy: EnemyInstance, content: GameContent): number {
   const archetype = content.enemyArchetypes[enemy.archetypeId];
   if (archetype.behavior === 'swarm') {
     return archetype.damage + swarmDamageBonus(state);
+  }
+  if (archetype.behavior === 'pebble') {
+    return archetype.damage + pebbleBottleDamageBonus(state) + pebbleDamageBonus(enemy);
   }
   return archetype.damage;
 }
@@ -2650,9 +2997,11 @@ function applyEnemyDamageToDefender(
   target: DefenderInstance,
   baseDamage: number,
   content: GameContent
-): void {
+): number {
   const defense = derivedStats(state, target, content).defense;
-  target.hp -= Math.max(1, baseDamage - defense);
+  const finalDamage = Math.max(1, baseDamage - defense);
+  const actualDamage = Math.min(target.hp, finalDamage);
+  target.hp -= finalDamage;
   target.lastHitByEnemyId = enemy.archetypeId;
   if (target.tile) {
     pushFx(state, enemyImpactFxKind(enemy), target.tile, isBossThreat(enemy) ? 240 : 190, enemy.tile);
@@ -2662,6 +3011,7 @@ function applyEnemyDamageToDefender(
   if (isBossThreat(enemy)) {
     addHitStop(state, 32);
   }
+  return actualDamage;
 }
 
 function enemyTarget(state: RunState, enemy: EnemyInstance, content: GameContent): DefenderInstance | 'sauna' | null {
@@ -2680,7 +3030,7 @@ function moveEnemyTowardCenter(state: RunState, enemy: EnemyInstance, content: G
     .sort((left, right) => (hexDistance(left, CENTER) - hexDistance(right, CENTER)) || (left.r - right.r) || (left.q - right.q))[0];
   if (!tile) return false;
   moveEnemyToTile(state, enemy, tile, 'step', STEP_MOTION_DURATION_MS);
-  enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+  enemy.moveReadyAtMs = state.timeMs + enemyMoveCooldownMsForEnemy(state, enemy, content);
   return true;
 }
 
@@ -2690,6 +3040,9 @@ function stepStandardEnemy(state: RunState, enemy: EnemyInstance, content: GameC
     const target = enemyTarget(state, enemy, content);
     if (target === 'sauna') {
       applyEnemyDamageToSauna(state, enemy, enemyAttackDamage(state, enemy, content));
+      if (enemy.archetypeId === 'thirsty_user' && isEndUserHordeBossWave(state.currentWave)) {
+        setEndUserHordeMomentum(state, state.endUserHordeMomentum + 2);
+      }
       enemy.attackReadyAtMs = state.timeMs + archetype.attackCooldownMs;
       return;
     }
@@ -2707,25 +3060,86 @@ function stepSwarmUser(state: RunState, enemy: EnemyInstance, content: GameConte
   stepStandardEnemy(state, enemy, content);
 }
 
+function stepPebbleGrind(state: RunState, enemy: EnemyInstance, blockedTile: AxialCoord, content: GameContent): void {
+  const damage = enemyAttackDamage(state, enemy, content);
+  const splashDamage = Math.max(1, Math.floor(damage * 0.5));
+  const impacted = boardDefenders(state)
+    .filter((defender) => defender.tile && (sameCoord(defender.tile, blockedTile) || hexDistance(defender.tile, blockedTile) === 1))
+    .sort((left, right) => {
+      const leftIsPrimary = left.tile && sameCoord(left.tile, blockedTile) ? 0 : 1;
+      const rightIsPrimary = right.tile && sameCoord(right.tile, blockedTile) ? 0 : 1;
+      return leftIsPrimary - rightIsPrimary || left.hp - right.hp;
+    });
+
+  if (impacted.length === 0) {
+    enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+    return;
+  }
+
+  let totalDamage = 0;
+  for (const defender of impacted) {
+    const isPrimary = defender.tile && sameCoord(defender.tile, blockedTile);
+    totalDamage += applyEnemyDamageToDefender(state, enemy, defender, isPrimary ? damage : splashDamage, content);
+  }
+
+  if (totalDamage > 0) {
+    enemy.pebbleDevourStacks = Math.min(PEBBLE_DEVOUR_STACK_CAP, pebbleDevourStacks(enemy) + 1);
+    const restored = Math.max(1, Math.round(totalDamage * PEBBLE_DEVOUR_HEAL_RATIO));
+    enemy.hp = Math.min(enemyMaxHp(state, enemy, content), enemy.hp + restored);
+  }
+
+  enemy.moveReadyAtMs = state.timeMs + content.enemyArchetypes[enemy.archetypeId].moveCooldownMs;
+}
+
 function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent): void {
   const archetype = content.enemyArchetypes[enemy.archetypeId];
-  if (state.timeMs >= enemy.attackReadyAtMs && hexDistance(enemy.tile, CENTER) <= archetype.range) {
-    applyEnemyDamageToSauna(state, enemy, archetype.damage);
+  const bottleTarget = nearestPebbleBottleTarget(state, enemy);
+
+  if (bottleTarget && sameCoord(bottleTarget.tile, enemy.tile)) {
+    consumePebbleBottleAtCurrentTile(state, enemy);
+    enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
+    return;
+  }
+
+  if (!bottleTarget && state.timeMs >= enemy.attackReadyAtMs && hexDistance(enemy.tile, CENTER) <= archetype.range) {
+    applyEnemyDamageToSauna(state, enemy, enemyAttackDamage(state, enemy, content));
     enemy.attackReadyAtMs = state.timeMs + archetype.attackCooldownMs;
     return;
   }
   if (state.timeMs < enemy.moveReadyAtMs) return;
-  const path = pebblePathForLane(enemy.spawnLaneIndex ?? 0);
+
+  if (bottleTarget) {
+    movePebbleTowardTile(state, enemy, bottleTarget.tile, content);
+    return;
+  }
+
+  const path = pebblePathForCurrentWave(state, content);
+  syncPebblePathProgress(enemy, path);
   const nextPathIndex = (enemy.pathIndex ?? 0) + 1;
   const nextTile = path[nextPathIndex] ?? null;
+
   if (!nextTile) return;
-  if (occupied(state, nextTile)) {
+
+  const onScriptedPath = path.some((tile) => sameCoord(tile, enemy.tile));
+  if (!onScriptedPath) {
+    movePebbleTowardTile(state, enemy, nextTile, content);
+    return;
+  }
+
+  if (boardDefenderAtTile(state, nextTile)) {
+    stepPebbleGrind(state, enemy, nextTile, content);
+    return;
+  }
+
+  if (otherEnemyOccupiesTile(state, nextTile, enemy.instanceId)) {
     enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
     return;
   }
+
   moveEnemyToTile(state, enemy, nextTile, 'slither', PEBBLE_MOTION_DURATION_MS);
-  enemy.pathIndex = nextPathIndex;
   enemy.moveReadyAtMs = state.timeMs + archetype.moveCooldownMs;
+  enemy.pathIndex = nextPathIndex;
+  consumePebbleBottleAtCurrentTile(state, enemy);
 }
 
 function stepElectricBather(state: RunState, enemy: EnemyInstance, content: GameContent): void {
@@ -2789,6 +3203,40 @@ function stepEscalationManager(state: RunState, enemy: EnemyInstance, content: G
   stepStandardEnemy(state, enemy, content);
 }
 
+function queueEndUserHordeSurgeSpawns(state: RunState, content: GameContent): void {
+  const spawnLanes = currentSpawnLanes(state, content);
+  const laneCount = spawnLanes.length;
+  const baseLane = bossBaseLane(state.currentWave.index, content);
+  const preferredLanes = [1, -1, 2, -2, 3, -3]
+    .map((delta) => wrapLane(baseLane + delta, laneCount))
+    .filter((laneIndex, index, values) => values.indexOf(laneIndex) === index);
+  const freeLanes = preferredLanes.filter((laneIndex) => !occupied(state, spawnLanes[laneIndex]));
+  const lanes = (freeLanes.length >= 3 ? freeLanes : preferredLanes).slice(0, 3);
+
+  lanes.forEach((laneIndex, index) => {
+    state.pendingSpawns.push({
+      atMs: state.waveElapsedMs + END_USER_HORDE_SURGE_MOVE_READY_MS + index * 120,
+      enemyId: 'thirsty_user',
+      laneIndex
+    });
+  });
+
+  state.pendingSpawns.sort((left, right) => left.atMs - right.atMs);
+}
+
+function maybeTriggerEndUserHordeSurge(state: RunState, content: GameContent): void {
+  if (!isEndUserHordeBossWave(state.currentWave) || state.endUserHordeTier < 2 || state.timeMs < state.endUserHordeNextSurgeAtMs) {
+    return;
+  }
+
+  queueEndUserHordeSurgeSpawns(state, content);
+  for (const enemy of hordeEnemies(state)) {
+    enemy.moveReadyAtMs = Math.min(enemy.moveReadyAtMs, state.timeMs + END_USER_HORDE_SURGE_MOVE_READY_MS);
+  }
+  setEndUserHordeMomentum(state, state.endUserHordeMomentum - 4);
+  state.endUserHordeNextSurgeAtMs = state.timeMs + END_USER_HORDE_SURGE_COOLDOWN_MS;
+}
+
 function enemyStep(state: RunState, enemy: EnemyInstance, content: GameContent): void {
   const behavior = content.enemyArchetypes[enemy.archetypeId].behavior;
   switch (behavior) {
@@ -2824,6 +3272,7 @@ function spawnEnemies(state: RunState, content: GameContent): void {
       continue;
     }
     const archetype = content.enemyArchetypes[spawn.enemyId];
+    const pebbleMaxHp = archetype.behavior === 'pebble' ? pebbleEncounterMaxHp(state) : undefined;
     state.enemies.push({
       instanceId: state.nextEnemyInstanceId++,
       archetypeId: spawn.enemyId,
@@ -2831,15 +3280,15 @@ function spawnEnemies(state: RunState, content: GameContent): void {
       tile: { ...lane },
       motion: {
         fromTile: spawnApproachTile(lane),
-        toTile: { ...lane },
-        startedAtMs: state.timeMs,
-        durationMs: SPAWN_SETTLE_DURATION_MS,
-        style: spawn.enemyId === 'pebble' ? 'slither' : 'step'
+          toTile: { ...lane },
+          startedAtMs: state.timeMs,
+          durationMs: SPAWN_SETTLE_DURATION_MS,
+          style: spawn.enemyId === 'pebble' ? 'slither' : 'step'
       },
-      hp: archetype.maxHp,
+      hp: pebbleMaxHp ?? archetype.maxHp,
       lastHitByDefenderId: null,
       attackReadyAtMs: state.timeMs + archetype.attackCooldownMs,
-      moveReadyAtMs: state.timeMs + archetype.moveCooldownMs,
+      moveReadyAtMs: state.timeMs + enemyMoveCooldownMsForSpawn(state, spawn.enemyId, content),
       nextAbilityAtMs:
         archetype.behavior === 'electric'
           ? state.timeMs + ELECTRIC_BATHER_ABILITY_COOLDOWN_MS
@@ -2847,6 +3296,8 @@ function spawnEnemies(state: RunState, content: GameContent): void {
             ? state.timeMs + ESCALATION_MANAGER_ABILITY_COOLDOWN_MS
             : Number.POSITIVE_INFINITY,
       pathIndex: archetype.behavior === 'pebble' ? 0 : null,
+      pebbleDevourStacks: archetype.behavior === 'pebble' ? 0 : undefined,
+      pebbleEncounterMaxHp: pebbleMaxHp,
       spawnLaneIndex: spawn.laneIndex,
       spawnedByEnemyInstanceId: spawn.spawnedByEnemyInstanceId ?? null
     });
@@ -2872,12 +3323,25 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, message: strin
   state.autoplayReadyAtMs = state.timeMs + AUTOPLAY_DELAY_MS;
   state.currentWave = waveDef;
   state.pendingSpawns = waveDef.spawns.map((spawn) => ({ ...spawn }));
+  clearPebbleEncounterTargets(state);
+  if (isPebbleBossWave(waveDef)) {
+    state.pebbleEncounterCount += 1;
+    spawnPebbleBottleTargets(state, content);
+  }
+  if (isEndUserHordeBossWave(waveDef)) {
+    setEndUserHordeMomentum(state, END_USER_HORDE_START_MOMENTUM);
+    state.endUserHordeNextSurgeAtMs = state.timeMs + END_USER_HORDE_SURGE_COOLDOWN_MS;
+  } else {
+    resetEndUserHordeState(state);
+  }
   state.message = message;
 }
 
 function awardWave(state: RunState, content: GameContent): void {
   const clearedWave = state.currentWave;
   state.pendingFireballs = [];
+  clearPebbleEncounterTargets(state);
+  resetEndUserHordeState(state);
   state.waveIndex += 1;
   const upcomingWave = createWaveDefinition(state.waveIndex, content);
   const alcoholBonus = alcoholTotals(state, content);
@@ -2920,13 +3384,77 @@ function applyGlobalRegenTick(state: RunState, content: GameContent): void {
     if (stats.regenHpPerSecond <= 0) continue;
     defender.hp = Math.min(stats.maxHp, defender.hp + stats.regenHpPerSecond);
   }
+  if (isEndUserHordeBossWave(state.currentWave)) {
+    setEndUserHordeMomentum(state, state.endUserHordeMomentum + hordeEnemies(state).length);
+  }
 }
 
 function metaCost(state: RunState, upgradeId: MetaUpgradeId, content: GameContent): number | null {
   const def = content.metaUpgrades[upgradeId];
   const level = state.meta.upgrades[upgradeId];
-  if (level >= def.maxLevel) return null;
-  return def.baseCost + def.costStep * level;
+  if (level >= def.maxLevel && !isRepeatableMetaUpgrade(upgradeId)) return null;
+  const baseCost = def.baseCost + def.costStep * level;
+  if (!isRepeatableMetaUpgrade(upgradeId) || level < def.maxLevel) {
+    return baseCost;
+  }
+  const postCapLevel = level - def.maxLevel + 1;
+  const surchargeStep = Math.max(4, def.costStep || Math.ceil(def.baseCost * 0.8));
+  return baseCost + Math.floor((postCapLevel * (postCapLevel + 1) * surchargeStep) / 2);
+}
+
+function metaUpgradeSoftcapReached(state: RunState, upgradeId: MetaUpgradeId, content: GameContent): boolean {
+  return isRepeatableMetaUpgrade(upgradeId) && state.meta.upgrades[upgradeId] > metaSoftcapLevel(upgradeId, content);
+}
+
+function nextMetaUpgradeEffectText(state: RunState, upgradeId: MetaUpgradeId, content: GameContent): string | null {
+  const currentLevel = state.meta.upgrades[upgradeId];
+  const nextLevel = currentLevel + 1;
+  switch (upgradeId) {
+    case 'roster_capacity': {
+      const current = rosterCapacityBonus(currentLevel);
+      const next = rosterCapacityBonus(nextLevel);
+      return next > current
+        ? `Next: +${next - current} board cap and +${next - current} roster cap`
+        : 'Next: build-up level toward the next +1 board and roster cap';
+    }
+    case 'inventory_slots': {
+      const current = inventoryCapacityBonus(currentLevel);
+      const next = inventoryCapacityBonus(nextLevel);
+      if (currentLevel <= 0) return 'Next: unlock Overflow Stash';
+      return `Next: +${Math.max(0, next - current)} stash capacity`;
+    }
+    case 'loot_luck': {
+      const current = lootLuckBonus(currentLevel);
+      const next = lootLuckBonus(nextLevel);
+      return `Next: +${Math.round((next - current) * 100)}% loot chance`;
+    }
+    case 'loot_rarity': {
+      const current = lootRarityScore(currentLevel);
+      const next = lootRarityScore(nextLevel);
+      return next > current
+        ? `Next: better rarity weights (score ${next})`
+        : 'Next: build-up level toward the next rarity score';
+    }
+    case 'item_slots': {
+      const current = itemSlotBonus(currentLevel);
+      const next = itemSlotBonus(nextLevel);
+      return next > current
+        ? `Next: +${next - current} item slot per hero`
+        : 'Next: build-up level toward the next item slot';
+    }
+    case 'beer_shop_level': {
+      const currentOffers = beerShopOfferCountForLevel(currentLevel);
+      const nextOffers = beerShopOfferCountForLevel(nextLevel);
+      const currentSlots = beerActiveSlotCapForLevel(currentLevel);
+      const nextSlots = beerActiveSlotCapForLevel(nextLevel);
+      const parts: string[] = [];
+      if (nextOffers > currentOffers) parts.push(`+${nextOffers - currentOffers} offer`);
+      if (nextSlots > currentSlots) parts.push(`+${nextSlots - currentSlots} active slot`);
+      return parts.length > 0 ? `Next: ${parts.join(', ')}` : 'Next: build-up level toward the next beer stock boost';
+    }
+    default:
+      return null;
+  }
 }
 
 function getInventoryDrop(state: RunState, dropId: number | null): InventoryDrop | null {
@@ -3586,12 +4114,6 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
       body: 'A hero hit a milestone. Pick one branch before the run continues.'
     };
   }
-  if (state.recruitmentOpen) {
-    return {
-      title: 'Recruitment Market',
-      body: recruitmentStatusText(state, content)
-    };
-  }
   if (selectedLoot && selectedDefender) {
     return {
       title: 'Equip Opportunity',
@@ -3679,7 +4201,6 @@ export function createInitialState(
     phase: 'prep',
     overlayMode: showIntermission ? 'intermission' : 'none',
     inventoryOpen: false,
-    recruitmentOpen: false,
     activePanel: null,
     selectedWorldLandmarkId: null,
     introOpen,
@@ -3730,6 +4251,14 @@ export function createInitialState(
     saunaHp: content.config.saunaHp,
     waveSwapUsed: false,
     nextRegenTickAtMs: 1000,
+    saunaRetreatReadyAtMs: 0,
+    pebbleBottleTargets: [],
+    pebbleBottleStacks: 0,
+    pebbleEncounterCount: 0,
+    nextPebbleBottleTargetId: 1,
+    endUserHordeMomentum: 0,
+    endUserHordeTier: 0,
+    endUserHordeNextSurgeAtMs: 0,
     autoAssignEnabled: preferences.autoAssignEnabled,
     autoUpgradeEnabled: preferences.autoUpgradeEnabled,
     autoplayEnabled: preferences.autoplayEnabled,
@@ -3861,7 +4390,10 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     }
     case 'openHudPanel': {
       if (next.overlayMode === 'modifier_draft' || next.overlayMode === 'subclass_draft') return next;
-      if (action.panel === 'recruit' && !canAccessRecruitment(next)) return next;
+      if (action.panel === 'recruit') {
+        next.message = recruitmentStatusText(next, content);
+        return next;
+      }
       if (action.panel === 'metashop' && !metashopVisible(next)) return next;
       if (action.panel === 'beer_shop' && !beerShopUnlocked(next)) return next;
       if (next.activePanel === action.panel) {
@@ -3876,8 +4408,6 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         next.message = inventoryUnlocked(next)
           ? 'Loot and stash opened.'
           : 'Fresh loot is visible here. Overflow stash unlocks from the metashop.';
-      } else if (action.panel === 'recruit') {
-        next.message = recruitmentStatusText(next, content);
       }
       return next;
     }
@@ -3956,12 +4486,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     case 'toggleRecruitment':
       if (!canAccessRecruitment(next)) return next;
-      if (next.activePanel === 'recruit') {
-        clearActiveHudPanel(next);
-        next.selectedInventoryDropId = null;
-        return next;
-      }
-      setActiveHudPanel(next, 'recruit');
+      clearLegacyRecruitPanelState(next);
       next.message = recruitmentStatusText(next, content);
       return next;
     case 'hoverTile':
@@ -4006,24 +4531,32 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     }
     case 'recallDefenderToSauna': {
-      if (next.overlayMode !== 'none' || next.phase !== 'prep') return next;
+      if (next.overlayMode !== 'none') return next;
       const defender = getDefender(next, action.defenderId);
       if (!defender || defender.location !== 'board') return next;
-      const currentSaunaDefender = getDefender(next, next.saunaDefenderId);
-      if (currentSaunaDefender && currentSaunaDefender.location === 'sauna') {
-        next.defenders = next.defenders.filter((entry) => entry.id !== currentSaunaDefender.id);
-        delete next.benchRerollCountsByDefenderId[currentSaunaDefender.id];
+      if (next.phase === 'prep') {
+        const currentSaunaDefender = getDefender(next, next.saunaDefenderId);
+        if (currentSaunaDefender && currentSaunaDefender.location === 'sauna') {
+          currentSaunaDefender.location = 'ready';
+          currentSaunaDefender.tile = null;
+          clearUnitMotion(currentSaunaDefender);
+        }
+        defender.location = 'sauna';
+        defender.tile = null;
+        clearUnitMotion(defender);
+        next.saunaDefenderId = defender.id;
+        next.message = currentSaunaDefender && currentSaunaDefender.location === 'ready'
+          ? `${defender.name} took the sauna seat and ${currentSaunaDefender.name} moved back to the reserve row.`
+          : `${defender.name} went to recover in the sauna.`;
+        return next;
       }
-      defender.location = 'sauna';
-      defender.tile = null;
-      clearUnitMotion(defender);
-      next.saunaDefenderId = defender.id;
-      next.selectedMapTarget = 'sauna';
-      next.selectedDefenderId = null;
-      next.selectedEnemyInstanceId = null;
-      next.message = currentSaunaDefender && currentSaunaDefender.location === 'sauna'
-        ? `${defender.name} took the sauna seat. ${currentSaunaDefender.name} was sent home.`
-        : `${defender.name} went to recover in the sauna.`;
+      if (next.phase !== 'wave') return next;
+      if (!canLiveRetreatDefenderToSauna(next, defender)) {
+        next.message = `${defender.name} cannot retreat to the sauna right now.`;
+        return next;
+      }
+      performLiveRetreatToSauna(next, defender);
+      next.message = `${defender.name} retreated to the sauna for ${LIVE_SAUNA_RETREAT_SISU_COST} SISU.`;
       return next;
     }
     case 'rerollSaunaDefender': {
@@ -4056,9 +4589,6 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         next.message = 'Place at least one defender first.';
         return next;
       }
-      if (next.activePanel === 'recruit') {
-        clearActiveHudPanel(next);
-      }
       startWaveState(
         next,
         next.currentWave,
@@ -4070,6 +4600,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     case 'rerollRecruitOffers':
     case 'rollRecruitOffers': {
       if (!canAccessRecruitment(next)) return next;
+      clearLegacyRecruitPanelState(next);
       const cost = recruitRollCost();
       if (next.sisu.current < cost) {
         next.message = 'Not enough SISU to reroll the market.';
@@ -4077,7 +4608,6 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       }
       next.sisu.current -= cost;
       rollRecruitOffersIntoState(next, content, false);
-      setActiveHudPanel(next, 'recruit');
       const visibleOffers = next.recruitOffers.filter((offer): offer is RecruitOffer => offer !== null);
       next.message =
         visibleOffers.length > 0
@@ -4103,10 +4633,12 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     }
     case 'rerollRecruitOffer':
+      clearLegacyRecruitPanelState(next);
       next.message = 'Single-slot rerolls are gone. Use Refresh to scout a new batch.';
       return next;
     case 'levelUpRecruitment': {
       if (!canAccessRecruitment(next)) return next;
+      clearLegacyRecruitPanelState(next);
       const cost = recruitLevelUpCost(next.recruitLevelUpCount);
       if (next.sisu.current < cost) {
         next.message = `Not enough SISU to buy Recruitment Level Up (${cost}).`;
@@ -4115,19 +4647,30 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.sisu.current -= cost;
       next.recruitLevelBonus += 1;
       next.recruitLevelUpCount += 1;
-      setActiveHudPanel(next, 'recruit');
       next.message = `Recruitment leveled up. Future rerolls now favor stronger starting levels.`;
       return next;
     }
     case 'recruitOffer': {
       if (!canAccessRecruitment(next)) return next;
+      clearLegacyRecruitPanelState(next);
+      const destination: RecruitDestination = action.destination ?? 'reserve';
       const offerIndex = next.recruitOffers.findIndex((entry) => entry?.offerId === action.offerId);
       if (offerIndex < 0) return next;
       const offer = next.recruitOffers[offerIndex];
       if (!offer) return next;
       const boardIsFull = boardDefenders(next).length >= boardCap(next, content);
       const currentPendingReadyRecruit = pendingReadyRecruit(next);
-      if (currentPendingReadyRecruit && !boardIsFull) {
+      const saunaDefender = getDefender(next, next.saunaDefenderId);
+      if (destination === 'sauna') {
+        if (saunaDefender && saunaDefender.location === 'sauna' && !hasSelectedSaunaReplacement(next)) {
+          next.message = 'Select the sauna first if you want to replace the current sauna reserve.';
+          return next;
+        }
+        if (!saunaDefender && livingDefenders(next).length >= rosterCap(next, content)) {
+          next.message = 'Roster is full. Free space or select a replacement before hiring straight to the sauna.';
+          return next;
+        }
+      } else if (currentPendingReadyRecruit && !boardIsFull) {
         next.message = `Place or sauna ${currentPendingReadyRecruit.name} first before recruiting another hero.`;
         return next;
       }
@@ -4136,8 +4679,23 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         return next;
       }
       next.sisu.current -= offer.price;
-      if (boardIsFull) {
-        const saunaDefender = getDefender(next, next.saunaDefenderId);
+      if (destination === 'sauna') {
+        if (saunaDefender && saunaDefender.location === 'sauna') {
+          replaceDefenderWithRecruit(next, saunaDefender, offer.candidate, content);
+          next.selectedMapTarget = 'sauna';
+          next.selectedDefenderId = null;
+          next.selectedEnemyInstanceId = null;
+          next.message = `${offer.candidate.name} ${offer.candidate.title} replaced ${saunaDefender.name} in the sauna for ${offer.price} SISU.`;
+        } else {
+          fillDefenderToMax(next, offer.candidate, content);
+          next.defenders.push(offer.candidate);
+          moveRecruitToSauna(next, offer.candidate);
+          next.selectedMapTarget = 'sauna';
+          next.selectedDefenderId = null;
+          next.selectedEnemyInstanceId = null;
+          next.message = `${offer.candidate.name} ${offer.candidate.title} took the sauna reserve for ${offer.price} SISU.`;
+        }
+      } else if (boardIsFull) {
         if (saunaDefender && saunaDefender.location === 'sauna') {
           replaceDefenderWithRecruit(next, saunaDefender, offer.candidate, content);
           next.selectedMapTarget = 'sauna';
@@ -4162,6 +4720,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     }
     case 'clearRecruitOffers':
       if (!canAccessRecruitment(next)) return next;
+      clearLegacyRecruitPanelState(next);
       next.recruitOffers = Array.from({ length: RECRUIT_MARKET_SLOT_COUNT }, () => null);
       next.recruitMarketIsFree = false;
       clearActiveHudPanel(next);
@@ -4339,6 +4898,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     next.nextRegenTickAtMs += 1000;
   }
   spawnEnemies(next, content);
+  maybeTriggerEndUserHordeSurge(next, content);
   resolvePendingFireballs(next);
   for (const defender of boardDefenders(next)) defenderAttack(next, defender, content);
   for (const enemy of next.enemies) enemyStep(next, enemy, content);
@@ -4352,6 +4912,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     setActiveHudPanel(next, 'metashop', 'metashop');
     next.activeAlcohols = [];
     next.pendingFireballs = [];
+    clearPebbleEncounterTargets(next);
     awardMeta(next);
     rollBeerShopOffersIntoState(next, content);
     next.message = 'The sauna went cold. Spend Steam, regroup, and prep the next shift.';
@@ -4384,11 +4945,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const freeRecruitSlots = state.recruitOffers.filter((offer) => offer !== null).length;
   const beerTier = beerShopTier(state);
   const selectedBoardDefender = selected && selected.location === 'board' ? selected : null;
-  const saunaSendLabel = selectedBoardDefender
-    ? saunaDefender
-      ? `Replace Sauna Hero With ${selectedBoardDefender.name}`
-      : `Send ${selectedBoardDefender.name} To Sauna`
-    : null;
+  const selectedBoardSaunaCommandLabel = selectedBoardDefender ? saunaCommandLabel(state, selectedBoardDefender) : null;
   const saunaReserve = createSaunaReserveEntry(
     state,
     saunaDefender,
@@ -4396,14 +4953,19 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     content,
     hudSelectorDeps
   );
+  saunaReserve.canSendSelectedBoardHero = selectedBoardDefender ? canCommandDefenderToSauna(state, selectedBoardDefender) : false;
+  saunaReserve.sendSelectedBoardHeroLabel = selectedBoardSaunaCommandLabel;
   const activeGlobalModifiers = uniqueGlobalModifierIds(state.activeGlobalModifierIds)
     .map((modifierId) => globalModifierHudEntry(state, content.globalModifierDefinitions[modifierId], content));
   const globalModifierSummary = globalModifierSummaryEntries(state, content);
   const draftGlobalModifiers = state.globalModifierDraftOffers
     .map((modifierId) => globalModifierDraftHudEntry(state, content.globalModifierDefinitions[modifierId], content));
+  const activePanel = state.activePanel === 'recruit' ? null : state.activePanel;
   const worldLandmarks = WORLD_LANDMARK_IDS
     .map((landmarkId) => hudWorldLandmarkEntry(state, landmarkId, content))
     .filter((entry) => entry.visible);
+  const showPebbleBossStatus = state.phase === 'wave' && isPebbleBossWave(currentWave);
+  const showEndUserHordeBossStatus = state.phase === 'wave' && isEndUserHordeBossWave(currentWave);
   const hud: HudViewModel = {
     phaseLabel:
       state.overlayMode === 'intermission'
@@ -4421,17 +4983,21 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
               : 'Run Over',
     statusText: state.message,
     overlayMode: state.overlayMode,
-    activePanel: state.activePanel,
+    activePanel,
     isPaused: state.overlayMode === 'paused',
     showIntermission: state.overlayMode === 'intermission',
     introOpen: state.introOpen,
     autoplayEnabled: state.autoplayEnabled,
-    canAutoplay: canStartWaveNow(state) && state.activePanel === null && !state.introOpen,
+    canAutoplay: canStartWaveNow(state) && activePanel === null && !state.introOpen,
     waveNumber: currentWave.index,
     enemiesRemaining: state.pendingSpawns.length + state.enemies.length,
     isBossWave: currentWave.isBoss,
     bossName: bossDisplayName(currentWave.bossId),
     bossHint: bossHint(currentWave.bossId),
+    bossMomentumLabel: showEndUserHordeBossStatus ? `${state.endUserHordeMomentum}/${END_USER_HORDE_MAX_MOMENTUM}` : null,
+    bossMomentumTierLabel: showEndUserHordeBossStatus ? endUserHordeTierLabel(state.endUserHordeTier) : null,
+    pebbleBottleStacksLabel: showPebbleBossStatus ? `${state.pebbleBottleStacks}` : null,
+    pebbleBottlesRemainingLabel: showPebbleBossStatus ? `${activePebbleBottleTargets(state).length}/${PEBBLE_BOTTLE_TARGET_COUNT}` : null,
     nextWaveThreat: `${pressureLabel(currentWave.pressure)} pressure`,
     nextWavePattern: patternLabel(currentWave),
     pressureSignals: pressureSignals(state, content),
@@ -4477,13 +5043,19 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
           title: null,
           roleName: null,
           subclassName: null,
+          roleSummary: null,
+          lore: null,
           level: null,
           hp: null,
           damage: null,
+          heal: null,
+          range: null,
           empty: true,
           isFree: false,
           canBuy: false,
-          hotkeyKey: RECRUIT_SLOT_HOTKEYS[slotIndex] ?? null
+          hotkeyKey: RECRUIT_SLOT_HOTKEYS[slotIndex] ?? null,
+          canHireToSauna: false,
+          hireToSaunaLabel: 'Hire To Sauna'
         };
       }
       const roleStats = derivedStats(state, offer.candidate, content, false);
@@ -4496,13 +5068,19 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         title: offer.candidate.title,
         roleName: content.defenderTemplates[offer.candidate.templateId].name,
         subclassName: subclassSummary(offer.candidate, content),
+        roleSummary: content.defenderTemplates[offer.candidate.templateId].role,
+        lore: offer.candidate.lore,
         level: offer.candidate.level,
         hp: roleStats.maxHp,
         damage: roleStats.damage,
+        heal: roleStats.heal,
+        range: roleStats.range,
         empty: false,
         isFree: offer.price === 0,
         canBuy: canAccessRecruitment(state) && (!pendingReadyRecruit(state) || boardCount >= boardCap(state, content)) && state.sisu.current >= offer.price,
-        hotkeyKey: RECRUIT_SLOT_HOTKEYS[slotIndex] ?? null
+        hotkeyKey: RECRUIT_SLOT_HOTKEYS[slotIndex] ?? null,
+        canHireToSauna: canHireRecruitToSauna(state, offer, content),
+        hireToSaunaLabel: hireRecruitToSaunaLabel(state, offer, content)
       };
     }),
     steamEarned: state.steamEarned,
@@ -4653,7 +5231,9 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
           id: skillId,
           name: content.skillDefinitions[skillId].name
         })),
-        location: selected.location
+        location: selected.location,
+        canSaunaCommand: canCommandDefenderToSauna(state, selected),
+        saunaCommandLabel: saunaCommandLabel(state, selected)
       };
     })() : null,
     selectedSauna: state.selectedMapTarget === 'sauna' ? {
@@ -4670,8 +5250,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       slapSwapUnlocked: hasSaunaSlapSwap(state),
       canReroll: canRerollSaunaDefender(state),
       rerollCost: saunaRerollCost(state),
-      canSendSelectedBoardHero: selectedBoardDefender !== null && state.overlayMode === 'none' && state.phase === 'prep',
-      sendSelectedBoardHeroLabel: saunaSendLabel
+      canSendSelectedBoardHero: selectedBoardDefender ? canCommandDefenderToSauna(state, selectedBoardDefender) : false,
+      sendSelectedBoardHeroLabel: selectedBoardSaunaCommandLabel
     } : null,
     selectedEnemy: state.selectedMapTarget === 'enemy' && selectedEnemy ? (() => {
       const archetype = content.enemyArchetypes[selectedEnemy.archetypeId];
@@ -4683,8 +5263,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         lore: archetype.lore,
         isBoss,
         hp: selectedEnemy.hp,
-        maxHp: archetype.maxHp,
-        damage: archetype.damage,
+        maxHp: enemyMaxHp(state, selectedEnemy, content),
+        damage: enemyAttackDamage(state, selectedEnemy, content),
         range: archetype.range,
         attackCooldownMs: archetype.attackCooldownMs,
         moveCooldownMs: archetype.moveCooldownMs,
@@ -4723,7 +5303,10 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         level: state.meta.upgrades[upgradeId],
         cost,
         affordable: !blocked && cost !== null && state.meta.steam >= cost,
-        maxed: cost === null
+        maxed: cost === null,
+        repeatable: isRepeatableMetaUpgrade(upgradeId),
+        softcapReached: metaUpgradeSoftcapReached(state, upgradeId, content),
+        nextEffectText: nextMetaUpgradeEffectText(state, upgradeId, content)
       };
     }),
     worldLandmarks

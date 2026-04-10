@@ -34,6 +34,40 @@ All notable changes to this project are documented in this file.
 ### Breaking
 - [internal] Ei viela merkintoja.
 
+## 0.1.1 - 2026-04-09
+
+### Player Notes
+
+#### Intro
+Pebble loysi pullokorin ja recruit market oppi pysymaan omassa dockissaan. Taman paivityksen jalkeen uudet bossi- ja UI-muutokset ovat valmiit Pages-deployta varten.
+
+#### New Features
+- Pebble boss waves now spawn three beer bottles on the map. Pebble hunts them before the sauna, and each bottle it eats buffs later Pebble encounters in the same run.
+- End-User Horde uses its custom horde sprite pack when the branch is deployed to Pages.
+
+#### General Improvements
+- Pebble now starts at 320 HP and comes back with +40 HP on each later Pebble encounter in the same run.
+- Boss HUD now surfaces Pebble bottle progress with live `Bottles` and `Bottle Stacks` tags during Pebble waves.
+- The latest player-facing patch notes now describe the boss and recruit-market changes for version 0.1.1.
+
+#### General Fixes
+- Recruitment market actions are now fully dock-native again. Refresh, per-offer reroll, level up, and buys clear any stale legacy recruit popup state instead of reopening the old right-side market panel.
+- Pebble bottle targets now render directly on the board, and selected Pebble stats reflect the live boss damage/max HP values instead of stale archetype-only numbers.
+
+### Added
+- [player] Pebble boss waves now spawn three beer bottles on the map. Pebble hunts them before the sauna, and each bottle it eats buffs later Pebble encounters in the same run.
+
+### Changed
+- [player] Pebble now starts at 320 HP and comes back with +40 HP on each later Pebble encounter in the same run.
+- [player] Boss HUD now surfaces Pebble bottle progress with live `Bottles` and `Bottle Stacks` tags during Pebble waves.
+
+### Fixed
+- [player] Recruitment market actions are now fully dock-native again. Refresh, per-offer reroll, level up, and buys clear any stale legacy recruit popup state instead of reopening the old right-side market panel.
+- [player] Pebble bottle targets now render directly on the board, and selected Pebble stats reflect the live boss damage/max HP values instead of stale archetype-only numbers.
+
+### Breaking
+- [internal] Ei vielä merkintöjä.
+
 ## 0.1.0 - 2026-04-04
 
 ### Player Notes

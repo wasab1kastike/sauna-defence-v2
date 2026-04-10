@@ -14,8 +14,6 @@ interface SelectionCardProps {
   selectedDefender: HudSelectedDefender | null;
   selectedSauna: HudSelectedSauna | null;
   selectedEnemy: HudSelectedEnemy | null;
-  canSendSelectedDefenderToSauna: boolean;
-  sendSelectedDefenderToSaunaLabel: string;
   dispatch: (action: InputAction) => void;
 }
 
@@ -23,8 +21,6 @@ export function SelectionCard({
   selectedDefender,
   selectedSauna,
   selectedEnemy,
-  canSendSelectedDefenderToSauna,
-  sendSelectedDefenderToSaunaLabel,
   dispatch
 }: SelectionCardProps) {
   if (!selectedDefender && !selectedSauna && !selectedEnemy) {
@@ -73,17 +69,25 @@ export function SelectionCard({
                   >
                     {selectedSauna.sendSelectedBoardHeroLabel}
                   </button>
+                ) : selectedSauna.sendSelectedBoardHeroLabel && selectedDefender?.location === 'board' ? (
+                  <button className="secondary-button small-button" disabled>
+                    {selectedSauna.sendSelectedBoardHeroLabel}
+                  </button>
                 ) : null}
               </div>
             </>
           ) : (
             <>
-              <p className="panel-copy small-copy">Send one board hero here during prep to create a reserve.</p>
+              <p className="panel-copy small-copy">Send one board hero here during prep or pay SISU for a live retreat when the sauna is empty.</p>
               {selectedSauna.canSendSelectedBoardHero && selectedDefender?.location === 'board' ? (
                 <button
                   className="secondary-button small-button"
                   onClick={() => dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })}
                 >
+                  {selectedSauna.sendSelectedBoardHeroLabel}
+                </button>
+              ) : selectedSauna.sendSelectedBoardHeroLabel && selectedDefender?.location === 'board' ? (
+                <button className="secondary-button small-button" disabled>
                   {selectedSauna.sendSelectedBoardHeroLabel}
                 </button>
               ) : null}
@@ -196,12 +200,16 @@ export function SelectionCard({
               ))}
             </div>
           ) : null}
-          {canSendSelectedDefenderToSauna ? (
+          {selectedDefender.canSaunaCommand ? (
             <button
               className="mini-button"
               onClick={() => dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })}
             >
-              {sendSelectedDefenderToSaunaLabel}
+              {selectedDefender.saunaCommandLabel ?? 'Send To Sauna'}
+            </button>
+          ) : selectedDefender.saunaCommandLabel ? (
+            <button className="mini-button" disabled>
+              {selectedDefender.saunaCommandLabel}
             </button>
           ) : null}
         </>
