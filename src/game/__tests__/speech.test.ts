@@ -116,6 +116,7 @@ describe('speech bubbles', () => {
   it('creates a speech bubble after a beer shop purchase and anchors it to a visible speaker', () => {
     const meta = createBeerMeta();
     let state = prepState(42, meta);
+    state.sisu.current = 50;
     const boardDefender = state.defenders[0];
     boardDefender.location = 'board';
     boardDefender.tile = { q: 1, r: -1 };
@@ -131,24 +132,21 @@ describe('speech bubbles', () => {
 
   it('replaces an older bubble when the same speaker talks again', () => {
     const meta = createBeerMeta();
-    const result = findSeed(
-      (seed) => {
-        let state = prepState(seed, meta);
-        const offer = state.beerShopOffers[0];
-        state = applyAction(state, { type: 'buyBeerShopOffer', offerId: offer.offerId }, gameContent);
-        state = stepState(state, 1900, gameContent);
-        const firstId = state.speechBubbles[0]?.id ?? null;
-        state = applyAction(state, { type: 'buyBeerShopOffer', offerId: offer.offerId }, gameContent);
-        return { state, firstId };
-      },
-      ({ state, firstId }) =>
-        state.speechBubbles.length === 1
-        && state.speechBubbles[0].speaker.kind === 'landmark'
-        && state.speechBubbles[0].id !== firstId
-    );
+    let state = prepState(42, meta);
+    state.sisu.current = 50;
+    for (const defender of state.defenders) {
+      defender.hp = 0;
+    }
+    const offer = state.beerShopOffers[0];
 
-    expect(result.state.speechBubbles).toHaveLength(1);
-    expect(result.state.speechBubbles[0].speaker).toEqual({ kind: 'landmark', landmarkId: 'beer_shop' });
+    state = applyAction(state, { type: 'buyBeerShopOffer', offerId: offer.offerId }, gameContent);
+    state = stepState(state, 1900, gameContent);
+    const firstId = state.speechBubbles[0]?.id ?? null;
+    state = applyAction(state, { type: 'buyBeerShopOffer', offerId: offer.offerId }, gameContent);
+
+    expect(state.speechBubbles).toHaveLength(1);
+    expect(state.speechBubbles[0].id).not.toBe(firstId);
+    expect(state.speechBubbles[0].speaker).toEqual({ kind: 'landmark', landmarkId: 'beer_shop' });
   });
 
   it('caps active speech bubbles at three when a fourth speaker is added', () => {

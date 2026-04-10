@@ -1,4 +1,5 @@
 import { act, createElement } from 'react';
+import { didBeerBuffActivate } from '../audio';
 import {
   formatPatchNotesDate,
   GUIDE_STEPS,
@@ -276,6 +277,43 @@ describe('App popup helpers', () => {
 
     expect(stackedHudOffer?.purchaseLabel).toContain('Stack Drink');
     expect(stackedHudOffer?.purchaseLabel).toContain('SISU');
+  });
+
+  it('detects when a new beer buff activates', () => {
+    const meta = createDefaultMetaProgress();
+    meta.upgrades.beer_shop_unlock = 1;
+
+    const previousState = createInitialState(gameContent, meta, 42, false);
+    const nextState = createInitialState(gameContent, meta, 42, false);
+    nextState.activeAlcohols = [{ alcoholId: 'light_lager', stacks: 1 }];
+
+    expect(didBeerBuffActivate(createSnapshot(previousState, gameContent), createSnapshot(nextState, gameContent))).toBe(true);
+  });
+
+  it('detects when an existing beer buff stack increases', () => {
+    const meta = createDefaultMetaProgress();
+    meta.upgrades.beer_shop_unlock = 1;
+
+    const previousState = createInitialState(gameContent, meta, 42, false);
+    previousState.activeAlcohols = [{ alcoholId: 'light_lager', stacks: 1 }];
+    const nextState = createInitialState(gameContent, meta, 42, false);
+    nextState.activeAlcohols = [{ alcoholId: 'light_lager', stacks: 2 }];
+
+    expect(didBeerBuffActivate(createSnapshot(previousState, gameContent), createSnapshot(nextState, gameContent))).toBe(true);
+  });
+
+  it('does not trigger beer buff music when drinks are removed or unchanged', () => {
+    const meta = createDefaultMetaProgress();
+    meta.upgrades.beer_shop_unlock = 1;
+
+    const previousState = createInitialState(gameContent, meta, 42, false);
+    previousState.activeAlcohols = [{ alcoholId: 'light_lager', stacks: 1 }];
+    const unchangedState = createInitialState(gameContent, meta, 42, false);
+    unchangedState.activeAlcohols = [{ alcoholId: 'light_lager', stacks: 1 }];
+    const removedState = createInitialState(gameContent, meta, 42, false);
+
+    expect(didBeerBuffActivate(createSnapshot(previousState, gameContent), createSnapshot(unchangedState, gameContent))).toBe(false);
+    expect(didBeerBuffActivate(createSnapshot(previousState, gameContent), createSnapshot(removedState, gameContent))).toBe(false);
   });
 
   it('blocks gameplay hotkeys during intermission', () => {

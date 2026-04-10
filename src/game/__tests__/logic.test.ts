@@ -110,6 +110,17 @@ function recruitAndPlace(state, tile, slotIndex = 0) {
   return { state, offer };
 }
 
+function burstGroups(wave) {
+  return Array.from(wave.spawns.reduce((acc, spawn) => {
+    acc.set(spawn.atMs, [...(acc.get(spawn.atMs) ?? []), spawn]);
+    return acc;
+  }, new Map()).values());
+}
+
+function hasFullLaneVolley(wave) {
+  return burstGroups(wave).some((group) => new Set(group.map((spawn) => spawn.laneIndex)).size === gameContent.config.spawnLanes.length);
+}
+
 describe('Sauna Defense V2 logic', () => {
   it('builds a steeper early pacing curve and keeps the first boss on wave five', () => {
     const waves = [1, 2, 3, 4, 5].map((index) => createWaveDefinition(index, gameContent));
@@ -121,6 +132,12 @@ describe('Sauna Defense V2 logic', () => {
     expect(waves[2].pressure).toBeGreaterThan(waves[1].pressure);
     expect(waves[3].pressure).toBeGreaterThan(waves[2].pressure);
     expect(waves[4].pressure).toBeGreaterThan(waves[3].pressure);
+  });
+
+  it('keeps waves 1-5 authored counts unchanged', () => {
+    const waves = [1, 2, 3, 4, 5].map((index) => createWaveDefinition(index, gameContent));
+
+    expect(waves.map((wave) => wave.spawns.length)).toEqual([3, 4, 4, 5, 11]);
   });
 
   it('rotates unique bosses in a fixed order across boss waves', () => {
@@ -146,17 +163,38 @@ describe('Sauna Defense V2 logic', () => {
     const wave6 = createWaveDefinition(6, gameContent);
     const wave10 = createWaveDefinition(10, gameContent);
     const wave15 = createWaveDefinition(15, gameContent);
-    const burstMap = wave6.spawns.reduce((acc, spawn) => {
-        acc.set(spawn.atMs, [...(acc.get(spawn.atMs) ?? []), spawn]);
-        return acc;
-      }, new Map());
-    const concurrentBursts = Array.from(burstMap.values()).filter((group) => group.length > 1);
+    const concurrentBursts = burstGroups(wave6).filter((group) => group.length > 1);
 
     expect(Math.max(...wave6.spawns.map((spawn) => spawn.atMs))).toBeLessThan(5000);
-    expect(Math.max(...wave10.spawns.map((spawn) => spawn.atMs))).toBeLessThan(6000);
-    expect(Math.max(...wave15.spawns.map((spawn) => spawn.atMs))).toBeLessThan(12000);
+    expect(Math.max(...wave10.spawns.map((spawn) => spawn.atMs))).toBeLessThan(1400);
+    expect(Math.max(...wave15.spawns.map((spawn) => spawn.atMs))).toBeLessThan(1800);
     expect(concurrentBursts.length).toBeGreaterThan(0);
     expect(concurrentBursts.some((group) => new Set(group.map((spawn) => spawn.laneIndex)).size > 1)).toBe(true);
+  });
+
+  it('uses all six spawn lanes in synchronized volleys from wave 10 onward', () => {
+    const waves = [10, 12, 16, 20].map((index) => createWaveDefinition(index, gameContent));
+
+    expect(waves.every((wave) => hasFullLaneVolley(wave))).toBe(true);
+  });
+
+  it('spreads boss reinforcements across all six spawn lanes from wave 10 onward', () => {
+    const waves = [10, 15, 20, 25, 30].map((index) => createWaveDefinition(index, gameContent));
+
+    for (const wave of waves) {
+      const supportSpawns = wave.spawns.filter((spawn) => spawn.enemyId !== wave.bossId);
+      expect(new Set(supportSpawns.map((spawn) => spawn.laneIndex)).size).toBe(gameContent.config.spawnLanes.length);
+      expect(hasFullLaneVolley(wave)).toBe(true);
+    }
+  });
+
+  it('ramps wave counts after 20 faster than the previous late-game curve', () => {
+    const previousLateCount = (index: number) => 100 + Math.round((index - 20) * 2.4);
+    const lateWaveCounts = [21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+      .map((index) => createWaveDefinition(index, gameContent).spawns.length);
+
+    expect(lateWaveCounts).toEqual([108, 116, 124, 132, 140, 150, 160, 170, 180, 190]);
+    expect([21, 22, 23, 24, 25, 26, 27, 28, 29, 30].every((index) => createWaveDefinition(index, gameContent).spawns.length > previousLateCount(index))).toBe(true);
   });
 
   it('makes Pebble ignore defenders and continue along its scripted path', () => {
@@ -3536,10 +3574,10 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.globalModifierDraftOffers.every((entry) => entry.stackCount > 0)).toBe(true);
     expect(new Set(snapshot.hud.globalModifierDraftOffers.map((entry) => entry.id)).size).toBe(3);
     expect(state.boardExpansionDirections).toHaveLength(1);
-    expect(snapshot.config.gridRadius).toBe(10);
-    expect(snapshot.config.buildRadius).toBe(9);
-    expect(snapshot.tiles).toHaveLength(145);
-    expect(snapshot.buildableTiles).toHaveLength(104);
+    expect(snapshot.config.gridRadius).toBe(9);
+    expect(snapshot.config.buildRadius).toBe(8);
+    expect(snapshot.tiles).toHaveLength(142);
+    expect(snapshot.buildableTiles).toHaveLength(102);
     expect(snapshot.spawnTiles).toHaveLength(6);
     const expansionDirection = state.boardExpansionDirections[0];
     const oldArmTip = boardExpansionDirectionVector(expansionDirection);
@@ -3559,9 +3597,9 @@ describe('Sauna Defense V2 logic', () => {
       (tile) => directionBoundaryValue(tile, expansionDirection) === directionBoundaryTarget(snapshot.config.gridRadius, expansionDirection)
     );
 
-    expect(expandedBuildFrontier).toHaveLength(2);
-    expect(expandedSpawnFrontier).toHaveLength(3);
-    expect(expandedSpawnTile).toEqual(expandedSpawnFrontier[1]);
+    expect(expandedBuildFrontier).toHaveLength(3);
+    expect(expandedSpawnFrontier).toHaveLength(4);
+    expect(expandedSpawnTile).toEqual(expandedSpawnFrontier[2]);
     expect(expandedSpawnTile).not.toEqual({ q: oldArmTip.q * 10, r: oldArmTip.r * 10 });
   });
 
@@ -3657,7 +3695,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(activeTargets.every((target) => !spawnKeys.has(`${target.tile.q},${target.tile.r}`))).toBe(true);
     expect(activeTargets.every((target) => !landmarkKeys.has(`${target.tile.q},${target.tile.r}`))).toBe(true);
     expect(activeTargets.every((target) => !pebblePathKeys.has(`${target.tile.q},${target.tile.r}`))).toBe(true);
-    expect(activeTargets.every((target) => hexDistance(target.tile, { q: 0, r: 0 }) <= gameContent.config.buildRadius)).toBe(true);
+    expect(activeTargets.every((target) => hexDistance(target.tile, { q: 0, r: 0 }) <= snapshot.config.buildRadius)).toBe(true);
   });
 
   it('stores the picked global modifier and closes the boss reward overlay', () => {

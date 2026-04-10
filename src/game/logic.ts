@@ -1529,13 +1529,111 @@ function pushSpawn(spawns: WaveSpawn[], atMs: number, enemyId: EnemyUnitId, lane
   return atMs;
 }
 
+type WaveSpawnBand = 'legacy' | 'wide' | 'dense' | 'overdrive';
+
+function waveSpawnBand(index: number): WaveSpawnBand {
+  if (index >= 21) return 'overdrive';
+  if (index >= 16) return 'dense';
+  if (index >= 10) return 'wide';
+  return 'legacy';
+}
 
 function targetSpawnCountForWave(index: number): number {
   if (index <= 4) return 0;
   if (index <= 10) return Math.round(15 + (index - 6) * (15 / 4));
   if (index <= 15) return 30 + (index - 10) * 6;
   if (index <= 20) return 60 + (index - 15) * 8;
-  return 100 + Math.round((index - 20) * 2.4);
+  if (index <= 25) return 100 + (index - 20) * 8;
+  return 140 + (index - 25) * 10;
+}
+
+function lateWaveIntervalModifier(index: number, pattern: Exclude<WavePattern, 'tutorial' | 'boss_pressure' | 'boss_breach'>): number {
+  const band = waveSpawnBand(index);
+  if (band === 'legacy') {
+    if (pattern === 'surge') return -70;
+    if (pattern === 'staggered') return 35;
+    return 0;
+  }
+  if (band === 'wide') {
+    if (pattern === 'surge') return -180;
+    if (pattern === 'staggered') return -110;
+    return -140;
+  }
+  if (band === 'dense') {
+    if (pattern === 'surge') return -230;
+    if (pattern === 'staggered') return -170;
+    return -195;
+  }
+  if (pattern === 'surge') return -280;
+  if (pattern === 'staggered') return -210;
+  return -240;
+}
+
+function burstSizeForWave(
+  index: number,
+  pattern: Exclude<WavePattern, 'tutorial' | 'boss_pressure' | 'boss_breach'>,
+  remaining: number,
+  beatIndex: number,
+  cycle: number,
+  laneCount: number
+): number {
+  const band = waveSpawnBand(index);
+  if (band === 'wide') return Math.min(remaining, laneCount);
+  if (band === 'dense') {
+    const extra = pattern === 'surge' || beatIndex % 3 === 2 ? 2 : 0;
+    return Math.min(remaining, laneCount + extra);
+  }
+  if (band === 'overdrive') {
+    const extra = beatIndex % 2 === 0 ? laneCount : 3;
+    return Math.min(remaining, laneCount + extra);
+  }
+  if (pattern === 'split') return Math.min(remaining, 2 + ((beatIndex + cycle) % 3 === 2 ? 1 : 0));
+  if (pattern === 'staggered') {
+    if (beatIndex < 2) return 1;
+    return Math.min(remaining, 2 + ((beatIndex + cycle) % 2));
+  }
+  if (pattern === 'spearhead') return Math.min(remaining, remaining >= 3 ? 3 : 2);
+  return Math.min(remaining, 3);
+}
+
+function laneSlotsForBeat(
+  pattern: Exclude<WavePattern, 'tutorial' | 'boss_pressure' | 'boss_breach'>,
+  index: number,
+  beatIndex: number,
+  baseLane: number,
+  laneCount: number
+): number[] {
+  if (waveSpawnBand(index) !== 'legacy') {
+    const offsets = (() => {
+      if (pattern === 'split') return beatIndex % 2 === 0 ? [0, 3, 1, 4, 2, 5] : [3, 0, 4, 1, 5, 2];
+      if (pattern === 'staggered') return beatIndex % 2 === 0 ? [0, 2, 4, 1, 3, 5] : [3, 5, 1, 4, 0, 2];
+      if (pattern === 'spearhead') return [0, 1, 5, 2, 4, 3];
+      return [0, 1, 2, 3, 4, 5];
+    })();
+    const rotated = offsets.map((_, slotIndex) => offsets[(slotIndex + beatIndex) % offsets.length]);
+    return rotated.map((offset) => wrapLane(baseLane + offset, laneCount));
+  }
+
+  const altLane = wrapLane(baseLane + 3, laneCount);
+  const supportLane = wrapLane(baseLane + 2, laneCount);
+  const flankLane = wrapLane(baseLane + 1, laneCount);
+
+  if (pattern === 'split') {
+    return beatIndex % 2 === 0
+      ? [baseLane, altLane, supportLane]
+      : [supportLane, flankLane, altLane];
+  }
+  if (pattern === 'staggered') {
+    if (beatIndex === 0) return [baseLane];
+    if (beatIndex === 1) return [altLane];
+    return beatIndex % 2 === 0
+      ? [supportLane, baseLane, altLane]
+      : [altLane, supportLane, flankLane];
+  }
+  if (pattern === 'spearhead') {
+    return [baseLane, flankLane, supportLane];
+  }
+  return [baseLane, flankLane, altLane];
 }
 
 function upscaleEnemyListToTarget(base: EnemyUnitId[], targetCount: number, cycle: number): EnemyUnitId[] {
@@ -1597,11 +1695,8 @@ function buildPatternSpawns(
 ): WaveSpawn[] {
   const laneCount = spawnLanesForWave(index, content).length;
   const baseLane = wrapLane(index + cycleNumber(index, content), laneCount);
-  const altLane = wrapLane(baseLane + 3, laneCount);
-  const supportLane = wrapLane(baseLane + 2, laneCount);
-  const flankLane = wrapLane(baseLane + 1, laneCount);
-  const interval = spawnIntervalMs(index, content, pattern === 'surge' ? -70 : pattern === 'staggered' ? 35 : 0);
   const cycle = cycleNumber(index, content);
+  const interval = spawnIntervalMs(index, content, lateWaveIntervalModifier(index, pattern));
   const baseEnemies =
     pattern === 'surge'
       ? compositionForPressure(pressure + 2, cycle, 0)
@@ -1617,39 +1712,13 @@ function buildPatternSpawns(
 
   while (enemyIndex < enemies.length) {
     const remaining = enemies.length - enemyIndex;
-    const burstSize = (() => {
-      if (pattern === 'split') return Math.min(remaining, 2 + ((beatIndex + cycle) % 3 === 2 ? 1 : 0));
-      if (pattern === 'staggered') {
-        if (beatIndex < 2) return 1;
-        return Math.min(remaining, 2 + ((beatIndex + cycle) % 2));
-      }
-      if (pattern === 'spearhead') return Math.min(remaining, remaining >= 3 ? 3 : 2);
-      return Math.min(remaining, 3);
-    })();
-
-    const laneSlots = (() => {
-      if (pattern === 'split') {
-        return beatIndex % 2 === 0
-          ? [baseLane, altLane, supportLane]
-          : [supportLane, flankLane, altLane];
-      }
-      if (pattern === 'staggered') {
-        if (beatIndex === 0) return [baseLane];
-        if (beatIndex === 1) return [altLane];
-        return beatIndex % 2 === 0
-          ? [supportLane, baseLane, altLane]
-          : [altLane, supportLane, flankLane];
-      }
-      if (pattern === 'spearhead') {
-        return [baseLane, flankLane, supportLane];
-      }
-      return [baseLane, flankLane, altLane];
-    })();
+    const burstSize = burstSizeForWave(index, pattern, remaining, beatIndex, cycle, laneCount);
+    const laneSlots = laneSlotsForBeat(pattern, index, beatIndex, baseLane, laneCount);
 
     for (let localIndex = 0; localIndex < burstSize; localIndex += 1) {
       const enemyId = enemies[enemyIndex + localIndex];
       let laneIndex = laneSlots[localIndex % laneSlots.length];
-      if (pattern === 'spearhead' && enemyId === 'brute') {
+      if (waveSpawnBand(index) === 'legacy' && pattern === 'spearhead' && enemyId === 'brute') {
         laneIndex = baseLane;
       }
       pushSpawn(spawns, atMs, enemyId, laneIndex, laneCount);
@@ -1675,13 +1744,20 @@ function buildPebbleSpawns(index: number, content: GameContent): WaveSpawn[] {
 function buildEndUserHordeSpawns(index: number, content: GameContent): WaveSpawn[] {
   const laneCount = spawnLanesForWave(index, content).length;
   const baseLane = bossBaseLane(index, content);
-  const lanes = [baseLane, wrapLane(baseLane + 2, laneCount), wrapLane(baseLane + 4, laneCount)];
+  const band = waveSpawnBand(index);
+  const lanes = band === 'legacy'
+    ? [baseLane, wrapLane(baseLane + 2, laneCount), wrapLane(baseLane + 4, laneCount)]
+    : [0, 1, 2, 3, 4, 5].map((offset) => wrapLane(baseLane + offset, laneCount));
   const spawns: WaveSpawn[] = [];
   let atMs = 0;
 
   for (let spawnIndex = 0; spawnIndex < 16; spawnIndex += 1) {
     pushSpawn(spawns, atMs, 'thirsty_user', lanes[spawnIndex % lanes.length], laneCount);
-    atMs += spawnIndex > 0 && spawnIndex % 4 === 3 ? 280 : 180;
+    if (band === 'legacy') {
+      atMs += spawnIndex > 0 && spawnIndex % 4 === 3 ? 280 : 180;
+      continue;
+    }
+    atMs += spawnIndex % lanes.length === lanes.length - 1 ? 120 : 0;
   }
 
   return spawns;
@@ -1720,21 +1796,49 @@ function buildBossSpawns(index: number, content: GameContent, bossId: BossId): W
 
   const laneCount = spawnLanesForWave(index, content).length;
   const baseLane = bossBaseLane(index, content);
-  const lanes = [
-    baseLane,
-    wrapLane(baseLane + 1, laneCount),
-    wrapLane(baseLane + 2, laneCount),
-    wrapLane(baseLane + 4, laneCount)
-  ];
+  const band = waveSpawnBand(index);
+  const lanes = band === 'legacy'
+    ? [
+        baseLane,
+        wrapLane(baseLane + 1, laneCount),
+        wrapLane(baseLane + 2, laneCount),
+        wrapLane(baseLane + 4, laneCount)
+      ]
+    : [0, 1, 2, 3, 4, 5].map((offset) => wrapLane(baseLane + offset, laneCount));
   const spawns = [...baseSpawns];
-  let atMs = baseSpawns.length > 0 ? Math.max(...baseSpawns.map((spawn) => spawn.atMs)) + 220 : 0;
+  let atMs = baseSpawns.length > 0 ? Math.max(...baseSpawns.map((spawn) => spawn.atMs)) + (band === 'legacy' ? 220 : 120) : 0;
   const cycle = cycleNumber(index, content);
 
   while (spawns.length < targetCount) {
-    const addIndex = spawns.length - baseSpawns.length;
-    const enemyId: EnemyUnitId = cycle >= 2 && addIndex % 5 === 4 ? 'brute' : 'thirsty_user';
-    pushSpawn(spawns, atMs, enemyId, lanes[addIndex % lanes.length], laneCount);
-    atMs += Math.max(180, 170 - cycle * 6);
+    const remaining = targetCount - spawns.length;
+    const volleySize = band === 'wide'
+      ? Math.min(remaining, laneCount)
+      : band === 'dense'
+        ? Math.min(remaining, laneCount + 2)
+        : band === 'overdrive'
+          ? Math.min(remaining, laneCount + (spawns.length % 2 === 0 ? laneCount : 3))
+          : 1;
+
+    for (let localIndex = 0; localIndex < volleySize; localIndex += 1) {
+      const addIndex = spawns.length - baseSpawns.length;
+      const enemyId: EnemyUnitId = cycle >= 2 && addIndex % 5 === 4 ? 'brute' : 'thirsty_user';
+      pushSpawn(spawns, atMs, enemyId, lanes[localIndex % lanes.length], laneCount);
+    }
+
+    if (band === 'legacy') {
+      atMs += Math.max(180, 170 - cycle * 6);
+      continue;
+    }
+
+    if (band === 'wide') {
+      atMs += 150;
+      continue;
+    }
+    if (band === 'dense') {
+      atMs += 120;
+      continue;
+    }
+    atMs += 90;
   }
 
   return spawns;

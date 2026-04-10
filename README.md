@@ -30,6 +30,11 @@ npm run build
 - `npm run check:player-patch-notes` varmistaa että `package.json` version release-kohdassa on vähintään yksi `[player]` merkintä **ja** että generoidut patch notes -tiedostot ovat synkassa version/päivämäärän kanssa.
 - GitHub Pages -workflow ajaa komennot järjestyksessä `lint -> typecheck -> test -> build:patch-notes -> build`.
 
+## Beer Buff -musiikki
+
+- Olutbuffin aktivointi yrittää soittaa paikallisen tiedoston polusta `public/audio/beer-buff-theme.mp3`.
+- Bing- tai YouTube-sivulinkkiä ei voi käyttää selaimessa suoraan audiolähteenä. Jos haluat juuri tietyn kappaleen peliin, vie siitä erillinen `.mp3` tai `.ogg`-tiedosto ja lisää se yllä olevaan polkuun.
+
 ## Tallennusavaimet ja versiointi
 
 Tallennusskeeman canonical-versio tulee vakiosta `SAVE_SCHEMA_VERSION` (`src/game/version.ts`) ja nykyinen arvo on **`v3`**. Avainprefix muodostuu runtime:ssa automaattisesti muodossa `sauna-defense-${SAVE_SCHEMA_VERSION}`.
