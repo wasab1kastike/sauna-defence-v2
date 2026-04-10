@@ -1,6 +1,7 @@
 import { applyAction, createDefaultMetaProgress, createDefaultRunPreferences, createInitialState, createSnapshot, stepState } from './logic';
 import { paintSnapshot } from './render';
-import type { GameRuntime, GameRuntimeConfig, GameSnapshot, InputAction, MetaProgress, RunPreferences, RunState } from './types';
+import { DEFAULT_BOARD_CAMERA } from './render/layout';
+import type { BoardCamera, GameRuntime, GameRuntimeConfig, GameSnapshot, InputAction, MetaProgress, RunPreferences, RunState } from './types';
 import { SAVE_SCHEMA_VERSION } from './version';
 
 export const STORAGE_VERSION = SAVE_SCHEMA_VERSION;
@@ -141,6 +142,7 @@ export function createGameRuntime(config: GameRuntimeConfig): GameRuntime {
   let animationFrameId = 0;
   let lastFrameMs = 0;
   let lastEmitMs = 0;
+  let boardCamera: BoardCamera = DEFAULT_BOARD_CAMERA;
   const listeners = new Set<(snapshot: GameSnapshot) => void>();
 
   const emit = (force = false) => {
@@ -166,7 +168,7 @@ export function createGameRuntime(config: GameRuntimeConfig): GameRuntime {
       return;
     }
     const rect = config.canvas.getBoundingClientRect();
-    paintSnapshot(ctx, snapshot, rect.width, rect.height);
+    paintSnapshot(ctx, snapshot, rect.width, rect.height, boardCamera);
   };
 
   const sync = (forceEmit = false) => {
@@ -220,6 +222,11 @@ export function createGameRuntime(config: GameRuntimeConfig): GameRuntime {
       }
       render();
       emit(true);
+    },
+
+    setBoardCamera(camera: BoardCamera) {
+      boardCamera = { ...camera };
+      render();
     },
 
     dispatch(action: InputAction) {

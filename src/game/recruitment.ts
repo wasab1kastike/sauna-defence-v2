@@ -8,7 +8,6 @@ export interface RecruitmentDependencies {
   derivedMaxHp: (state: RunState, defender: DefenderInstance, content: GameContent) => number;
   getDefender: (state: RunState, defenderId: string | null) => DefenderInstance | null;
   livingDefenders: (state: RunState) => DefenderInstance[];
-  recruitReplacementTarget: (state: RunState) => DefenderInstance | null;
   rosterCap: (state: RunState, content: GameContent) => number;
 }
 
@@ -18,10 +17,6 @@ export function recruitRollCost(): number {
 
 export function benchRerollCost(state: RunState, defenderId: string): number {
   return 1 + (state.benchRerollCountsByDefenderId[defenderId] ?? 0);
-}
-
-export function recruitOfferRerollCost(state: RunState, offerId: number): number {
-  return 1 + (state.recruitRerollCountsByOfferId[offerId] ?? 0);
 }
 
 export function recruitLevelUpCost(levelUpCount: number): number {
@@ -47,41 +42,36 @@ export function recruitmentStatusText(state: RunState, content: GameContent, dep
   if (state.introOpen) {
     return 'Finish the briefing before opening the recruitment market.';
   }
-  const replacement = deps.recruitReplacementTarget(state);
-  const rosterFull = deps.livingDefenders(state).length >= deps.rosterCap(state, content);
   const boardFull = deps.boardDefenders(state).length >= deps.boardCap(state, content);
+  const pendingReadyRecruit = state.defenders.find((defender) => defender.location === 'ready') ?? null;
   const rerollCost = recruitRollCost();
   const nextLevelUpCost = recruitLevelUpCost(state.recruitLevelUpCount);
-  if (rosterFull && state.recruitOffers.length === 0) {
-    return replacement
-      ? `Roster full: reroll normally, then your next recruit will replace ${replacement.name}.`
-      : 'Roster full: reroll normally, then select a roster hero or the sauna reserve to replace.';
+  const visibleOffers = state.recruitOffers.filter((offer): offer is NonNullable<typeof offer> => offer !== null);
+
+  if (pendingReadyRecruit) {
+    return `Place or sauna ${pendingReadyRecruit.name} first before recruiting another hero.`;
   }
-  if (state.recruitOffers.length > 0) {
-    if (rosterFull) {
-      return replacement
-        ? state.sisu.current >= Math.min(...state.recruitOffers.map((offer) => offer.price))
-          ? `Roster full: buying a recruit will replace ${replacement.name}.`
-          : `Roster full: ${replacement.name} is marked for replacement, but you still need more SISU.`
-        : 'Roster full: select who gets replaced before buying a recruit.';
-    }
+  if (visibleOffers.length > 0) {
+    const cheapest = Math.min(...visibleOffers.map((offer) => offer.price));
     if (boardFull) {
-      return state.sisu.current >= Math.min(...state.recruitOffers.map((offer) => offer.price))
+      return state.sisu.current >= cheapest
         ? state.saunaDefenderId
-          ? 'Board full: the sauna is occupied, so new recruits will join the reserve row.'
-          : 'Board full: the next recruit will go straight into the sauna reserve.'
-        : 'Board full: you need more SISU before this batch can reinforce the reserve line.';
+          ? 'Board full: buying a recruit will replace the current sauna hero.'
+          : 'Board full: the next recruit goes straight into the empty sauna.'
+        : 'Board full: the next recruit will route through the sauna once you have enough SISU.';
     }
-    return state.sisu.current >= Math.min(...state.recruitOffers.map((offer) => offer.price))
-      ? 'Pick one candidate. The others leave when you sign a recruit.'
+    return state.sisu.current >= cheapest
+      ? state.recruitMarketIsFree
+        ? 'Opening roster is free. Pick one hero, place them, then reroll when you want fresh prices.'
+        : 'Pick one recruit, place them on the board, then reroll when you want a fresh batch.'
       : 'You can inspect the market, but you need more SISU to afford any offer.';
   }
-  if (boardFull && !rosterFull) {
+  if (boardFull) {
     return state.saunaDefenderId
-      ? `Board full: the sauna is occupied, so new recruits will join the reserve row. Reroll costs ${rerollCost} SISU and Level Up costs ${nextLevelUpCost} SISU.`
-      : `Board full: the sauna is empty, so the next recruit will go there. Reroll costs ${rerollCost} SISU and Level Up costs ${nextLevelUpCost} SISU.`;
+      ? `Board full and sauna occupied: the next recruit replaces the sauna hero. Refresh costs ${rerollCost} SISU and Level Up costs ${nextLevelUpCost} SISU.`
+      : `Board full and sauna empty: the next recruit goes to sauna. Refresh costs ${rerollCost} SISU and Level Up costs ${nextLevelUpCost} SISU.`;
   }
-  return `Reroll costs ${rerollCost} SISU. Recruitment Level Up costs ${nextLevelUpCost} SISU and improves future recruit levels.`;
+  return `Refresh costs ${rerollCost} SISU. Recruitment Level Up costs ${nextLevelUpCost} SISU and improves future rerolls.`;
 }
 
 export function fillDefenderToMax(

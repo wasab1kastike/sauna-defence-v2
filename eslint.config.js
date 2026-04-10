@@ -33,4 +33,10 @@ export default tseslint.config(
       '@typescript-eslint/consistent-type-imports': 'warn',
     },
   },
+  {
+    files: ['src/game/__tests__/logic.test.ts'],
+    rules: {
+      '@typescript-eslint/ban-ts-comment': 'off',
+    },
+  },
 );

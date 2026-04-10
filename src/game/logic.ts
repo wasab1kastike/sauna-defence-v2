@@ -11,7 +11,6 @@ import type {
   DefenderInstance,
   DefenderSubclassId,
   DefenderSubclassDefinition,
-  DefenderLocation,
   DefenderTemplateId,
   EnemyBehavior,
   EnemyInstance,
@@ -54,7 +53,6 @@ import {
   coordKey as coordKeyFromGeometry,
   createHexGrid as createHexGridFromGeometry,
   hexDistance as hexDistanceFromGeometry,
-  rotateClockwise as rotateClockwiseFromGeometry,
   rotateCoord as rotateCoordFromGeometry
 } from './geometry';
 import {
@@ -64,9 +62,6 @@ import {
   landmarkTileForWave as resolveLandmarkTileForWave
 } from './boardGeometry';
 import {
-  createReadyReserveEntries,
-  createReserveShortcutKeyMap,
-  createRosterEntries,
   createSaunaReserveEntry
 } from './hudSelectors';
 import {
@@ -75,7 +70,6 @@ import {
   canRerollSaunaDefender as canRerollSaunaDefenderFromModule,
   fillDefenderToMax as fillDefenderToMaxFromModule,
   recruitLevelUpCost as recruitLevelUpCostFromModule,
-  recruitOfferRerollCost as recruitOfferRerollCostFromModule,
   recruitRollCost as recruitRollCostFromModule,
   recruitmentStatusText as recruitmentStatusTextFromModule,
   saunaRerollCost as saunaRerollCostFromModule
@@ -128,6 +122,8 @@ const REPEATABLE_META_UPGRADE_IDS: MetaUpgradeId[] = [
 ];
 const CENTER: AxialCoord = { q: 0, r: 0 };
 const WORLD_LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'beer_shop'];
+const RECRUIT_MARKET_SLOT_COUNT = 4;
+const RECRUIT_SLOT_HOTKEYS = ['A', 'S', 'D', 'F'] as const;
 const BLINK_STEP_COOLDOWN_MS = 12000;
 const BATTLE_HYMN_COOLDOWN_MS = 15000;
 const BATTLE_HYMN_BUFF_MS = 3000;
@@ -251,7 +247,6 @@ const recruitmentDeps = {
   derivedMaxHp: (state: RunState, defender: DefenderInstance, content: GameContent) => derivedStats(state, defender, content).maxHp,
   getDefender,
   livingDefenders,
-  recruitReplacementTarget,
   rosterCap
 };
 
@@ -268,7 +263,6 @@ const saunaDeps = {
 };
 
 const hudSelectorDeps = {
-  benchRerollCost: (state: RunState, defenderId: string) => benchRerollCost(state, defenderId),
   canRerollSaunaDefender: (state: RunState) => canRerollSaunaDefender(state),
   derivedStats: (state: RunState, defender: DefenderInstance, content: GameContent) => derivedStats(state, defender, content),
   saunaRerollCost: (state: RunState) => saunaRerollCost(state),
@@ -361,10 +355,6 @@ function clearExpiredMotions(state: RunState): void {
 
   for (const defender of state.defenders) clearIfExpired(defender);
   for (const enemy of state.enemies) clearIfExpired(enemy);
-}
-
-function rotateClockwise(coord: AxialCoord): AxialCoord {
-  return rotateClockwiseFromGeometry(coord);
 }
 
 function rotateCoord(coord: AxialCoord, times: number): AxialCoord {
@@ -485,10 +475,6 @@ function defeatedBossCountForWave(index: number, content: GameContent): number {
 
 function gridRadiusForWave(index: number, content: GameContent): number {
   return content.config.gridRadius + defeatedBossCountForWave(index, content);
-}
-
-function buildRadiusForWave(index: number, content: GameContent): number {
-  return content.config.buildRadius + defeatedBossCountForWave(index, content);
 }
 
 function currentGridRadius(state: RunState, content: GameContent): number {
@@ -1191,13 +1177,9 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
 }
 
 function buildRoster(state: RunState, content: GameContent): DefenderInstance[] {
-  const defenders: DefenderInstance[] = [];
-  for (let index = 0; index < content.config.baseRosterCap; index += 1) {
-    const defender = newDefender(state, DEF_IDS[index % DEF_IDS.length], content);
-    defender.location = index === content.config.boardCap ? 'sauna' : 'ready';
-    defenders.push(defender);
-  }
-  return defenders;
+  void state;
+  void content;
+  return [];
 }
 
 function wrapLane(index: number, laneCount: number): number {
@@ -1215,9 +1197,11 @@ function slotInCycle(index: number, content: GameContent): number {
 function spawnIntervalMs(index: number, content: GameContent, modifier = 0): number {
   const cycle = cycleNumber(index, content);
   const slot = slotInCycle(index, content);
+  const perCycleCompression = cycle * 12;
+  const slotStep = 32 + cycle * 2;
   return Math.max(
     content.config.minSpawnIntervalMs,
-    920 - cycle * content.config.spawnIntervalStepMs - slot * 32 + modifier
+    920 - cycle * content.config.spawnIntervalStepMs - perCycleCompression - slot * slotStep + modifier
   );
 }
 
@@ -1233,7 +1217,18 @@ function wavePressure(index: number, content: GameContent, isBoss: boolean): num
     content.config.cyclePressureBase +
     cycle * content.config.cyclePressureStep +
     Math.max(0, slot - 1) * content.config.wavePressureStep;
-  return isBoss ? basePressure + 7 + cycle * 2 : basePressure;
+
+  if (isBoss) {
+    // Bosses keep their own curve so each boss wave still feels like a distinct spike.
+    const bossCycleSpike = Math.max(1, Math.floor(cycle * 1.5));
+    return basePressure + 7 + cycle * 2 + bossCycleSpike;
+  }
+
+  // Tutorial onboarding is locked at waves 1-4 above. From wave 6 onward,
+  // each 5-wave cycle adds a visibly stronger pressure bump.
+  const cycleRamp = cycle * (cycle + 2);
+  const milestoneBonus = cycle > 0 ? 1 + Math.floor(cycle / 2) : 0;
+  return basePressure + cycleRamp + milestoneBonus;
 }
 
 function rewardSisuForWave(index: number, pressure: number, isBoss: boolean, content: GameContent): number {
@@ -1252,24 +1247,61 @@ function pushSpawn(spawns: WaveSpawn[], atMs: number, enemyId: EnemyUnitId, lane
   return atMs;
 }
 
+
+function targetSpawnCountForWave(index: number): number {
+  if (index <= 4) return 0;
+  if (index <= 10) return Math.round(15 + (index - 6) * (15 / 4));
+  if (index <= 15) return 30 + (index - 10) * 6;
+  if (index <= 20) return 60 + (index - 15) * 8;
+  return 100 + Math.round((index - 20) * 2.4);
+}
+
+function upscaleEnemyListToTarget(base: EnemyUnitId[], targetCount: number, cycle: number): EnemyUnitId[] {
+  if (targetCount <= 0) return [...base];
+  const result = [...base];
+  if (result.length > targetCount) {
+    return result.slice(0, targetCount);
+  }
+
+  while (result.length < targetCount) {
+    const spawnIndex = result.length;
+    const addBrute = cycle >= 2 && spawnIndex % 3 === 0;
+    result.push(addBrute ? 'brute' : 'raider');
+  }
+
+  return result;
+}
+
 function compositionForPressure(pressure: number, cycle: number, favorBrutes: number): EnemyUnitId[] {
   const result: EnemyUnitId[] = [];
   let remaining = pressure;
-  let brutesLeft = Math.max(0, Math.min(1 + cycle, Math.floor((pressure - 4) / 4) + favorBrutes));
+  const bruteCap = 1 + cycle + Math.floor(cycle / 2);
+  let brutesLeft = Math.max(0, Math.min(bruteCap, Math.floor((pressure - 4) / 3) + favorBrutes + Math.floor(cycle / 2)));
 
   while (remaining > 0) {
-    if (remaining >= 4 && brutesLeft > 0) {
+    const bruteThreshold = Math.max(3, 5 - Math.floor(cycle / 2));
+    if (remaining >= bruteThreshold && brutesLeft > 0) {
       result.push('brute');
       remaining -= 4;
       brutesLeft -= 1;
       continue;
     }
+
     result.push('raider');
     remaining -= 2;
   }
 
   if (result.length < 3) {
     result.push('raider');
+  }
+
+  const extraPicks = Math.max(0, Math.floor(cycle / 2));
+  for (let i = 0; i < extraPicks; i += 1) {
+    const shouldSpawnBrute = brutesLeft > 0 && cycle >= 2 && i % 2 === 0;
+    result.push(shouldSpawnBrute ? 'brute' : 'raider');
+    if (shouldSpawnBrute) {
+      brutesLeft -= 1;
+    }
   }
 
   return result;
@@ -1288,12 +1320,14 @@ function buildPatternSpawns(
   const flankLane = wrapLane(baseLane + 1, laneCount);
   const interval = spawnIntervalMs(index, content, pattern === 'surge' ? -70 : pattern === 'staggered' ? 35 : 0);
   const cycle = cycleNumber(index, content);
-  const enemies =
+  const baseEnemies =
     pattern === 'surge'
       ? compositionForPressure(pressure + 2, cycle, 0)
       : pattern === 'spearhead'
         ? compositionForPressure(pressure, cycle, 1)
         : compositionForPressure(pressure, cycle, 0);
+  const targetCount = targetSpawnCountForWave(index);
+  const enemies = upscaleEnemyListToTarget(baseEnemies, targetCount, cycle);
   const spawns: WaveSpawn[] = [];
   let atMs = 0;
 
@@ -1353,18 +1387,46 @@ function buildEscalationManagerSpawns(index: number, content: GameContent): Wave
 }
 
 function buildBossSpawns(index: number, content: GameContent, bossId: BossId): WaveSpawn[] {
-  switch (bossId) {
-    case 'pebble':
-      return buildPebbleSpawns(index, content);
-    case 'end_user_horde':
-      return buildEndUserHordeSpawns(index, content);
-    case 'electric_bather':
-      return buildElectricBatherSpawns(index, content);
-    case 'escalation_manager':
-      return buildEscalationManagerSpawns(index, content);
-    default:
-      return [];
+  const baseSpawns = (() => {
+    switch (bossId) {
+      case 'pebble':
+        return buildPebbleSpawns(index, content);
+      case 'end_user_horde':
+        return buildEndUserHordeSpawns(index, content);
+      case 'electric_bather':
+        return buildElectricBatherSpawns(index, content);
+      case 'escalation_manager':
+        return buildEscalationManagerSpawns(index, content);
+      default:
+        return [];
+    }
+  })();
+
+  const targetCount = targetSpawnCountForWave(index);
+  if (baseSpawns.length >= targetCount || targetCount <= 0) {
+    return baseSpawns;
   }
+
+  const laneCount = spawnLanesForWave(index, content).length;
+  const baseLane = bossBaseLane(index, content);
+  const lanes = [
+    baseLane,
+    wrapLane(baseLane + 1, laneCount),
+    wrapLane(baseLane + 2, laneCount),
+    wrapLane(baseLane + 4, laneCount)
+  ];
+  const spawns = [...baseSpawns];
+  let atMs = baseSpawns.length > 0 ? Math.max(...baseSpawns.map((spawn) => spawn.atMs)) + 220 : 0;
+  const cycle = cycleNumber(index, content);
+
+  while (spawns.length < targetCount) {
+    const addIndex = spawns.length - baseSpawns.length;
+    const enemyId: EnemyUnitId = cycle >= 2 && addIndex % 5 === 4 ? 'brute' : 'thirsty_user';
+    pushSpawn(spawns, atMs, enemyId, lanes[addIndex % lanes.length], laneCount);
+    atMs += Math.max(content.config.minSpawnIntervalMs, 210 - cycle * 8);
+  }
+
+  return spawns;
 }
 
 export function createWaveDefinition(index: number, content: GameContent): WaveDefinition {
@@ -1478,6 +1540,7 @@ function autoFillSaunaFromBench(state: RunState, content: GameContent): Defender
 }
 
 function maybeSaunaSlapSwap(state: RunState, defender: DefenderInstance, content: GameContent): boolean {
+  void content;
   if (!hasSaunaSlapSwap(state) || state.waveSwapUsed || !defender.tile || defender.location !== 'board' || defender.hp <= 0) {
     return false;
   }
@@ -1516,10 +1579,6 @@ function recruitRollCost(): number {
 
 function benchRerollCost(state: RunState, defenderId: string): number {
   return benchRerollCostFromModule(state, defenderId);
-}
-
-function recruitOfferRerollCost(state: RunState, offerId: number): number {
-  return recruitOfferRerollCostFromModule(state, offerId);
 }
 
 function recruitLevelUpCost(levelUpCount: number): number {
@@ -1618,10 +1677,6 @@ function hudWorldLandmarkEntry(state: RunState, landmarkId: WorldLandmarkId, con
   };
 }
 
-function boardFullButBenchAvailable(state: RunState, content: GameContent): boolean {
-  return boardDefenders(state).length >= boardCap(state, content) && livingDefenders(state).length < rosterCap(state, content);
-}
-
 function canRollRecruitOffers(state: RunState): boolean {
   return (
     canAccessRecruitment(state) &&
@@ -1629,21 +1684,18 @@ function canRollRecruitOffers(state: RunState): boolean {
   );
 }
 
-function recruitReplacementTarget(state: RunState): DefenderInstance | null {
-  if (state.selectedMapTarget === 'sauna') {
-    const saunaDefender = getDefender(state, state.saunaDefenderId);
-    return saunaDefender && saunaDefender.location === 'sauna' ? saunaDefender : null;
-  }
-  const selected = getDefender(state, state.selectedDefenderId);
-  return selected && selected.location !== 'dead' ? selected : null;
-}
-
 function hasSelectedSaunaReplacement(state: RunState): boolean {
   return state.selectedMapTarget === 'sauna';
 }
 
+function pendingReadyRecruit(state: RunState): DefenderInstance | null {
+  return state.defenders.find((defender) => defender.location === 'ready') ?? null;
+}
+
 function canHireRecruitToSauna(state: RunState, offer: RecruitOffer, content: GameContent): boolean {
   if (!canAccessRecruitment(state) || state.sisu.current < offer.price) return false;
+  const pending = pendingReadyRecruit(state);
+  if (pending && boardDefenders(state).length < boardCap(state, content)) return false;
   const saunaDefender = getDefender(state, state.saunaDefenderId);
   if (saunaDefender && saunaDefender.location === 'sauna') {
     return hasSelectedSaunaReplacement(state);
@@ -1660,15 +1712,6 @@ function hireRecruitToSaunaLabel(state: RunState, offer: RecruitOffer, content: 
     return 'Roster Full';
   }
   return `Hire To Sauna (${offer.price})`;
-}
-
-function canBuyAnyRecruitOffer(state: RunState, content: GameContent): boolean {
-  const rosterFull = livingDefenders(state).length >= rosterCap(state, content);
-  return (
-    canAccessRecruitment(state) &&
-    (!rosterFull || recruitReplacementTarget(state) !== null) &&
-    state.recruitOffers.some((offer) => state.sisu.current >= offer.price)
-  );
 }
 
 function canLiveRetreatDefenderToSauna(state: RunState, defender: DefenderInstance): boolean {
@@ -1899,7 +1942,7 @@ function createRecruitOffer(state: RunState, content: GameContent): RecruitOffer
   setDefenderStartingLevel(candidate, recruitStartingLevel(state));
   const score = recruitScore(candidate, content);
   const quality = recruitQuality(score);
-  const price = recruitOfferPrice(candidate, content);
+  const price = state.recruitMarketIsFree ? 0 : recruitOfferPrice(candidate, content);
   return {
     offerId: state.nextRecruitOfferId++,
     price,
@@ -1908,9 +1951,9 @@ function createRecruitOffer(state: RunState, content: GameContent): RecruitOffer
   };
 }
 
-function rollRecruitOffersIntoState(state: RunState, content: GameContent): void {
-  state.recruitOffers = Array.from({ length: 3 }, () => createRecruitOffer(state, content));
-  state.recruitRerollCountsByOfferId = Object.fromEntries(state.recruitOffers.map((offer) => [offer.offerId, 0]));
+function rollRecruitOffersIntoState(state: RunState, content: GameContent, isFree = false): void {
+  state.recruitMarketIsFree = isFree;
+  state.recruitOffers = Array.from({ length: RECRUIT_MARKET_SLOT_COUNT }, () => createRecruitOffer(state, content));
 }
 
 function createBeerShopOffer(state: RunState, alcoholId: AlcoholId): BeerShopOffer {
@@ -1975,8 +2018,6 @@ function replaceDefenderWithRecruit(
     state.selectedDefenderId = null;
     state.selectedMapTarget = null;
   }
-
-  autoFillSaunaFromBench(state, content);
 }
 
 function pushFx(
@@ -2631,6 +2672,7 @@ function applySubclassRetaliationEffects(
   target: DefenderInstance,
   _content: GameContent
 ): void {
+  void _content;
   if (!target.tile) return;
   if (hasSubclass(target, 'stonewall') && hexDistance(enemy.tile, target.tile) <= 1) {
     applyEnemyHitWithFx(state, target, enemy, 2, 'pulse', target.tile);
@@ -4031,9 +4073,8 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
   const selectedDefender = getDefender(state, state.selectedDefenderId);
   const selectedEnemy = getEnemy(state, state.selectedEnemyInstanceId);
   const boardCount = boardDefenders(state).length;
-  const readyCount = state.defenders.filter((defender) => defender.location === 'ready').length;
-  const freeSlots = Math.max(0, rosterCap(state, content) - livingDefenders(state).length);
-  const replacement = recruitReplacementTarget(state);
+  const readyRecruit = pendingReadyRecruit(state);
+  const liveOffers = state.recruitOffers.filter((offer): offer is RecruitOffer => offer !== null);
 
   if (state.overlayMode === 'intermission') {
     if (!state.meta.shopUnlocked) {
@@ -4101,35 +4142,38 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
         : `${content.enemyArchetypes[selectedEnemy.archetypeId].name} is selected. Read its stats and lore, then decide which lane needs help first.`
     };
   }
-  if (state.recruitOffers.length > 0) {
+  if (liveOffers.length > 0) {
     return {
       title: 'Recruit Market Live',
-      body:
-        freeSlots > 0
-          ? 'Three candidates are on the towel rack. Compare prices, stats and vibes, then sign one before the market cools off.'
-          : replacement
-            ? `Three candidates are ready. Buying one will replace ${replacement.name} immediately.`
-            : 'Three candidates are ready, but your roster is full. Select the hero you want to replace before buying.'
+      body: readyRecruit
+        ? `${readyRecruit.name} is waiting to be placed. Drop them on a green hex or send a board hero to sauna before buying another recruit.`
+        : boardCount >= boardCap(state, content)
+          ? state.saunaDefenderId
+            ? 'Board full: the next recruit replaces the current sauna hero.'
+            : 'Board full: the next recruit goes to the empty sauna.'
+          : state.recruitMarketIsFree
+            ? 'The opening four recruits are free. Pick one and place them before refreshing the roster.'
+            : 'Four recruits are waiting in the market. Pick one, place them, then refresh when you want a new batch.'
     };
   }
   if (selectedDefender && selectedDefender.location !== 'board') {
     return {
       title: 'Place Defender',
-      body: `Drop ${selectedDefender.name} onto a bright green build hex. You can place heroes from the bench even while the wave is live.`
+      body: `Drop ${selectedDefender.name} onto a bright green build hex. You can still place recruits while the wave is live.`
     };
   }
   if (state.phase === 'prep') {
-    if (boardCount === 0 && readyCount > 0) {
+    if (boardCount === 0 && readyRecruit) {
       return {
         title: 'Place Your First Hero',
-        body: 'Select a hero from the roster, then click any green build hex on the board. Path tiles stay dark and cannot hold defenders.'
+        body: 'Pick one recruit from the bottom market, then click any green build hex on the board. Path tiles stay dark and cannot hold defenders.'
       };
     }
     return {
       title: state.currentWave.isBoss ? `${bossDisplayName(state.currentWave.bossId) ?? 'Boss'} Prep` : 'Prep Window',
       body: state.currentWave.isBoss
         ? bossHint(state.currentWave.bossId) ?? 'This is the clean break before a boss. Set the board, spend SISU carefully, then start when ready.'
-        : freeSlots > 0
+        : liveOffers.length > 0
           ? 'Set the board, reroll recruits if needed, and start when your lanes make sense.'
           : 'Set the board, sort loot, and start when your lanes make sense.'
     };
@@ -4138,8 +4182,8 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
     title: state.currentWave.isBoss ? (bossDisplayName(state.currentWave.bossId) ?? 'Boss Pressure') : 'Hold The Line',
     body: state.currentWave.isBoss
       ? bossHint(state.currentWave.bossId) ?? 'Keep the center alive, use pause if you need to assign loot, and watch for direct sauna breaches.'
-      : freeSlots > 0
-        ? 'Non-boss waves keep chaining. You can still recruit and place bench heroes while the fight is live.'
+      : liveOffers.length > 0
+        ? 'Non-boss waves keep chaining. You can still recruit and place new heroes while the fight is live.'
         : 'Non-boss waves keep chaining, so stabilize attrition before the next spike arrives.'
   };
 }
@@ -4188,8 +4232,8 @@ export function createInitialState(
     selectedInventoryDropId: null,
     recentDropId: null,
     recruitOffers: [],
+    recruitMarketIsFree: false,
     benchRerollCountsByDefenderId: {},
-    recruitRerollCountsByOfferId: {},
     recruitLevelBonus: 0,
     recruitLevelUpCount: 0,
     beerShopOffers: [],
@@ -4222,11 +4266,14 @@ export function createInitialState(
     meta: clone(meta),
     message: showIntermission
       ? 'Spend Steam, browse upgrades, then begin the next sauna shift.'
-      : 'Place defenders, keep one weird hero in the sauna, then start the wave.',
+      : 'Pick a free recruit, place them on the board, then start the wave.',
     metaAwarded: false
   };
   state.defenders = buildRoster(state, content);
   state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
+  if (!showIntermission) {
+    rollRecruitOffersIntoState(state, content, true);
+  }
   if (beerShopUnlocked(state)) {
     rollBeerShopOffersIntoState(state, content);
   }
@@ -4478,9 +4525,8 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       defender.attackReadyAtMs = next.timeMs + derivedStats(next, defender, content).attackCooldownMs;
       if (next.saunaDefenderId === defender.id) next.saunaDefenderId = null;
       clearBoardSelection(next);
-      const movedToSauna = autoFillSaunaFromBench(next, content);
-      next.message = movedToSauna
-        ? `${defender.name} entered the fight. ${movedToSauna.name} moved into the empty sauna reserve.`
+      next.message = cameFromSauna
+        ? `${defender.name} stepped out of the sauna and onto the board.`
         : `${defender.name} entered the fight.`;
       return next;
     }
@@ -4561,10 +4607,11 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         return next;
       }
       next.sisu.current -= cost;
-      rollRecruitOffersIntoState(next, content);
+      rollRecruitOffersIntoState(next, content, false);
+      const visibleOffers = next.recruitOffers.filter((offer): offer is RecruitOffer => offer !== null);
       next.message =
-        next.recruitOffers.length > 0
-          ? `The market rerolled. Three new recruits are up for sale, starting at ${Math.min(...next.recruitOffers.map((offer) => offer.price))} SISU.`
+        visibleOffers.length > 0
+          ? `The market rerolled. Four new recruits are up for sale, starting at ${Math.min(...visibleOffers.map((offer) => offer.price))} SISU.`
           : 'No recruits showed up.';
       return next;
     }
@@ -4585,26 +4632,10 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.message = `${previousName} rerolled into ${defender.name} ${defender.title} for ${cost} SISU.`;
       return next;
     }
-    case 'rerollRecruitOffer': {
-      if (!canAccessRecruitment(next)) return next;
+    case 'rerollRecruitOffer':
       clearLegacyRecruitPanelState(next);
-      const offer = next.recruitOffers.find((entry) => entry.offerId === action.offerId);
-      if (!offer) return next;
-      const cost = recruitOfferRerollCost(next, offer.offerId);
-      if (next.sisu.current < cost) {
-        next.message = `Not enough SISU to reroll ${offer.candidate.name}.`;
-        return next;
-      }
-      const previousName = offer.candidate.name;
-      next.sisu.current -= cost;
-      rerollDefenderIdentityAndStats(next, offer.candidate, content, 'fill');
-      const score = recruitScore(offer.candidate, content);
-      offer.quality = recruitQuality(score);
-      offer.price = recruitOfferPrice(offer.candidate, content);
-      next.recruitRerollCountsByOfferId[offer.offerId] = (next.recruitRerollCountsByOfferId[offer.offerId] ?? 0) + 1;
-      next.message = `${previousName} rerolled into ${offer.candidate.name} ${offer.candidate.title} for ${cost} SISU.`;
+      next.message = 'Single-slot rerolls are gone. Use Refresh to scout a new batch.';
       return next;
-    }
     case 'levelUpRecruitment': {
       if (!canAccessRecruitment(next)) return next;
       clearLegacyRecruitPanelState(next);
@@ -4622,26 +4653,25 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     case 'recruitOffer': {
       if (!canAccessRecruitment(next)) return next;
       clearLegacyRecruitPanelState(next);
-      const offer = next.recruitOffers.find((entry) => entry.offerId === action.offerId);
-      if (!offer) return next;
       const destination: RecruitDestination = action.destination ?? 'reserve';
-      const rosterFull = livingDefenders(next).length >= rosterCap(next, content);
+      const offerIndex = next.recruitOffers.findIndex((entry) => entry?.offerId === action.offerId);
+      if (offerIndex < 0) return next;
+      const offer = next.recruitOffers[offerIndex];
+      if (!offer) return next;
+      const boardIsFull = boardDefenders(next).length >= boardCap(next, content);
+      const currentPendingReadyRecruit = pendingReadyRecruit(next);
       const saunaDefender = getDefender(next, next.saunaDefenderId);
-      const replacement = destination === 'sauna'
-        ? (saunaDefender && saunaDefender.location === 'sauna' && hasSelectedSaunaReplacement(next) ? saunaDefender : null)
-        : (rosterFull ? recruitReplacementTarget(next) : null);
       if (destination === 'sauna') {
         if (saunaDefender && saunaDefender.location === 'sauna' && !hasSelectedSaunaReplacement(next)) {
           next.message = 'Select the sauna first if you want to replace the current sauna reserve.';
           return next;
         }
-        if (!saunaDefender && rosterFull) {
+        if (!saunaDefender && livingDefenders(next).length >= rosterCap(next, content)) {
           next.message = 'Roster is full. Free space or select a replacement before hiring straight to the sauna.';
           return next;
         }
-      }
-      if (rosterFull && !replacement) {
-        next.message = 'Roster is full. Select a hero from the roster, or click the sauna, to choose who gets replaced.';
+      } else if (currentPendingReadyRecruit && !boardIsFull) {
+        next.message = `Place or sauna ${currentPendingReadyRecruit.name} first before recruiting another hero.`;
         return next;
       }
       if (next.sisu.current < offer.price) {
@@ -4649,32 +4679,50 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         return next;
       }
       next.sisu.current -= offer.price;
-      if (replacement) {
-        replaceDefenderWithRecruit(next, replacement, offer.candidate, content);
-      } else if (destination === 'sauna') {
-        next.defenders.push(offer.candidate);
-        moveRecruitToSauna(next, offer.candidate);
+      if (destination === 'sauna') {
+        if (saunaDefender && saunaDefender.location === 'sauna') {
+          replaceDefenderWithRecruit(next, saunaDefender, offer.candidate, content);
+          next.selectedMapTarget = 'sauna';
+          next.selectedDefenderId = null;
+          next.selectedEnemyInstanceId = null;
+          next.message = `${offer.candidate.name} ${offer.candidate.title} replaced ${saunaDefender.name} in the sauna for ${offer.price} SISU.`;
+        } else {
+          fillDefenderToMax(next, offer.candidate, content);
+          next.defenders.push(offer.candidate);
+          moveRecruitToSauna(next, offer.candidate);
+          next.selectedMapTarget = 'sauna';
+          next.selectedDefenderId = null;
+          next.selectedEnemyInstanceId = null;
+          next.message = `${offer.candidate.name} ${offer.candidate.title} took the sauna reserve for ${offer.price} SISU.`;
+        }
+      } else if (boardIsFull) {
+        if (saunaDefender && saunaDefender.location === 'sauna') {
+          replaceDefenderWithRecruit(next, saunaDefender, offer.candidate, content);
+          next.selectedMapTarget = 'sauna';
+          next.selectedDefenderId = null;
+          next.selectedEnemyInstanceId = null;
+          next.message = `${offer.candidate.name} ${offer.candidate.title} replaced ${saunaDefender.name} in the sauna for ${offer.price} SISU.`;
+        } else {
+          addRecruitToReserve(next, offer.candidate, content);
+          next.message = `${offer.candidate.name} ${offer.candidate.title} took the empty sauna slot for ${offer.price} SISU.`;
+        }
       } else {
         addRecruitToReserve(next, offer.candidate, content);
+        next.selectedMapTarget = 'defender';
+        next.selectedDefenderId = offer.candidate.id;
+        next.selectedEnemyInstanceId = null;
+        next.message = offer.price === 0
+          ? `${offer.candidate.name} ${offer.candidate.title} joined for free. Click a build hex to place them.`
+          : `${offer.candidate.name} ${offer.candidate.title} is ready to place for ${offer.price} SISU.`;
       }
-      delete next.recruitRerollCountsByOfferId[offer.offerId];
-      next.recruitOffers = [];
-      next.recruitRerollCountsByOfferId = {};
-      clearActiveHudPanel(next);
-      next.message = replacement
-        ? destination === 'sauna'
-          ? `${offer.candidate.name} ${offer.candidate.title} replaced ${replacement.name} in the sauna for ${offer.price} SISU.`
-          : `${offer.candidate.name} ${offer.candidate.title} replaced ${replacement.name} for ${offer.price} SISU.`
-        : offer.candidate.location === 'sauna'
-          ? `${offer.candidate.name} ${offer.candidate.title} took the sauna reserve for ${offer.price} SISU.`
-          : `${offer.candidate.name} ${offer.candidate.title} joined your reserve row for ${offer.price} SISU.`;
+      next.recruitOffers[offerIndex] = null;
       return next;
     }
     case 'clearRecruitOffers':
       if (!canAccessRecruitment(next)) return next;
       clearLegacyRecruitPanelState(next);
-      next.recruitOffers = [];
-      next.recruitRerollCountsByOfferId = {};
+      next.recruitOffers = Array.from({ length: RECRUIT_MARKET_SLOT_COUNT }, () => null);
+      next.recruitMarketIsFree = false;
       clearActiveHudPanel(next);
       next.message = 'Recruit offers dismissed.';
       return next;
@@ -4861,7 +4909,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     next.saunaHp = 0;
     next.phase = 'lost';
     next.overlayMode = 'intermission';
-    clearActiveHudPanel(next);
+    setActiveHudPanel(next, 'metashop', 'metashop');
     next.activeAlcohols = [];
     next.pendingFireballs = [];
     clearPebbleEncounterTargets(next);
@@ -4892,22 +4940,12 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   const activeMs = Math.max(0, state.sisu.activeUntilMs - state.timeMs);
   const cdMs = Math.max(0, state.sisu.cooldownUntilMs - state.timeMs);
   const saunaDefender = getDefender(state, state.saunaDefenderId);
-  const readyReserveDefenders = state.defenders.filter((defender) => defender.location === 'ready');
-  const shortcutKeyByDefenderId = createReserveShortcutKeyMap(readyReserveDefenders);
   const action = actionCopy(state, content);
   const boardCount = boardDefenders(state).length;
-  const readyBenchCount = readyReserveDefenders.length;
-  const freeRecruitSlots = Math.max(0, rosterCap(state, content) - livingDefenders(state).length);
+  const freeRecruitSlots = state.recruitOffers.filter((offer) => offer !== null).length;
   const beerTier = beerShopTier(state);
   const selectedBoardDefender = selected && selected.location === 'board' ? selected : null;
   const selectedBoardSaunaCommandLabel = selectedBoardDefender ? saunaCommandLabel(state, selectedBoardDefender) : null;
-  const readyReserveEntries = createReadyReserveEntries(
-    state,
-    readyReserveDefenders,
-    content,
-    shortcutKeyByDefenderId,
-    hudSelectorDeps
-  );
   const saunaReserve = createSaunaReserveEntry(
     state,
     saunaDefender,
@@ -4917,13 +4955,6 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
   );
   saunaReserve.canSendSelectedBoardHero = selectedBoardDefender ? canCommandDefenderToSauna(state, selectedBoardDefender) : false;
   saunaReserve.sendSelectedBoardHeroLabel = selectedBoardSaunaCommandLabel;
-  const rosterEntries = createRosterEntries(
-    state,
-    state.defenders,
-    content,
-    shortcutKeyByDefenderId,
-    hudSelectorDeps
-  );
   const activeGlobalModifiers = uniqueGlobalModifierIds(state.activeGlobalModifierIds)
     .map((modifierId) => globalModifierHudEntry(state, content.globalModifierDefinitions[modifierId], content));
   const globalModifierSummary = globalModifierSummaryEntries(state, content);
@@ -4993,22 +5024,43 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     canUseSisu: state.overlayMode === 'none' && canUseSisu(state, content),
     sisuLabel: activeMs > 0 ? `SISU active ${Math.ceil(activeMs / 1000)} s` : cdMs > 0 ? `SISU cooldown ${Math.ceil(cdMs / 1000)} s` : `SISU ready (${content.config.sisuAbilityCost})`,
     canPause: state.phase === 'wave',
-    canOpenRecruitment: canAccessRecruitment(state),
     recruitmentStatusText: recruitmentStatusText(state, content),
-    recruitCost: recruitPriceFloor(),
-    canRecruit: canBuyAnyRecruitOffer(state, content),
     recruitRollCost: recruitRollCost(),
     recruitLevelBonus: state.recruitLevelBonus,
     recruitLevelUpCost: recruitLevelUpCost(state.recruitLevelUpCount),
     recruitLevelOdds: recruitLevelOdds(state.recruitLevelBonus),
     canRollRecruitOffers: canRollRecruitOffers(state),
     canLevelUpRecruitment: canAccessRecruitment(state) && state.sisu.current >= recruitLevelUpCost(state.recruitLevelUpCount),
-    hasRecruitOffers: state.recruitOffers.length > 0,
-    boardFullButBenchAvailable: boardFullButBenchAvailable(state, content),
-    rosterFullNeedsReplacement: livingDefenders(state).length >= rosterCap(state, content),
-    recruitOffers: state.recruitOffers.map((offer) => {
+    hasRecruitOffers: state.recruitOffers.some((offer) => offer !== null),
+    recruitOffers: state.recruitOffers.map((offer, slotIndex) => {
+      if (!offer) {
+        return {
+          slotIndex,
+          id: null,
+          price: null,
+          quality: null,
+          name: null,
+          title: null,
+          roleName: null,
+          subclassName: null,
+          roleSummary: null,
+          lore: null,
+          level: null,
+          hp: null,
+          damage: null,
+          heal: null,
+          range: null,
+          empty: true,
+          isFree: false,
+          canBuy: false,
+          hotkeyKey: RECRUIT_SLOT_HOTKEYS[slotIndex] ?? null,
+          canHireToSauna: false,
+          hireToSaunaLabel: 'Hire To Sauna'
+        };
+      }
       const roleStats = derivedStats(state, offer.candidate, content, false);
       return {
+        slotIndex,
         id: offer.offerId,
         price: offer.price,
         quality: offer.quality,
@@ -5023,8 +5075,10 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         damage: roleStats.damage,
         heal: roleStats.heal,
         range: roleStats.range,
-        rerollCount: state.recruitRerollCountsByOfferId[offer.offerId] ?? 0,
-        rerollCost: recruitOfferRerollCost(state, offer.offerId),
+        empty: false,
+        isFree: offer.price === 0,
+        canBuy: canAccessRecruitment(state) && (!pendingReadyRecruit(state) || boardCount >= boardCap(state, content)) && state.sisu.current >= offer.price,
+        hotkeyKey: RECRUIT_SLOT_HOTKEYS[slotIndex] ?? null,
         canHireToSauna: canHireRecruitToSauna(state, offer, content),
         hireToSaunaLabel: hireRecruitToSaunaLabel(state, offer, content)
       };
@@ -5070,11 +5124,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     }),
     actionTitle: action.title,
     actionBody: action.body,
-    readyBenchCount,
     freeRecruitSlots,
-    readyReserveEntries,
     saunaReserve,
-    rosterEntries,
     deathLogEntries: state.deathLog.slice(0, 5).map((entry) => ({
       id: entry.id,
       wave: entry.wave,

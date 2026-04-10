@@ -9,14 +9,12 @@ import type {
 } from './types';
 
 export interface HudSelectorDependencies {
-  benchRerollCost: (state: RunState, defenderId: string) => number;
   canRerollSaunaDefender: (state: RunState) => boolean;
   derivedStats: (state: RunState, defender: DefenderInstance, content: GameContent) => UnitStats;
   saunaRerollCost: (state: RunState) => number | null;
   subclassSummary: (defender: DefenderInstance, content: GameContent) => string;
 }
 
-const RESERVE_SHORTCUT_KEYS = ['A', 'S', 'D'] as const;
 const ROSTER_LOCATION_ORDER: Record<DefenderLocation, number> = {
   board: 0,
   sauna: 1,
@@ -39,19 +37,10 @@ function rosterLocationLabel(location: DefenderLocation): string {
   }
 }
 
-export function createReserveShortcutKeyMap(readyReserveDefenders: DefenderInstance[]): Map<string, string> {
-  return new Map(
-    readyReserveDefenders
-      .slice(0, RESERVE_SHORTCUT_KEYS.length)
-      .map((defender, index) => [defender.id, RESERVE_SHORTCUT_KEYS[index]])
-  );
-}
-
 export function createHudRosterEntry(
   state: RunState,
   defender: DefenderInstance,
   content: GameContent,
-  shortcutKeyByDefenderId: Map<string, string>,
   deps: HudSelectorDependencies
 ): HudRosterEntry {
   const stats = deps.derivedStats(state, defender, content);
@@ -63,7 +52,6 @@ export function createHudRosterEntry(
     title: defender.title,
     templateName: content.defenderTemplates[defender.templateId].name,
     subclassName,
-    roleSummary: content.defenderTemplates[defender.templateId].role,
     locationLabel: rosterLocationLabel(defender.location),
     summary: `Lvl ${defender.level} ${subclassName} - ${stats.damage} ATK - ${stats.defense} DEF`,
     level: defender.level,
@@ -76,23 +64,8 @@ export function createHudRosterEntry(
     regenHpPerSecond: stats.regenHpPerSecond,
     kills: defender.kills,
     location: defender.location,
-    benchRerollCount: state.benchRerollCountsByDefenderId[defender.id] ?? 0,
-    benchRerollCost: deps.benchRerollCost(state, defender.id),
-    shortcutKey: shortcutKeyByDefenderId.get(defender.id) ?? null,
     selected: state.selectedDefenderId === defender.id
   };
-}
-
-export function createReadyReserveEntries(
-  state: RunState,
-  readyReserveDefenders: DefenderInstance[],
-  content: GameContent,
-  shortcutKeyByDefenderId: Map<string, string>,
-  deps: HudSelectorDependencies
-): HudRosterEntry[] {
-  return readyReserveDefenders.map((defender) =>
-    createHudRosterEntry(state, defender, content, shortcutKeyByDefenderId, deps)
-  );
 }
 
 export function createSaunaReserveEntry(
@@ -104,7 +77,7 @@ export function createSaunaReserveEntry(
 ): HudSaunaDockEntry {
   const saunaSendLabel = selectedBoardDefender
     ? saunaDefender
-      ? `Swap ${selectedBoardDefender.name} Into Sauna`
+      ? `Replace Sauna Hero With ${selectedBoardDefender.name}`
       : `Send ${selectedBoardDefender.name} To Sauna`
     : null;
 
@@ -129,7 +102,6 @@ export function createRosterEntries(
   state: RunState,
   defenders: DefenderInstance[],
   content: GameContent,
-  shortcutKeyByDefenderId: Map<string, string>,
   deps: HudSelectorDependencies
 ): HudRosterEntry[] {
   return defenders
@@ -139,5 +111,5 @@ export function createRosterEntries(
         (ROSTER_LOCATION_ORDER[left.location] - ROSTER_LOCATION_ORDER[right.location])
         || left.name.localeCompare(right.name)
     )
-    .map((defender) => createHudRosterEntry(state, defender, content, shortcutKeyByDefenderId, deps));
+    .map((defender) => createHudRosterEntry(state, defender, content, deps));
 }

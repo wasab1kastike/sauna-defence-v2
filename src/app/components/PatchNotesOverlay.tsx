@@ -25,37 +25,30 @@ export function PatchNotesOverlay({ onClose }: PatchNotesOverlayProps) {
             Sulje
           </button>
         </div>
-        <div className="patch-notes-meta">
-          <span className="version-badge">Versio {latestPatchNotes.version}</span>
-          <span className="panel-copy small-copy">{formatPatchNotesDate(latestPatchNotes.date)}</span>
+        <div className="patch-notes-body">
+          <div className="patch-notes-meta">
+            <span className="version-badge">Versio {latestPatchNotes.version}</span>
+            <span className="panel-copy small-copy">{formatPatchNotesDate(latestPatchNotes.date)}</span>
+          </div>
+          <p className="panel-copy patch-notes-intro">{latestPatchNotes.intro}</p>
+          <div className="patch-notes-grid">
+            {latestPatchNotes.sections.map((section) => (
+              <section className="inventory-card patch-notes-section" key={section.id}>
+                <h3>{section.title}</h3>
+                {section.items.length > 0 ? (
+                  <ul>
+                    {section.items.map((entry) => (
+                      <li key={entry}>{entry}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="panel-copy small-copy patch-notes-empty">Tassa laatikossa ei ole talla kertaa ylimaaraisia saunadraamoja.</p>
+                )}
+              </section>
+            ))}
+          </div>
         </div>
-        <div className="patch-notes-grid">
-          <section className="inventory-card patch-notes-section">
-            <h3>New</h3>
-            <ul>
-              {latestPatchNotes.new.map((entry) => (
-                <li key={entry}>{entry}</li>
-              ))}
-            </ul>
-          </section>
-          <section className="inventory-card patch-notes-section">
-            <h3>Improved</h3>
-            <ul>
-              {latestPatchNotes.improved.map((entry) => (
-                <li key={entry}>{entry}</li>
-              ))}
-            </ul>
-          </section>
-          <section className="inventory-card patch-notes-section">
-            <h3>Fixed</h3>
-            <ul>
-              {latestPatchNotes.fixed.map((entry) => (
-                <li key={entry}>{entry}</li>
-              ))}
-            </ul>
-          </section>
-        </div>
-        <div className="button-row">
+        <div className="button-row patch-notes-actions">
           <button className="primary-button" onClick={onClose}>
             Jatka peliin
           </button>

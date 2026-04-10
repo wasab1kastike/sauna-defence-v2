@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 
 import { getTileViewportPosition, pickDefenderAtCanvasPoint, pickEnemyAtCanvasPoint, pickTileAtCanvasPoint } from '../game/render';
 import type {
+  BoardCamera,
   GameSnapshot,
   HudPanelId,
   HudSelectedEnemy,
@@ -29,7 +30,7 @@ export const GUIDE_STEPS = [
   },
   {
     title: 'Bottom Dock Runs The Roster',
-    body: 'The bottom dock is your TFT-style reserve line: recruit new heroes, inspect the sauna, and hotkey the first three reserves with A, S and D.'
+    body: 'The bottom dock is your recruit market now: four slots, quick refresh, and hotkeys A, S, D and F for fast picks.'
   },
   {
     title: 'Map Buildings Matter',
@@ -37,7 +38,7 @@ export const GUIDE_STEPS = [
   },
   {
     title: 'Hint Card And Action Buttons',
-    body: 'The small left hint card tells you the next step. Start Wave, Autoplay and SISU stay just below it while Q, W and E handle market and sauna shortcuts.'
+    body: 'The small left hint card tells you the next step. Start Wave, Autoplay and SISU stay just below it while Q, W and E handle refresh, level up and sauna reroll.'
   }
 ] as const;
 
@@ -113,9 +114,10 @@ export function formatPatchNotesDate(date: string): string {
 export function getLandmarkStyle(
   snapshot: GameSnapshot,
   frameSize: { width: number; height: number },
-  landmark: HudWorldLandmarkEntry
+  landmark: HudWorldLandmarkEntry,
+  camera: BoardCamera
 ): CSSProperties {
-  const point = getTileViewportPosition(snapshot, frameSize.width, frameSize.height, landmark.tile);
+  const point = getTileViewportPosition(snapshot, frameSize.width, frameSize.height, landmark.tile, camera);
   return {
     left: `${point.x}px`,
     top: `${point.y}px`
@@ -145,12 +147,13 @@ export function getLandmarkPopupPlacement(
 export function getLandmarkPopupStyle(
   snapshot: GameSnapshot,
   frameSize: { width: number; height: number },
-  landmark: HudWorldLandmarkEntry | null
+  landmark: HudWorldLandmarkEntry | null,
+  camera: BoardCamera
 ): CSSProperties | undefined {
   if (!landmark || frameSize.width === 0 || frameSize.height === 0) {
     return undefined;
   }
-  const point = getTileViewportPosition(snapshot, frameSize.width, frameSize.height, landmark.tile);
+  const point = getTileViewportPosition(snapshot, frameSize.width, frameSize.height, landmark.tile, camera);
   const placement = getLandmarkPopupPlacement(point, frameSize);
   return {
     left: `${placement.left}px`,
@@ -163,6 +166,7 @@ export function resolveBoardPointerAction(
   rect: DOMRect,
   clientX: number,
   clientY: number,
+  camera: BoardCamera,
   pickLandmark: (
     nextSnapshot: GameSnapshot,
     nextRect: DOMRect,
@@ -175,17 +179,17 @@ export function resolveBoardPointerAction(
     return { type: 'selectWorldLandmark', landmarkId: clickedLandmark.id };
   }
 
-  const clickedDefenderId = pickDefenderAtCanvasPoint(snapshot, rect, clientX, clientY);
+  const clickedDefenderId = pickDefenderAtCanvasPoint(snapshot, rect, clientX, clientY, camera);
   if (clickedDefenderId) {
     return { type: 'selectDefender', defenderId: clickedDefenderId };
   }
 
-  const clickedEnemyInstanceId = pickEnemyAtCanvasPoint(snapshot, rect, clientX, clientY);
+  const clickedEnemyInstanceId = pickEnemyAtCanvasPoint(snapshot, rect, clientX, clientY, camera);
   if (clickedEnemyInstanceId !== null) {
     return { type: 'selectEnemy', enemyInstanceId: clickedEnemyInstanceId };
   }
 
-  const tile = pickTileAtCanvasPoint(snapshot, rect, clientX, clientY);
+  const tile = pickTileAtCanvasPoint(snapshot, rect, clientX, clientY, camera);
   if (!tile) {
     return { type: 'clearSelection' };
   }
@@ -213,10 +217,12 @@ export function resolveGameplayHotkeyAction(
   }
 
   const normalizedKey = key.toLowerCase();
-  if (normalizedKey === 'a' || normalizedKey === 's' || normalizedKey === 'd') {
-    const hotkeyIndex = { a: 0, s: 1, d: 2 }[normalizedKey];
-    const entry = snapshot.hud.readyReserveEntries[hotkeyIndex];
-    return entry ? { type: 'selectDefender', defenderId: entry.id } : null;
+  if (normalizedKey === 'a' || normalizedKey === 's' || normalizedKey === 'd' || normalizedKey === 'f') {
+    const hotkeyIndex = { a: 0, s: 1, d: 2, f: 3 }[normalizedKey];
+    const offer = snapshot.hud.recruitOffers[hotkeyIndex];
+    return offer && !offer.empty && offer.id !== null && offer.canBuy
+      ? { type: 'recruitOffer', offerId: offer.id }
+      : null;
   }
   if (normalizedKey === 'q') {
     return snapshot.hud.canRollRecruitOffers ? { type: 'rerollRecruitOffers' } : null;

@@ -14,21 +14,13 @@ export interface SaunaDependencies {
 
 export function autoFillSaunaFromBench(
   state: RunState,
-  content: GameContent,
-  deps: SaunaDependencies
+  _content: GameContent,
+  _deps: SaunaDependencies
 ): DefenderInstance | null {
-  if (state.saunaDefenderId || deps.boardDefenders(state).length < deps.boardCap(state, content)) {
-    return null;
-  }
-  const reserve = state.defenders.find((defender) => defender.location === 'ready') ?? null;
-  if (!reserve) {
-    return null;
-  }
-  reserve.location = 'sauna';
-  reserve.tile = null;
-  deps.clearUnitMotion(reserve);
-  state.saunaDefenderId = reserve.id;
-  return reserve;
+  void state;
+  void _content;
+  void _deps;
+  return null;
 }
 
 export function rerollSaunaDefenderIdentityAndClass(
