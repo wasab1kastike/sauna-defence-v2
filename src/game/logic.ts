@@ -3311,7 +3311,7 @@ function healSauna(state: RunState, content: GameContent): void {
   saunaDefender.hp = Math.min(derivedStats(state, saunaDefender, content).maxHp, saunaDefender.hp + content.config.saunaHealPerPrep);
 }
 
-function startWaveState(state: RunState, waveDef: WaveDefinition, message: string): void {
+function startWaveState(state: RunState, waveDef: WaveDefinition, content: GameContent, message: string): void {
   state.overlayMode = 'none';
   state.phase = 'wave';
   state.waveElapsedMs = 0;
@@ -3375,7 +3375,7 @@ function awardWave(state: RunState, content: GameContent): void {
     return;
   }
 
-  startWaveState(state, upcomingWave, `Wave ${upcomingWave.index} rolls in without a break.`);
+  startWaveState(state, upcomingWave, content, `Wave ${upcomingWave.index} rolls in without a break.`);
 }
 
 function applyGlobalRegenTick(state: RunState, content: GameContent): void {
@@ -3699,7 +3699,7 @@ function scheduleAutoplay(state: RunState, delayMs = AUTOPLAY_DELAY_MS): void {
   state.autoplayReadyAtMs = state.timeMs + delayMs;
 }
 
-function maybeStartAutoplayWave(state: RunState): boolean {
+function maybeStartAutoplayWave(state: RunState, content: GameContent): boolean {
   if (
     !state.autoplayEnabled ||
     state.phase !== 'prep' ||
@@ -3715,6 +3715,7 @@ function maybeStartAutoplayWave(state: RunState): boolean {
   startWaveState(
     state,
     state.currentWave,
+    content,
     state.currentWave.isBoss
       ? `Boss wave ${state.currentWave.index} started.`
       : `Wave ${state.currentWave.index} started.`
@@ -4592,6 +4593,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       startWaveState(
         next,
         next.currentWave,
+        content,
         next.currentWave.isBoss
           ? `Boss wave ${next.currentWave.index} started.`
           : `Wave ${next.currentWave.index} started.`
@@ -4880,7 +4882,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     next.timeMs += deltaMs;
     next.waveElapsedMs += deltaMs;
     clearExpiredMotions(next);
-    maybeStartAutoplayWave(next);
+    maybeStartAutoplayWave(next, content);
     return next;
   }
   if (state.overlayMode !== 'none' || state.phase !== 'wave') return state;
