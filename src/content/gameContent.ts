@@ -1,5 +1,6 @@
 import type { GameContent } from '../game/types';
 import { config } from './config';
+import { speech } from './chatter';
 import { defenderSubclasses } from './subclasses';
 import { defenderTemplates } from './defenders';
 import { enemyArchetypes } from './enemies';
@@ -22,5 +23,6 @@ export const gameContent: GameContent = {
   alcoholDefinitions,
   globalModifierDefinitions,
   metaUpgrades,
-  namePools
+  namePools,
+  speech
 };

@@ -20,6 +20,7 @@ import type {
   EnemyInstance,
   EnemyUnitId,
   GameSnapshot,
+  SpeechBubbleInstance,
   UnitMotionState,
   WaveDefinition
 } from './types';
@@ -53,6 +54,12 @@ export interface BossVisualProfile {
   label: string | null;
   glowColor: string;
   accentColor: string;
+}
+
+export interface SpeechBubbleAnchor {
+  x: number;
+  y: number;
+  tone: 'defender' | 'boss' | 'landmark';
 }
 
 const DEFENDER_TOKEN_STYLES: TokenPalette[] = [
@@ -1252,6 +1259,153 @@ function resolveEnemyCanvasUnit(enemy: EnemyInstance, snapshot: GameSnapshot, la
     },
     radius: enemyRenderRadius(layout, enemy, bossProfile, snapshot)
   };
+}
+
+export function resolveSpeechBubbleAnchor(
+  snapshot: GameSnapshot,
+  bubble: SpeechBubbleInstance,
+  viewportWidth: number,
+  viewportHeight: number,
+  camera: BoardCamera = DEFAULT_BOARD_CAMERA
+): SpeechBubbleAnchor | null {
+  const layout = getBoardLayout(viewportWidth, viewportHeight, snapshot.config.gridRadius, camera);
+  const speaker = bubble.speaker;
+  switch (speaker.kind) {
+    case 'defender': {
+      const defender = snapshot.state.defenders.find((entry) => entry.id === speaker.defenderId) ?? null;
+      if (!defender || defender.hp <= 0) return null;
+      if (defender.location === 'board' && defender.tile) {
+        const animatedUnit = resolveAnimatedCanvasUnit(defender.tile, defender.motion ?? null, snapshot.state.timeMs, layout);
+        const center = {
+          x: animatedUnit.center.x,
+          y: animatedUnit.center.y + Math.sin(snapshot.state.timeMs * 0.004 + defender.tokenStyleId) * layout.hexSize * 0.012
+        };
+        return { x: center.x, y: center.y - layout.hexSize * 1.26, tone: 'defender' };
+      }
+      if (defender.location === 'sauna') {
+        const saunaCenter = axialToPixel({ q: 0, r: 0 }, layout);
+        return { x: saunaCenter.x, y: saunaCenter.y - layout.hexSize * 1.36, tone: 'defender' };
+      }
+      return null;
+    }
+    case 'enemy': {
+      const enemy = snapshot.state.enemies.find((entry) => entry.instanceId === speaker.enemyInstanceId) ?? null;
+      if (!enemy || enemy.hp <= 0) return null;
+      const rendered = resolveEnemyCanvasUnit(enemy, snapshot, layout);
+      return {
+        x: rendered.center.x,
+        y: rendered.center.y - rendered.radius * (rendered.bossProfile.presentation === 'normal' ? 1.74 : 2.45),
+        tone: 'boss'
+      };
+    }
+    case 'landmark': {
+      const landmark = snapshot.hud.worldLandmarks.find(
+        (entry) => entry.id === speaker.landmarkId && entry.visible
+      ) ?? null;
+      if (!landmark) return null;
+      const center = axialToPixel(landmark.tile, layout);
+      const size = layout.hexSize * 1.05;
+      return { x: center.x, y: center.y - size * 1.35, tone: 'landmark' };
+    }
+    default:
+      return null;
+  }
+}
+
+function wrapSpeechLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxLines: number
+): string[] {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [''];
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (ctx.measureText(candidate).width <= maxWidth || !current) {
+      current = candidate;
+      continue;
+    }
+    lines.push(current);
+    current = word;
+    if (lines.length === maxLines - 1) break;
+  }
+  if (lines.length < maxLines && current) {
+    lines.push(current);
+  }
+  const consumedWords = lines.join(' ').trim().split(/\s+/).filter(Boolean).length;
+  if (consumedWords < words.length && lines.length > 0) {
+    const lastIndex = lines.length - 1;
+    let line = lines[lastIndex];
+    while (`${line}...`.length > 3 && ctx.measureText(`${line}...`).width > maxWidth) {
+      const parts = line.split(' ');
+      parts.pop();
+      line = parts.join(' ');
+      if (!line) break;
+    }
+    lines[lastIndex] = line ? `${line}...` : '...';
+  }
+  return lines.slice(0, maxLines);
+}
+
+function drawSpeechBubble(
+  ctx: CanvasRenderingContext2D,
+  anchor: SpeechBubbleAnchor,
+  text: string,
+  ageMs: number,
+  durationMs: number
+) {
+  const fadeIn = Math.min(1, ageMs / 180);
+  const fadeOut = Math.min(1, Math.max(0, durationMs - ageMs) / 220);
+  const alpha = Math.min(fadeIn, fadeOut);
+  if (alpha <= 0) return;
+
+  const palette = anchor.tone === 'boss'
+    ? { fill: 'rgba(28, 15, 14, 0.94)', stroke: 'rgba(255, 162, 109, 0.82)', text: '#fff2de' }
+    : anchor.tone === 'landmark'
+      ? { fill: 'rgba(28, 22, 14, 0.94)', stroke: 'rgba(255, 209, 120, 0.82)', text: '#fff5de' }
+      : { fill: 'rgba(8, 16, 18, 0.94)', stroke: 'rgba(104, 222, 205, 0.72)', text: '#e8fffb' };
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = '700 13px Trebuchet MS';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const maxTextWidth = 152;
+  const lines = wrapSpeechLines(ctx, text, maxTextWidth, 2);
+  const longest = lines.reduce((max, line) => Math.max(max, ctx.measureText(line).width), 0);
+  const paddingX = 12;
+  const lineHeight = 15;
+  const bubbleWidth = Math.max(76, Math.min(180, longest + paddingX * 2));
+  const bubbleHeight = 12 + lines.length * lineHeight;
+  const x = anchor.x - bubbleWidth / 2;
+  const y = anchor.y - bubbleHeight;
+  const radius = 12;
+
+  ctx.fillStyle = palette.fill;
+  ctx.strokeStyle = palette.stroke;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.roundRect(x, y, bubbleWidth, bubbleHeight, radius);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(anchor.x - 8, y + bubbleHeight - 1);
+  ctx.lineTo(anchor.x + 8, y + bubbleHeight - 1);
+  ctx.lineTo(anchor.x, y + bubbleHeight + 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = palette.text;
+  lines.forEach((line, index) => {
+    ctx.fillText(line, anchor.x, y + 10 + lineHeight * (index + 0.5));
+  });
+  ctx.restore();
 }
 
 function pointLerp(
@@ -2474,6 +2628,12 @@ export function paintSnapshot(
             }
           : undefined
     );
+  }
+
+  for (const bubble of snapshot.state.speechBubbles) {
+    const anchor = resolveSpeechBubbleAnchor(snapshot, bubble, viewportWidth, viewportHeight, camera);
+    if (!anchor) continue;
+    drawSpeechBubble(ctx, anchor, bubble.text, bubble.ageMs, bubble.durationMs);
   }
 
   drawCombatFx(ctx, snapshot, layout);

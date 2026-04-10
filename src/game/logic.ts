@@ -37,6 +37,8 @@ import type {
   RunPreferences,
   RunState,
   SkillId,
+  SpeechBubbleInstance,
+  SpeechSpeakerRef,
   SubclassDraftRequest,
   UnitMotionState,
   UnitStats,
@@ -131,6 +133,12 @@ const FIREBALL_COOLDOWN_MS = 12000;
 const FIREBALL_DELAY_MS = 1000;
 const FIREBALL_RADIUS = 2;
 const AUTOPLAY_DELAY_MS = 650;
+const SPEECH_BUBBLE_DURATION_MS = 2400;
+const SPEECH_BUBBLE_LIMIT = 3;
+const SPEECH_SAME_SPEAKER_THROTTLE_MS = 1800;
+const DEFENDER_KILL_SPEECH_PROC = 0.25;
+const ALLY_DEATH_SPEECH_PROC = 0.55;
+const BOSS_SPEECH_COOLDOWN_MS = 4500;
 const EMPTY_STATS: UnitStats = {
   maxHp: 0,
   damage: 0,
@@ -584,6 +592,162 @@ function randomInt(state: RunState, min: number, max: number): number {
 
 function pick<T>(state: RunState, values: T[]): T {
   return values[randomInt(state, 0, values.length - 1)];
+}
+
+function formatSpeechLine(text: string, replacements: Record<string, string> = {}): string {
+  return text.replace(/\{(\w+)\}/g, (_match, key: string) => replacements[key] ?? '');
+}
+
+function sameSpeechSpeaker(left: SpeechSpeakerRef, right: SpeechSpeakerRef): boolean {
+  if (left.kind !== right.kind) return false;
+  switch (left.kind) {
+    case 'defender':
+      return left.defenderId === (right as SpeechSpeakerRef & { kind: 'defender' }).defenderId;
+    case 'enemy':
+      return left.enemyInstanceId === (right as SpeechSpeakerRef & { kind: 'enemy' }).enemyInstanceId;
+    case 'landmark':
+      return left.landmarkId === (right as SpeechSpeakerRef & { kind: 'landmark' }).landmarkId;
+    default:
+      return false;
+  }
+}
+
+function canTriggerSpeechForSpeaker(
+  state: RunState,
+  speaker: SpeechSpeakerRef,
+  minAgeMs = SPEECH_SAME_SPEAKER_THROTTLE_MS
+): boolean {
+  const active = state.speechBubbles.find((bubble) => sameSpeechSpeaker(bubble.speaker, speaker));
+  return !active || active.ageMs >= minAgeMs;
+}
+
+function pushSpeechBubble(
+  state: RunState,
+  speaker: SpeechSpeakerRef,
+  text: string,
+  durationMs = SPEECH_BUBBLE_DURATION_MS
+): void {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  const bubble: SpeechBubbleInstance = {
+    id: state.nextSpeechBubbleId++,
+    speaker,
+    text: trimmed,
+    ageMs: 0,
+    durationMs
+  };
+  const existingIndex = state.speechBubbles.findIndex((entry) => sameSpeechSpeaker(entry.speaker, speaker));
+  if (existingIndex >= 0) {
+    state.speechBubbles[existingIndex] = bubble;
+  } else {
+    state.speechBubbles.push(bubble);
+  }
+  while (state.speechBubbles.length > SPEECH_BUBBLE_LIMIT) {
+    let oldestIndex = 0;
+    for (let index = 1; index < state.speechBubbles.length; index += 1) {
+      if (state.speechBubbles[index].ageMs >= state.speechBubbles[oldestIndex].ageMs) {
+        oldestIndex = index;
+      }
+    }
+    state.speechBubbles.splice(oldestIndex, 1);
+  }
+}
+
+function tickSpeechBubbles(state: RunState, deltaMs: number): void {
+  state.speechBubbles = state.speechBubbles
+    .map((bubble) => ({ ...bubble, ageMs: bubble.ageMs + deltaMs }))
+    .filter((bubble) => bubble.ageMs < bubble.durationMs);
+}
+
+function pickLivingVisibleDefenderSpeaker(state: RunState, excludeDefenderId?: string): SpeechSpeakerRef | null {
+  const pickFrom = (location: 'board' | 'sauna'): SpeechSpeakerRef | null => {
+    const candidates = state.defenders.filter(
+      (defender) =>
+        defender.id !== excludeDefenderId
+        && defender.location === location
+        && defender.hp > 0
+        && (location !== 'board' || defender.tile)
+    );
+    if (candidates.length === 0) return null;
+    return { kind: 'defender', defenderId: pick(state, candidates).id };
+  };
+
+  return pickFrom('board') ?? pickFrom('sauna');
+}
+
+function pickBossSpeaker(state: RunState): SpeechSpeakerRef | null {
+  if (!state.currentWave.isBoss || !state.currentWave.bossId) return null;
+  if (state.currentWave.bossId === 'end_user_horde') {
+    const speaker = hordeEnemies(state).find((enemy) => enemy.hp > 0) ?? null;
+    return speaker ? { kind: 'enemy', enemyInstanceId: speaker.instanceId } : null;
+  }
+  const bossEnemy = state.enemies.find(
+    (enemy) => enemy.archetypeId === state.currentWave.bossId && enemy.hp > 0
+  ) ?? null;
+  return bossEnemy ? { kind: 'enemy', enemyInstanceId: bossEnemy.instanceId } : null;
+}
+
+function triggerBossIntroSpeech(state: RunState, content: GameContent): void {
+  if (!state.currentWave.isBoss || !state.currentWave.bossId) return;
+  if (state.bossIntroSpokenWaveIndex === state.currentWave.index) return;
+  const speaker = pickBossSpeaker(state);
+  if (!speaker) return;
+  pushSpeechBubble(state, speaker, pick(state, content.speech.bosses[state.currentWave.bossId].intro));
+  state.bossIntroSpokenWaveIndex = state.currentWave.index;
+  state.bossSpeechReadyAtMs = state.timeMs + BOSS_SPEECH_COOLDOWN_MS;
+}
+
+function maybeTriggerBossProcSpeech(state: RunState, content: GameContent): void {
+  if (!state.currentWave.isBoss || !state.currentWave.bossId) return;
+  if (state.timeMs < state.bossSpeechReadyAtMs) return;
+  const speaker = pickBossSpeaker(state);
+  if (!speaker || !canTriggerSpeechForSpeaker(state, speaker)) return;
+  pushSpeechBubble(state, speaker, pick(state, content.speech.bosses[state.currentWave.bossId].proc));
+  state.bossSpeechReadyAtMs = state.timeMs + BOSS_SPEECH_COOLDOWN_MS;
+}
+
+function maybeTriggerDefenderKillSpeech(
+  state: RunState,
+  killer: DefenderInstance,
+  content: GameContent,
+  victimName?: string
+): void {
+  if (killer.location === 'dead' || killer.hp <= 0) return;
+  const speaker: SpeechSpeakerRef = { kind: 'defender', defenderId: killer.id };
+  if (!canTriggerSpeechForSpeaker(state, speaker)) return;
+  if (rng(state) > DEFENDER_KILL_SPEECH_PROC) return;
+  pushSpeechBubble(
+    state,
+    speaker,
+    formatSpeechLine(pick(state, content.speech.defender.kill), { victimName: victimName ?? '' })
+  );
+}
+
+function maybeTriggerAllyDeathSpeech(state: RunState, fallen: DefenderInstance, content: GameContent): void {
+  if (rng(state) > ALLY_DEATH_SPEECH_PROC) return;
+  const speaker = pickLivingVisibleDefenderSpeaker(state, fallen.id);
+  if (!speaker || !canTriggerSpeechForSpeaker(state, speaker)) return;
+  pushSpeechBubble(
+    state,
+    speaker,
+    formatSpeechLine(pick(state, content.speech.defender.allyDeath), { victimName: fallen.name })
+  );
+}
+
+function maybeTriggerBeerShopSpeech(
+  state: RunState,
+  content: GameContent,
+  definition: AlcoholDefinition
+): void {
+  const defenderSpeaker = pickLivingVisibleDefenderSpeaker(state);
+  const bartenderSpeaker: SpeechSpeakerRef = { kind: 'landmark', landmarkId: 'beer_shop' };
+  const useBartender = landmarkVisible(state, 'beer_shop') && (!defenderSpeaker || rng(state) < 0.5);
+  const speaker = useBartender ? bartenderSpeaker : defenderSpeaker;
+  if (!speaker || !canTriggerSpeechForSpeaker(state, speaker)) return;
+  const line = useBartender
+    ? pick(state, content.speech.beerShop.bartender)
+    : pick(state, content.speech.beerShop.defenderReaction);
+  pushSpeechBubble(state, speaker, formatSpeechLine(line, { drinkName: definition.name }));
 }
 
 function rarityRank(rarity: Rarity): number {
@@ -2411,6 +2575,7 @@ function resolveEnemyDeaths(state: RunState, content: GameContent): void {
         if (levelMessage) {
           state.message = levelMessage;
         }
+        maybeTriggerDefenderKillSpeech(state, killer, content, content.enemyArchetypes[enemy.archetypeId].name);
       }
     }
     if (isEndUserHordeBossWave(state.currentWave) && enemy.archetypeId === 'thirsty_user') {
@@ -2445,6 +2610,7 @@ function resolveDefenderDeaths(state: RunState, content: GameContent): void {
         enemyName: deathLog.enemyName,
         text: deathLog.text
       });
+      maybeTriggerAllyDeathSpeech(state, defender, content);
       if (wasBoard && hasSaunaAutoDeploy(state)) {
         const deployed = deploySaunaOccupant(state, content, fallenTile);
         if (deployed) {
@@ -2919,11 +3085,12 @@ function nearestPebbleBottleTarget(state: RunState, enemy: EnemyInstance): Pebbl
       || (left.tile.q - right.tile.q))[0] ?? null;
 }
 
-function consumePebbleBottleAtCurrentTile(state: RunState, enemy: EnemyInstance): void {
+function consumePebbleBottleAtCurrentTile(state: RunState, enemy: EnemyInstance, content: GameContent): void {
   const bottle = state.pebbleBottleTargets.find((target) => !target.consumed && sameCoord(target.tile, enemy.tile));
   if (!bottle) return;
   bottle.consumed = true;
   state.pebbleBottleStacks += 1;
+  maybeTriggerBossProcSpeech(state, content);
 }
 
 function movePebbleTowardTile(
@@ -2959,7 +3126,7 @@ function movePebbleTowardTile(
 
   moveEnemyToTile(state, enemy, nextTile, 'slither', PEBBLE_MOTION_DURATION_MS);
   syncPebblePathProgress(enemy, pebblePathForCurrentWave(state, content));
-  consumePebbleBottleAtCurrentTile(state, enemy);
+  consumePebbleBottleAtCurrentTile(state, enemy, content);
   enemy.moveReadyAtMs = state.timeMs + bottleHuntMoveCooldownMs;
   return true;
 }
@@ -3142,7 +3309,7 @@ function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent)
   const bottleTarget = nearestPebbleBottleTarget(state, enemy);
 
   if (bottleTarget && sameCoord(bottleTarget.tile, enemy.tile)) {
-    consumePebbleBottleAtCurrentTile(state, enemy);
+    consumePebbleBottleAtCurrentTile(state, enemy, content);
     enemy.moveReadyAtMs = state.timeMs + pebbleBottleHuntMoveCooldownMs(state, enemy);
     return;
   }
@@ -3185,7 +3352,7 @@ function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent)
   moveEnemyToTile(state, enemy, nextTile, 'slither', PEBBLE_MOTION_DURATION_MS);
   enemy.moveReadyAtMs = state.timeMs + pebblePathMoveCooldownMs(state, enemy);
   enemy.pathIndex = nextPathIndex;
-  consumePebbleBottleAtCurrentTile(state, enemy);
+  consumePebbleBottleAtCurrentTile(state, enemy, content);
 }
 
 function stepElectricBather(state: RunState, enemy: EnemyInstance, content: GameContent): void {
@@ -3211,6 +3378,7 @@ function stepElectricBather(state: RunState, enemy: EnemyInstance, content: Game
       }
     }
 
+    maybeTriggerBossProcSpeech(state, content);
     enemy.nextAbilityAtMs = state.timeMs + ELECTRIC_BATHER_ABILITY_COOLDOWN_MS;
     enemy.attackReadyAtMs = Math.max(enemy.attackReadyAtMs, state.timeMs + 720);
     return;
@@ -3243,6 +3411,7 @@ function summonEscalationTickets(state: RunState, enemy: EnemyInstance, content:
 function stepEscalationManager(state: RunState, enemy: EnemyInstance, content: GameContent): void {
   if (state.timeMs >= (enemy.nextAbilityAtMs ?? Number.POSITIVE_INFINITY)) {
     summonEscalationTickets(state, enemy, content);
+    maybeTriggerBossProcSpeech(state, content);
     enemy.nextAbilityAtMs = state.timeMs + ESCALATION_MANAGER_ABILITY_COOLDOWN_MS;
   }
 
@@ -3281,6 +3450,7 @@ function maybeTriggerEndUserHordeSurge(state: RunState, content: GameContent): v
   }
   setEndUserHordeMomentum(state, state.endUserHordeMomentum - 4);
   state.endUserHordeNextSurgeAtMs = state.timeMs + END_USER_HORDE_SURGE_COOLDOWN_MS;
+  maybeTriggerBossProcSpeech(state, content);
 }
 
 function enemyStep(state: RunState, enemy: EnemyInstance, content: GameContent): void {
@@ -3364,9 +3534,12 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, content: GameC
   state.hitStopMs = 0;
   state.fxEvents = [];
   state.pendingFireballs = [];
+  state.speechBubbles = [];
   state.waveSwapUsed = false;
   state.nextRegenTickAtMs = state.timeMs + 1000;
   state.autoplayReadyAtMs = state.timeMs + AUTOPLAY_DELAY_MS;
+  state.bossSpeechReadyAtMs = 0;
+  state.bossIntroSpokenWaveIndex = null;
   state.currentWave = waveDef;
   state.pendingSpawns = waveDef.spawns.map((spawn) => ({ ...spawn }));
   clearPebbleEncounterTargets(state);
@@ -4306,6 +4479,10 @@ export function createInitialState(
     endUserHordeMomentum: 0,
     endUserHordeTier: 0,
     endUserHordeNextSurgeAtMs: 0,
+    speechBubbles: [],
+    nextSpeechBubbleId: 1,
+    bossSpeechReadyAtMs: 0,
+    bossIntroSpokenWaveIndex: null,
     autoAssignEnabled: preferences.autoAssignEnabled,
     autoUpgradeEnabled: preferences.autoUpgradeEnabled,
     autoplayEnabled: preferences.autoplayEnabled,
@@ -4887,6 +5064,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         next.activeAlcohols.push({ alcoholId: offer.alcoholId, stacks: 1 });
         next.message = `${definition.name} is now active for the next run.`;
       }
+      maybeTriggerBeerShopSpeech(next, content, definition);
       return next;
     }
     case 'removeActiveAlcohol': {
@@ -4927,13 +5105,20 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     const next = clone(state);
     next.timeMs += deltaMs;
     next.waveElapsedMs += deltaMs;
+    tickSpeechBubbles(next, deltaMs);
     clearExpiredMotions(next);
     maybeStartAutoplayWave(next, content);
     return next;
   }
-  if (state.overlayMode !== 'none' || state.phase !== 'wave') return state;
+  if (state.overlayMode !== 'none' || state.phase !== 'wave') {
+    if (state.speechBubbles.length === 0) return state;
+    const next = clone(state);
+    tickSpeechBubbles(next, deltaMs);
+    return next;
+  }
   const next = clone(state);
   ageFx(next, deltaMs);
+  tickSpeechBubbles(next, deltaMs);
   if (next.hitStopMs > 0) {
     next.hitStopMs = Math.max(0, next.hitStopMs - deltaMs);
     return next;
@@ -4946,6 +5131,7 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     next.nextRegenTickAtMs += 1000;
   }
   spawnEnemies(next, content);
+  triggerBossIntroSpeech(next, content);
   maybeTriggerEndUserHordeSurge(next, content);
   resolvePendingFireballs(next);
   for (const defender of boardDefenders(next)) defenderAttack(next, defender, content);

@@ -260,6 +260,38 @@ export interface AlcoholDefinition {
   negative: AlcoholModifier;
 }
 
+export type SpeechSpeakerKind = 'defender' | 'enemy' | 'landmark';
+
+export type SpeechSpeakerRef =
+  | { kind: 'defender'; defenderId: string }
+  | { kind: 'enemy'; enemyInstanceId: number }
+  | { kind: 'landmark'; landmarkId: WorldLandmarkId };
+
+export interface SpeechBubbleInstance {
+  id: number;
+  speaker: SpeechSpeakerRef;
+  text: string;
+  ageMs: number;
+  durationMs: number;
+}
+
+export interface SpeechLineSet {
+  intro: string[];
+  proc: string[];
+}
+
+export interface SpeechContent {
+  defender: {
+    allyDeath: string[];
+    kill: string[];
+  };
+  beerShop: {
+    bartender: string[];
+    defenderReaction: string[];
+  };
+  bosses: Record<BossId, SpeechLineSet>;
+}
+
 export interface InventoryDrop {
   instanceId: number;
   kind: LootKind;
@@ -489,6 +521,7 @@ export interface GameContent {
   globalModifierDefinitions: Record<GlobalModifierId, GlobalModifierDefinition>;
   metaUpgrades: Record<MetaUpgradeId, MetaUpgradeDefinition>;
   namePools: NamePools;
+  speech: SpeechContent;
 }
 
 export interface SisuState {
@@ -559,6 +592,10 @@ export interface RunState {
   endUserHordeMomentum: number;
   endUserHordeTier: number;
   endUserHordeNextSurgeAtMs: number;
+  speechBubbles: SpeechBubbleInstance[];
+  nextSpeechBubbleId: number;
+  bossSpeechReadyAtMs: number;
+  bossIntroSpokenWaveIndex: number | null;
   autoAssignEnabled: boolean;
   autoUpgradeEnabled: boolean;
   autoplayEnabled: boolean;
