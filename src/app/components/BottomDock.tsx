@@ -41,7 +41,7 @@ export function BottomDock({ snapshot, dispatch }: BottomDockProps) {
           ) : (
             <p className="panel-copy small-copy">Empty sauna. Recruit directly here or pay SISU to pull a board hero back during combat.</p>
           )}
-          <div className="button-row tight">
+          <div className="button-row sauna-action-row">
             <button className="ghost-button small-ghost" onClick={() => dispatch({ type: 'selectSauna' })}>
               {saunaReserve.selected ? 'Sauna Selected' : 'Inspect Sauna'}
             </button>

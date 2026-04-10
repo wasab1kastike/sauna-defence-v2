@@ -25,8 +25,8 @@ export function RecruitOfferSlots({
                 <span className="mini-tag">{offer.price === 0 ? 'Free' : `${offer.price} SISU`}</span>
               </div>
             </div>
-            <small>{offer.roleName} - {offer.subclassName}</small>
-            {offer.lore ? <small>{offer.lore}</small> : null}
+            <small className="offer-meta">{offer.roleName} - {offer.subclassName}</small>
+            {offer.lore ? <small className="offer-lore">{offer.lore}</small> : null}
             <div className="mini-tag-row">
               <span className="mini-tag">Lvl {offer.level}</span>
               <span className="mini-tag">HP {offer.hp}</span>
@@ -34,7 +34,7 @@ export function RecruitOfferSlots({
               {offer.heal !== null && offer.heal > 0 ? <span className="mini-tag">Heal {offer.heal}</span> : null}
               {offer.range !== null ? <span className="mini-tag">Range {offer.range}</span> : null}
             </div>
-            <div className="button-row tight">
+            <div className="button-row offer-action-row">
               <button
                 className="mini-button"
                 disabled={!offer.canBuy || offer.id === null}
