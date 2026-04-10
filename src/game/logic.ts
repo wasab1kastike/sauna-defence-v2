@@ -62,6 +62,7 @@ import {
   boardExpansionDirectionLabel,
   boardExpansionDirections as allBoardExpansionDirections,
   buildBoardFootprint as resolveBoardFootprint,
+  createLandmarkTilesForState as resolveCreateLandmarkTilesForState,
   currentSpawnLanes as resolveCurrentSpawnLanes,
   isBuildableTile as resolveIsBuildableTile,
   isTileInBoard as resolveIsTileInBoard,
@@ -508,6 +509,10 @@ function isTileInBoard(state: RunState, tile: AxialCoord, content: GameContent):
 
 function landmarkTileForState(state: RunState, landmarkId: WorldLandmarkId, content: GameContent): AxialCoord {
   return resolveLandmarkTileForState(state, landmarkId, content);
+}
+
+function createLandmarkTilesForState(state: RunState, content: GameContent): Record<WorldLandmarkId, AxialCoord> {
+  return resolveCreateLandmarkTilesForState(state, content);
 }
 
 export function createDefaultMetaProgress(): MetaProgress {
@@ -4404,6 +4409,10 @@ export function createInitialState(
     inventoryOpen: false,
     activePanel: null,
     selectedWorldLandmarkId: null,
+    landmarkTiles: {
+      metashop: { q: 0, r: 0 },
+      beer_shop: { q: 0, r: 0 }
+    },
     introOpen,
     timeMs: 0,
     waveIndex: 1,
@@ -4477,6 +4486,7 @@ export function createInitialState(
   };
   state.defenders = buildRoster(state, content);
   state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
+  state.landmarkTiles = createLandmarkTilesForState(state, content);
   if (!showIntermission) {
     rollRecruitOffersIntoState(state, content, true);
   }

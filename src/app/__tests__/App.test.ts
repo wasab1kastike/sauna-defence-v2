@@ -11,7 +11,7 @@ import {
 import { renderToStaticMarkup } from 'react-dom/server';
 import { gameContent } from '../../content/gameContent';
 import { createDefaultMetaProgress, createInitialState, createSnapshot } from '../../game/logic';
-import { DEFAULT_BOARD_CAMERA } from '../../game/render/layout';
+import { clampBoardCamera, DEFAULT_BOARD_CAMERA } from '../../game/render/layout';
 import { getTileViewportPosition } from '../../game/render';
 import { BottomDock } from '../components/BottomDock';
 import { SelectionCard } from '../components/SelectionCard';
@@ -29,6 +29,22 @@ describe('App popup helpers', () => {
 
     expect(placement.left).toBe(576);
     expect(placement.top).toBeCloseTo(206, 6);
+  });
+
+  it('allows more vertical camera travel when a bottom dock safe area is present', () => {
+    const plainUp = clampBoardCamera({ zoom: 1, offsetX: 0, offsetY: -999 }, 900, 700, 6);
+    const safeUp = clampBoardCamera({ zoom: 1, offsetX: 0, offsetY: -999 }, 900, 700, 6, {
+      topInset: 18,
+      bottomInset: 220
+    });
+    const plainDown = clampBoardCamera({ zoom: 1, offsetX: 0, offsetY: 999 }, 900, 700, 6);
+    const safeDown = clampBoardCamera({ zoom: 1, offsetX: 0, offsetY: 999 }, 900, 700, 6, {
+      topInset: 18,
+      bottomInset: 220
+    });
+
+    expect(Math.abs(safeUp.offsetY)).toBeGreaterThan(Math.abs(plainUp.offsetY));
+    expect(safeDown.offsetY).toBeGreaterThan(plainDown.offsetY);
   });
 
   it('uses an enemy-specific heading when an enemy profile is selected', () => {

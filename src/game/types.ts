@@ -538,6 +538,7 @@ export interface RunState {
   inventoryOpen: boolean;
   activePanel: HudPanelId | null;
   selectedWorldLandmarkId: WorldLandmarkId | null;
+  landmarkTiles: Record<WorldLandmarkId, AxialCoord>;
   introOpen: boolean;
   timeMs: number;
   waveIndex: number;

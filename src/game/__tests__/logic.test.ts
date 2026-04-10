@@ -4,6 +4,7 @@ import {
   applyAction,
   createWaveDefinition,
   createDefaultMetaProgress,
+  hexDistance,
   createInitialState,
   createSnapshot,
   stepState
@@ -3348,8 +3349,13 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.buildableTiles).toContainEqual({ q: expansionVector.q * 9, r: expansionVector.r * 9 });
   });
 
-  it('keeps landmarks on the board while avoiding the moved spawn frontier after expansion', () => {
+  it('keeps landmarks near the sauna, on buildable tiles, off the spawn frontier, and stable after expansion', () => {
     let state = prepState();
+    state.meta.completedRuns = 1;
+    state.meta.upgrades.beer_shop_unlock = 1;
+    const initialSnapshot = createSnapshot(state, gameContent);
+    const initialMetashop = initialSnapshot.hud.worldLandmarks.find((entry) => entry.id === 'metashop');
+    const initialBeerShop = initialSnapshot.hud.worldLandmarks.find((entry) => entry.id === 'beer_shop');
     state.phase = 'wave';
     state.waveIndex = 5;
     state.currentWave = {
@@ -3364,8 +3370,6 @@ describe('Sauna Defense V2 logic', () => {
     };
     state.pendingSpawns = [];
     state.enemies = [];
-    state.meta.completedRuns = 1;
-    state.meta.upgrades.beer_shop_unlock = 1;
 
     state = stepState(state, 16, gameContent);
     const snapshot = createSnapshot(state, gameContent);
@@ -3373,13 +3377,23 @@ describe('Sauna Defense V2 logic', () => {
     const beerShop = snapshot.hud.worldLandmarks.find((entry) => entry.id === 'beer_shop');
     const spawnKeys = new Set(snapshot.spawnTiles.map((tile) => `${tile.q},${tile.r}`));
     const tileKeys = new Set(snapshot.tiles.map((tile) => `${tile.q},${tile.r}`));
+    const buildableKeys = new Set(snapshot.buildableTiles.map((tile) => `${tile.q},${tile.r}`));
 
     expect(metashop).toBeTruthy();
     expect(beerShop).toBeTruthy();
     expect(tileKeys.has(`${metashop!.tile.q},${metashop!.tile.r}`)).toBe(true);
     expect(tileKeys.has(`${beerShop!.tile.q},${beerShop!.tile.r}`)).toBe(true);
+    expect(buildableKeys.has(`${metashop!.tile.q},${metashop!.tile.r}`)).toBe(true);
+    expect(buildableKeys.has(`${beerShop!.tile.q},${beerShop!.tile.r}`)).toBe(true);
     expect(spawnKeys.has(`${metashop!.tile.q},${metashop!.tile.r}`)).toBe(false);
     expect(spawnKeys.has(`${beerShop!.tile.q},${beerShop!.tile.r}`)).toBe(false);
+    expect(hexDistance(metashop!.tile, { q: 0, r: 0 })).toBeGreaterThanOrEqual(1);
+    expect(hexDistance(metashop!.tile, { q: 0, r: 0 })).toBeLessThanOrEqual(4);
+    expect(hexDistance(beerShop!.tile, { q: 0, r: 0 })).toBeGreaterThanOrEqual(1);
+    expect(hexDistance(beerShop!.tile, { q: 0, r: 0 })).toBeLessThanOrEqual(4);
+    expect(metashop!.tile).not.toEqual(beerShop!.tile);
+    expect(metashop!.tile).toEqual(initialMetashop!.tile);
+    expect(beerShop!.tile).toEqual(initialBeerShop!.tile);
   });
 
   it('allows picking tiles on the new expansion arm after a boss clear', () => {

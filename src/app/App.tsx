@@ -54,6 +54,8 @@ export function App() {
   const [patchNotesOpen, setPatchNotesOpen] = useState(false);
   const [patchNotesChecked, setPatchNotesChecked] = useState(false);
   const [boardCamera, setBoardCamera] = useState<BoardCamera>(DEFAULT_BOARD_CAMERA);
+  const bottomDockRef = useRef<HTMLElement | null>(null);
+  const [bottomDockHeight, setBottomDockHeight] = useState(0);
   const panStateRef = useRef<{
     pointerId: number;
     startX: number;
@@ -131,16 +133,49 @@ export function App() {
   }, [boardCamera]);
 
   useEffect(() => {
+    const dock = bottomDockRef.current;
+    if (!dock) {
+      setBottomDockHeight(0);
+      return;
+    }
+
+    const update = () => {
+      setBottomDockHeight(dock.getBoundingClientRect().height);
+    };
+
+    update();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', update);
+      return () => window.removeEventListener('resize', update);
+    }
+
+    const observer = new ResizeObserver(() => update());
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, [snapshot?.hud.showIntermission]);
+
+  const getBoardCameraSafeArea = (nextSnapshot: GameSnapshot | null) => ({
+    topInset: 18,
+    bottomInset: nextSnapshot && !nextSnapshot.hud.showIntermission ? bottomDockHeight + 28 : 18
+  });
+
+  useEffect(() => {
     if (!snapshot || frameSize.width <= 0 || frameSize.height <= 0) {
       return;
     }
     setBoardCamera((camera) => {
-      const clamped = clampBoardCamera(camera, frameSize.width, frameSize.height, snapshot.config.gridRadius);
+      const clamped = clampBoardCamera(
+        camera,
+        frameSize.width,
+        frameSize.height,
+        snapshot.config.gridRadius,
+        getBoardCameraSafeArea(snapshot)
+      );
       return clamped.zoom === camera.zoom && clamped.offsetX === camera.offsetX && clamped.offsetY === camera.offsetY
         ? camera
         : clamped;
     });
-  }, [frameSize.height, frameSize.width, snapshot, snapshot?.config.gridRadius]);
+  }, [bottomDockHeight, frameSize.height, frameSize.width, snapshot, snapshot?.config.gridRadius]);
 
   useEffect(() => {
     if (!snapshot || snapshot.hud.introOpen || snapshot.hud.showIntermission || guideSeen || guideStep !== null) {
@@ -269,7 +304,7 @@ export function App() {
         zoom: panState.camera.zoom,
         offsetX: panState.camera.offsetX + (event.clientX - panState.startX),
         offsetY: panState.camera.offsetY + (event.clientY - panState.startY)
-      }, rect.width, rect.height, nextSnapshot.config.gridRadius));
+      }, rect.width, rect.height, nextSnapshot.config.gridRadius, getBoardCameraSafeArea(nextSnapshot)));
       runtime.dispatch({ type: 'hoverTile', tile: null });
       return;
     }
@@ -346,7 +381,7 @@ export function App() {
       zoom: nextZoom,
       offsetX: pointerX - rect.width / 2 - localX * scaleRatio,
       offsetY: pointerY - rect.height / 2 - localY * scaleRatio
-    }, rect.width, rect.height, nextSnapshot.config.gridRadius));
+    }, rect.width, rect.height, nextSnapshot.config.gridRadius, getBoardCameraSafeArea(nextSnapshot)));
   };
 
   const selectedDefender = snapshot?.hud.selectedDefender ?? null;
@@ -458,7 +493,7 @@ export function App() {
     if (!snapshot) {
       return null;
     }
-    return <BottomDock snapshot={snapshot} dispatch={dispatch} />;
+    return <BottomDock snapshot={snapshot} dispatch={dispatch} dockRef={bottomDockRef} />;
   };
 
   const renderSelectionCard = () => {

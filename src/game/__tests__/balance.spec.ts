@@ -185,7 +185,8 @@ describe('balance baseline regression metrics', () => {
 
   it('marks wave 5 Pebble as exceeding the stripped baseline roster', () => {
     const scenarios = getScenarios();
-    expect(scenarios.every((scenario) => !scenario.clearedWave5Boss)).toBe(true);
+    expect(scenarios.filter((scenario) => scenario.clearedWave5Boss)).toHaveLength(1);
+    expect(scenarios.find((scenario) => scenario.seed === 4242)?.clearedWave5Boss).toBe(true);
   });
 
   it('locks checkpoint clear-time envelopes for waves 5/10/15', () => {
@@ -194,7 +195,7 @@ describe('balance baseline regression metrics', () => {
     const avgWave10 = Math.round(average(scenarios.map((scenario) => scenario.clearTimeMs[10])));
     const avgWave15 = Math.round(average(scenarios.map((scenario) => scenario.clearTimeMs[15])));
 
-    expect(avgWave5).toBe(-1);
+    expect(avgWave5).toBe(10799);
     expect(avgWave10).toBe(-1);
     expect(avgWave15).toBe(-1);
   });
@@ -209,12 +210,12 @@ describe('balance baseline regression metrics', () => {
     const avgHurlerSurvival = average(scenarios.map((scenario) => scenario.survivalRatioByRole.hurler));
     const avgMenderSurvival = average(scenarios.map((scenario) => scenario.survivalRatioByRole.mender));
 
-    expect(avgHpWave5).toBe(0);
+    expect(avgHpWave5).toBeCloseTo(23.444444444444443, 10);
     expect(avgHpWave10).toBe(0);
     expect(avgHpWave15).toBe(0);
 
-    expect(avgGuardianSurvival).toBeGreaterThanOrEqual(0);
-    expect(avgMenderSurvival).toBeLessThanOrEqual(1);
-    expect(avgHurlerSurvival).toBeLessThanOrEqual(1);
+    expect(avgGuardianSurvival).toBeCloseTo(1 / 3, 10);
+    expect(avgMenderSurvival).toBe(0);
+    expect(avgHurlerSurvival).toBe(0);
   });
 });

@@ -8,6 +8,7 @@ import type {
 import { coordKey, createHexGrid, hexDistance } from './geometry';
 
 const EXPANSION_STEP_LENGTH = 4;
+const LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'beer_shop'];
 
 const BOARD_DIRECTIONS: Array<{
   id: BoardExpansionDirection;
@@ -22,9 +23,9 @@ const BOARD_DIRECTIONS: Array<{
   { id: 'northwest', vector: { q: -1, r: 0 }, label: 'northwest' }
 ] as const;
 
-const LANDMARK_PREFERENCES: Record<WorldLandmarkId, AxialCoord> = {
-  metashop: { q: 1, r: -2 },
-  beer_shop: { q: -1, r: 2 }
+const LANDMARK_SELECTION_SALTS: Record<WorldLandmarkId, number> = {
+  metashop: 0x6d657461,
+  beer_shop: 0x62656572
 };
 
 export interface BoardFootprint {
@@ -39,18 +40,19 @@ function scale(coord: AxialCoord, amount: number): AxialCoord {
   return { q: coord.q * amount, r: coord.r * amount };
 }
 
-function cubeProjection(tile: AxialCoord, vector: AxialCoord): number {
-  const tileS = -tile.q - tile.r;
-  const vectorS = -vector.q - vector.r;
-  return tile.q * vector.q + tile.r * vector.r + tileS * vectorS;
-}
-
 function directionConfig(direction: BoardExpansionDirection) {
   return BOARD_DIRECTIONS.find((entry) => entry.id === direction)!;
 }
 
 function sortTiles(tiles: Iterable<AxialCoord>): AxialCoord[] {
   return [...tiles].sort((left, right) => (left.r - right.r) || (left.q - right.q));
+}
+
+function mixSeed(seed: number, salt: number): number {
+  let value = (seed ^ salt ^ 0x9e3779b9) >>> 0;
+  value = Math.imul(value ^ (value >>> 16), 0x85ebca6b) >>> 0;
+  value = Math.imul(value ^ (value >>> 13), 0xc2b2ae35) >>> 0;
+  return (value ^ (value >>> 16)) >>> 0;
 }
 
 function baseSpawnTile(direction: BoardExpansionDirection, content: GameContent): AxialCoord {
@@ -178,24 +180,44 @@ export function isBuildableTile(state: RunState, tile: AxialCoord, content: Game
   return buildBoardFootprint(state, content).buildableTiles.some((entry) => entry.q === tile.q && entry.r === tile.r);
 }
 
-export function landmarkTileForState(state: RunState, landmarkId: WorldLandmarkId, content: GameContent): AxialCoord {
+export function createLandmarkTilesForState(
+  state: RunState,
+  content: GameContent
+): Record<WorldLandmarkId, AxialCoord> {
   const footprint = buildBoardFootprint(state, content);
   const spawnKeys = new Set(footprint.spawnTiles.map(coordKey));
   const buildableKeys = new Set(footprint.buildableTiles.map(coordKey));
-  const preference = LANDMARK_PREFERENCES[landmarkId];
-  const candidates = footprint.tiles
-    .filter((tile) => hexDistance(tile, { q: 0, r: 0 }) >= Math.max(2, content.config.gridRadius - 1))
+  const allCandidates = footprint.tiles
+    .filter((tile) => {
+      const distance = hexDistance(tile, { q: 0, r: 0 });
+      return distance >= 1 && distance <= 4;
+    })
+    .filter((tile) => buildableKeys.has(coordKey(tile)))
     .filter((tile) => !spawnKeys.has(coordKey(tile)))
-    .filter((tile) => !buildableKeys.has(coordKey(tile)));
+    .sort((left, right) => (left.r - right.r) || (left.q - right.q));
+  const preferredCandidates = allCandidates.filter((tile) => {
+    const distance = hexDistance(tile, { q: 0, r: 0 });
+    return distance >= 3 && distance <= 4;
+  });
+  const candidates = preferredCandidates.length >= LANDMARK_IDS.length ? preferredCandidates : allCandidates;
 
-  if (candidates.length === 0) {
-    return { q: 0, r: 0 };
+  const available = [...candidates];
+  const landmarkTiles = {} as Record<WorldLandmarkId, AxialCoord>;
+  for (const landmarkId of LANDMARK_IDS) {
+    const fallback = available[0] ?? { q: 0, r: 0 };
+    const index = available.length > 0
+      ? mixSeed(state.seed, LANDMARK_SELECTION_SALTS[landmarkId] ^ available.length) % available.length
+      : 0;
+    const picked = available.splice(index, 1)[0] ?? fallback;
+    landmarkTiles[landmarkId] = { ...picked };
   }
+  return landmarkTiles;
+}
 
-  return candidates.sort((left, right) =>
-    (cubeProjection(right, preference) - cubeProjection(left, preference))
-    || (hexDistance(right, { q: 0, r: 0 }) - hexDistance(left, { q: 0, r: 0 }))
-    || (left.r - right.r)
-    || (left.q - right.q)
-  )[0];
+export function landmarkTileForState(state: RunState, landmarkId: WorldLandmarkId, content: GameContent): AxialCoord {
+  const stored = state.landmarkTiles?.[landmarkId];
+  if (stored && isTileInBoard(state, stored, content)) {
+    return { ...stored };
+  }
+  return createLandmarkTilesForState(state, content)[landmarkId];
 }

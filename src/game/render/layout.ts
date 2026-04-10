@@ -10,6 +10,11 @@ export const DEFAULT_BOARD_CAMERA: BoardCamera = {
   offsetY: 0
 };
 
+export interface BoardCameraSafeArea {
+  topInset?: number;
+  bottomInset?: number;
+}
+
 export interface BoardLayout {
   hexSize: number;
   centerX: number;
@@ -28,25 +33,35 @@ export function clampBoardCamera(
   camera: BoardCamera,
   width: number,
   height: number,
-  radius: number
+  radius: number,
+  safeArea: BoardCameraSafeArea = {}
 ): BoardCamera {
   const zoom = Math.min(1.9, Math.max(0.75, camera.zoom));
+  const topInset = Math.max(0, safeArea.topInset ?? 0);
+  const bottomInset = Math.max(0, safeArea.bottomInset ?? 0);
   const padding = Math.max(MIN_PADDING, Math.min(width, height) * BASE_PADDING_RATIO);
   const hexSize = baseBoardHexSize(width, height, radius) * zoom;
   const boardHalfWidth = (SQRT3 * hexSize * (radius * 2 + 1)) / 2;
   const boardHalfHeight = hexSize * (radius * 1.5 + 1.2);
+  const visibleHalfHeight = Math.max(1, (height - topInset - bottomInset) / 2);
   const maxOffsetX = Math.max(0, boardHalfWidth + padding - width / 2);
-  const maxOffsetY = Math.max(0, boardHalfHeight + padding - height / 2);
+  const baseMaxOffsetY = Math.max(0, boardHalfHeight + padding - visibleHalfHeight);
+  const minOffsetY = -(baseMaxOffsetY + bottomInset * 0.45 + 20);
+  const maxOffsetY = baseMaxOffsetY + topInset * 0.35 + Math.min(48, bottomInset * 0.2);
 
   return {
     zoom,
     offsetX: Math.min(maxOffsetX, Math.max(-maxOffsetX, camera.offsetX)),
-    offsetY: Math.min(maxOffsetY, Math.max(-maxOffsetY, camera.offsetY))
+    offsetY: Math.min(maxOffsetY, Math.max(minOffsetY, camera.offsetY))
   };
 }
 
 export function getBoardLayout(width: number, height: number, radius: number, camera: BoardCamera = DEFAULT_BOARD_CAMERA): BoardLayout {
-  const nextCamera = clampBoardCamera(camera, width, height, radius);
+  const nextCamera = {
+    zoom: Math.min(1.9, Math.max(0.75, camera.zoom)),
+    offsetX: Number.isFinite(camera.offsetX) ? camera.offsetX : 0,
+    offsetY: Number.isFinite(camera.offsetY) ? camera.offsetY : 0
+  };
   return {
     hexSize: baseBoardHexSize(width, height, radius) * nextCamera.zoom,
     centerX: width / 2 + nextCamera.offsetX,

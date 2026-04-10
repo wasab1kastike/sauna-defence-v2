@@ -1,18 +1,20 @@
+import type { Ref } from 'react';
 import type { GameSnapshot, InputAction } from '../../game/types';
 import { RecruitOfferSlots } from './RecruitOfferSlots';
 
 interface BottomDockProps {
   snapshot: GameSnapshot;
   dispatch: (action: InputAction) => void;
+  dockRef?: Ref<HTMLElement>;
 }
 
-export function BottomDock({ snapshot, dispatch }: BottomDockProps) {
+export function BottomDock({ snapshot, dispatch, dockRef }: BottomDockProps) {
   if (snapshot.hud.showIntermission) {
     return null;
   }
 
   return (
-    <section className="bottom-dock popup-card">
+    <section ref={dockRef} className="bottom-dock popup-card">
       <div className="market-dock-card market-dock-card--full">
         <div className="dock-head">
           <div>
