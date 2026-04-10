@@ -211,6 +211,14 @@ describe('speech bubbles', () => {
     state = stepState(state, 16, gameContent);
 
     expect(state.speechBubbles[0]?.speaker).toEqual({ kind: 'enemy', enemyInstanceId: 12 });
+    expect(['Pebble', 'Pebbles', 'Yum Yum']).toContain(state.speechBubbles[0]?.text);
+  });
+
+  it('limits Pebble speech lines to the short approved callouts', () => {
+    const allowed = ['Pebble', 'Pebbles', 'Yum Yum'];
+
+    expect(gameContent.speech.bosses.pebble.intro).toEqual(allowed);
+    expect(gameContent.speech.bosses.pebble.proc).toEqual(allowed);
   });
 
   it('creates a boss proc bubble when an electric boss ability fires', () => {

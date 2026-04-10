@@ -36,14 +36,14 @@ export const speech: GameContent['speech'] = {
   bosses: {
     pebble: {
       intro: [
-        'Pebble hungry. Sauna first.',
-        'Tiny name, huge problem.',
-        'Pebble smells beer.'
+        'Pebble',
+        'Pebbles',
+        'Yum Yum'
       ],
       proc: [
-        'Crunch. Mine now.',
-        'Bottle eaten. Mood improved.',
-        'Pebble stacks. You panic.'
+        'Pebble',
+        'Pebbles',
+        'Yum Yum'
       ]
     },
     end_user_horde: {

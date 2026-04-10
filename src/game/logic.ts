@@ -186,6 +186,7 @@ const PEBBLE_DEVOUR_DAMAGE_PER_STACK = 2;
 const PEBBLE_DEVOUR_HEAL_RATIO = 0.35;
 const PEBBLE_BOTTLE_TARGET_COUNT = 3;
 const PEBBLE_BOTTLE_DAMAGE_PER_STACK = 2;
+const PEBBLE_FIRST_ENCOUNTER_MAX_HP = 220;
 const PEBBLE_BASE_MAX_HP = 260;
 const PEBBLE_MAX_HP_STEP = 60;
 const PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_MS = 1180;
@@ -915,6 +916,9 @@ function pebbleEncounterTierForEnemy(state: RunState, enemy: EnemyInstance): num
 }
 
 function pebbleEncounterMaxHp(state: RunState): number {
+  if (Math.max(1, state.pebbleEncounterCount) === 1) {
+    return PEBBLE_FIRST_ENCOUNTER_MAX_HP;
+  }
   return PEBBLE_BASE_MAX_HP + pebbleEncounterTier(state) * PEBBLE_MAX_HP_STEP;
 }
 

@@ -479,7 +479,7 @@ describe('Sauna Defense V2 logic', () => {
       return state.enemies[0];
     };
 
-    expect(spawnPebbleAtEncounter(1)?.hp).toBe(260);
+    expect(spawnPebbleAtEncounter(1)?.hp).toBe(220);
     expect(spawnPebbleAtEncounter(2)?.hp).toBe(320);
     expect(spawnPebbleAtEncounter(3)?.hp).toBe(380);
   });
@@ -511,7 +511,7 @@ describe('Sauna Defense V2 logic', () => {
       moveReadyAtMs: 0,
       nextAbilityAtMs: Number.POSITIVE_INFINITY,
       pathIndex: 0,
-      pebbleEncounterMaxHp: 260,
+      pebbleEncounterMaxHp: 220,
       spawnLaneIndex: 0,
       spawnedByEnemyInstanceId: null
     }];
@@ -549,7 +549,7 @@ describe('Sauna Defense V2 logic', () => {
       moveReadyAtMs: 0,
       nextAbilityAtMs: Number.POSITIVE_INFINITY,
       pathIndex: 0,
-      pebbleEncounterMaxHp: 260,
+      pebbleEncounterMaxHp: 220,
       spawnLaneIndex: 0,
       spawnedByEnemyInstanceId: null
     }];

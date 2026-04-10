@@ -144,7 +144,7 @@ describe('render helpers', () => {
       return createSnapshot(state, gameContent);
     };
 
-    const firstSnapshot = buildSnapshot(260, 1);
+    const firstSnapshot = buildSnapshot(220, 1);
     const laterSnapshot = buildSnapshot(380, 3);
     const firstRadius = resolveEnemyRenderRadius(firstSnapshot, firstSnapshot.state.enemies[0], 900, 700);
     const laterRadius = resolveEnemyRenderRadius(laterSnapshot, laterSnapshot.state.enemies[0], 900, 700);
