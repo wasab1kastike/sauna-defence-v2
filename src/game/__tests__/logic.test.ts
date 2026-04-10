@@ -3329,7 +3329,7 @@ describe('Sauna Defense V2 logic', () => {
   });
 
   it('allows picking tiles on the new expansion arm after a boss clear', () => {
-    let state = prepState();
+    const state = prepState();
     state.boardExpansionDirections = ['north'];
     const snapshot = createSnapshot(state, gameContent);
     const rect = { left: 0, top: 0, width: 900, height: 700 } as DOMRect;
