@@ -114,6 +114,7 @@ export type CombatFxKind =
 export type MapTarget = 'defender' | 'sauna' | 'enemy';
 export type HudPanelId = 'modifiers' | 'loot' | 'recruit' | 'beer_shop' | 'metashop';
 export type WorldLandmarkId = 'metashop' | 'beer_shop';
+export type BoardExpansionDirection = 'north' | 'northeast' | 'southeast' | 'south' | 'southwest' | 'northwest';
 export type GlobalModifierCountScope = 'board' | 'living' | 'dead';
 export type GlobalModifierEffectStat = 'maxHp' | 'damage' | 'heal' | 'range' | 'attackCooldownMs' | 'defense' | 'regenHpPerSecond';
 export type GlobalModifierId =
@@ -592,6 +593,7 @@ export interface RunState {
   endUserHordeMomentum: number;
   endUserHordeTier: number;
   endUserHordeNextSurgeAtMs: number;
+  boardExpansionDirections: BoardExpansionDirection[];
   speechBubbles: SpeechBubbleInstance[];
   nextSpeechBubbleId: number;
   bossSpeechReadyAtMs: number;

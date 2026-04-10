@@ -27,7 +27,7 @@ export function IntroOverlay({ dispatch, onReplayTips }: IntroOverlayProps) {
           </div>
           <div className="inventory-card">
             <strong>Sauna Is Your Reforge Slot</strong>
-            <small>The sauna now acts as a single reserve slot and reroll station, with Q/W/E shortcuts covering refresh, level up, and sauna reforging.</small>
+            <small>The sauna now acts as a single reserve slot and reroll station. Refresh and level up stay on Q/W, while E works only after you open the sauna.</small>
           </div>
           <div className="inventory-card">
             <strong>Buildings Unlock On The Map</strong>

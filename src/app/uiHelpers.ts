@@ -38,7 +38,7 @@ export const GUIDE_STEPS = [
   },
   {
     title: 'Hint Card And Action Buttons',
-    body: 'The small left hint card tells you the next step. Start Wave, Autoplay and SISU stay just below it while Q, W and E handle refresh, level up and sauna reroll.'
+    body: 'The small left hint card tells you the next step. Start Wave, Autoplay and SISU stay just below it while Q and W handle market controls, and E rerolls only when the sauna is open.'
   }
 ] as const;
 
@@ -231,7 +231,9 @@ export function resolveGameplayHotkeyAction(
     return snapshot.hud.canLevelUpRecruitment ? { type: 'levelUpRecruitment' } : null;
   }
   if (normalizedKey === 'e') {
-    return snapshot.hud.saunaReserve.canReroll ? { type: 'rerollSaunaDefender' } : null;
+    return snapshot.hud.saunaSelected && snapshot.hud.saunaReserve.canReroll
+      ? { type: 'rerollSaunaDefender' }
+      : null;
   }
   return null;
 }

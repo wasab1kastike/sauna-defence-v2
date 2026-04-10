@@ -5,6 +5,7 @@ import type {
   AlcoholModifier,
   AxialCoord,
   BeerShopOffer,
+  BoardExpansionDirection,
   BossId,
   CombatFxEvent,
   CombatFxKind,
@@ -58,10 +59,13 @@ import {
   rotateCoord as rotateCoordFromGeometry
 } from './geometry';
 import {
-  currentBuildRadius as resolveCurrentBuildRadius,
-  currentGridRadius as resolveCurrentGridRadius,
+  boardExpansionDirectionLabel,
+  boardExpansionDirections as allBoardExpansionDirections,
+  buildBoardFootprint as resolveBoardFootprint,
   currentSpawnLanes as resolveCurrentSpawnLanes,
-  landmarkTileForWave as resolveLandmarkTileForWave
+  isBuildableTile as resolveIsBuildableTile,
+  isTileInBoard as resolveIsTileInBoard,
+  landmarkTileForState as resolveLandmarkTileForState
 } from './boardGeometry';
 import {
   createSaunaReserveEntry
@@ -481,71 +485,29 @@ export function createHexGrid(radius: number): AxialCoord[] {
   return createHexGridFromGeometry(radius);
 }
 
-function defeatedBossCountForWave(index: number, content: GameContent): number {
-  return Math.max(0, Math.floor((Math.max(1, index) - 1) / content.config.bossEvery));
-}
-
-function gridRadiusForWave(index: number, content: GameContent): number {
-  return content.config.gridRadius + defeatedBossCountForWave(index, content);
-}
-
-function currentGridRadius(state: RunState, content: GameContent): number {
-  return resolveCurrentGridRadius(state, content);
-}
-
-function currentBuildRadius(state: RunState, content: GameContent): number {
-  return resolveCurrentBuildRadius(state, content);
-}
-
-function perimeterTiles(radius: number): AxialCoord[] {
-  if (radius <= 0) {
-    return [{ q: 0, r: 0 }];
-  }
-
-  const tiles: AxialCoord[] = [];
-  let tile = { q: 0, r: -radius };
-  const edges: AxialCoord[] = [
-    { q: 1, r: 0 },
-    { q: 0, r: 1 },
-    { q: -1, r: 1 },
-    { q: -1, r: 0 },
-    { q: 0, r: -1 },
-    { q: 1, r: -1 }
-  ];
-
-  tiles.push({ ...tile });
-  for (const edge of edges) {
-    for (let step = 0; step < radius; step += 1) {
-      tile = add(tile, edge);
-      if (tiles.length < radius * 6) {
-        tiles.push({ ...tile });
-      }
-    }
-  }
-
-  return tiles;
+function currentBoardFootprint(state: RunState, content: GameContent) {
+  return resolveBoardFootprint(state, content);
 }
 
 function spawnLanesForWave(index: number, content: GameContent): AxialCoord[] {
-  const radius = gridRadiusForWave(index, content);
-  const perimeter = perimeterTiles(radius);
-  const laneCount = Math.min(6 + defeatedBossCountForWave(index, content) * 2, 12);
-  const lanes: AxialCoord[] = [];
-
-  for (let laneIndex = 0; laneIndex < laneCount; laneIndex += 1) {
-    const sampleIndex = Math.floor((laneIndex * perimeter.length) / laneCount) % perimeter.length;
-    lanes.push({ ...perimeter[sampleIndex] });
-  }
-
-  return lanes;
+  void index;
+  return content.config.spawnLanes.map((lane) => ({ ...lane }));
 }
 
 function currentSpawnLanes(state: RunState, content: GameContent): AxialCoord[] {
   return resolveCurrentSpawnLanes(state, content);
 }
 
-function landmarkTileForWave(index: number, landmarkId: WorldLandmarkId, content: GameContent): AxialCoord {
-  return resolveLandmarkTileForWave(index, landmarkId, content);
+function isBuildableTile(state: RunState, tile: AxialCoord, content: GameContent): boolean {
+  return resolveIsBuildableTile(state, tile, content);
+}
+
+function isTileInBoard(state: RunState, tile: AxialCoord, content: GameContent): boolean {
+  return resolveIsTileInBoard(state, tile, content);
+}
+
+function landmarkTileForState(state: RunState, landmarkId: WorldLandmarkId, content: GameContent): AxialCoord {
+  return resolveLandmarkTileForState(state, landmarkId, content);
 }
 
 export function createDefaultMetaProgress(): MetaProgress {
@@ -592,6 +554,15 @@ function randomInt(state: RunState, min: number, max: number): number {
 
 function pick<T>(state: RunState, values: T[]): T {
   return values[randomInt(state, 0, values.length - 1)];
+}
+
+function chooseNextExpansionDirection(state: RunState): BoardExpansionDirection {
+  const allDirections = allBoardExpansionDirections();
+  const usedDirections = new Set(state.boardExpansionDirections);
+  const availableDirections = usedDirections.size < allDirections.length
+    ? allDirections.filter((direction) => !usedDirections.has(direction))
+    : allDirections;
+  return pick(state, availableDirections);
 }
 
 function formatSpeechLine(text: string, replacements: Record<string, string> = {}): string {
@@ -1400,11 +1371,12 @@ function slotInCycle(index: number, content: GameContent): number {
 function spawnIntervalMs(index: number, content: GameContent, modifier = 0): number {
   const cycle = cycleNumber(index, content);
   const slot = slotInCycle(index, content);
-  const perCycleCompression = cycle * 12;
-  const slotStep = 32 + cycle * 2;
+  const perCycleCompression = cycle * 18;
+  const slotStep = 44 + cycle * 3;
+  const minInterval = Math.max(180, Math.floor(content.config.minSpawnIntervalMs * 0.5));
   return Math.max(
-    content.config.minSpawnIntervalMs,
-    920 - cycle * content.config.spawnIntervalStepMs - perCycleCompression - slot * slotStep + modifier
+    minInterval,
+    660 - cycle * Math.max(24, Math.floor(content.config.spawnIntervalStepMs * 0.7)) - perCycleCompression - slot * slotStep + modifier
   );
 }
 
@@ -1533,24 +1505,53 @@ function buildPatternSpawns(
   const enemies = upscaleEnemyListToTarget(baseEnemies, targetCount, cycle);
   const spawns: WaveSpawn[] = [];
   let atMs = 0;
+  let enemyIndex = 0;
+  let beatIndex = 0;
 
-  enemies.forEach((enemyId, spawnIndex) => {
-    let laneIndex = baseLane;
-    if (pattern === 'split') {
-      laneIndex = spawnIndex % 2 === 0 ? baseLane : altLane;
-    } else if (pattern === 'staggered') {
-      laneIndex = spawnIndex < 2 ? baseLane : spawnIndex % 2 === 0 ? supportLane : altLane;
-      atMs += spawnIndex === 2 ? interval * 0.8 : 0;
-    } else if (pattern === 'spearhead') {
-      laneIndex = spawnIndex === 0 || enemyId === 'brute' ? baseLane : spawnIndex % 2 === 0 ? flankLane : supportLane;
-    } else if (pattern === 'surge') {
-      const surgeLanes = [baseLane, flankLane, altLane];
-      laneIndex = surgeLanes[spawnIndex % surgeLanes.length];
+  while (enemyIndex < enemies.length) {
+    const remaining = enemies.length - enemyIndex;
+    const burstSize = (() => {
+      if (pattern === 'split') return Math.min(remaining, 2 + ((beatIndex + cycle) % 3 === 2 ? 1 : 0));
+      if (pattern === 'staggered') {
+        if (beatIndex < 2) return 1;
+        return Math.min(remaining, 2 + ((beatIndex + cycle) % 2));
+      }
+      if (pattern === 'spearhead') return Math.min(remaining, remaining >= 3 ? 3 : 2);
+      return Math.min(remaining, 3);
+    })();
+
+    const laneSlots = (() => {
+      if (pattern === 'split') {
+        return beatIndex % 2 === 0
+          ? [baseLane, altLane, supportLane]
+          : [supportLane, flankLane, altLane];
+      }
+      if (pattern === 'staggered') {
+        if (beatIndex === 0) return [baseLane];
+        if (beatIndex === 1) return [altLane];
+        return beatIndex % 2 === 0
+          ? [supportLane, baseLane, altLane]
+          : [altLane, supportLane, flankLane];
+      }
+      if (pattern === 'spearhead') {
+        return [baseLane, flankLane, supportLane];
+      }
+      return [baseLane, flankLane, altLane];
+    })();
+
+    for (let localIndex = 0; localIndex < burstSize; localIndex += 1) {
+      const enemyId = enemies[enemyIndex + localIndex];
+      let laneIndex = laneSlots[localIndex % laneSlots.length];
+      if (pattern === 'spearhead' && enemyId === 'brute') {
+        laneIndex = baseLane;
+      }
+      pushSpawn(spawns, atMs, enemyId, laneIndex, laneCount);
     }
 
-    pushSpawn(spawns, atMs, enemyId, laneIndex, laneCount);
+    enemyIndex += burstSize;
+    beatIndex += 1;
     atMs += interval;
-  });
+  }
 
   return spawns;
 }
@@ -1573,7 +1574,7 @@ function buildEndUserHordeSpawns(index: number, content: GameContent): WaveSpawn
 
   for (let spawnIndex = 0; spawnIndex < 16; spawnIndex += 1) {
     pushSpawn(spawns, atMs, 'thirsty_user', lanes[spawnIndex % lanes.length], laneCount);
-    atMs += spawnIndex > 0 && spawnIndex % 4 === 3 ? 360 : 220;
+    atMs += spawnIndex > 0 && spawnIndex % 4 === 3 ? 280 : 180;
   }
 
   return spawns;
@@ -1626,7 +1627,7 @@ function buildBossSpawns(index: number, content: GameContent, bossId: BossId): W
     const addIndex = spawns.length - baseSpawns.length;
     const enemyId: EnemyUnitId = cycle >= 2 && addIndex % 5 === 4 ? 'brute' : 'thirsty_user';
     pushSpawn(spawns, atMs, enemyId, lanes[addIndex % lanes.length], laneCount);
-    atMs += Math.max(content.config.minSpawnIntervalMs, 210 - cycle * 8);
+    atMs += Math.max(180, 170 - cycle * 6);
   }
 
   return spawns;
@@ -1698,21 +1699,13 @@ function otherEnemyOccupiesTile(state: RunState, tile: AxialCoord, enemyInstance
   return state.enemies.some((enemy) => enemy.instanceId !== enemyInstanceId && sameCoord(enemy.tile, tile));
 }
 
-function isBuildable(tile: AxialCoord, buildRadius: number, spawnLanes: AxialCoord[]): boolean {
-  const dist = hexDistance(tile, CENTER);
-  return dist > 0 && dist <= buildRadius &&
-    !spawnLanes.some((lane) => sameCoord(lane, tile));
-}
-
 function nearestSaunaDeployTile(state: RunState, content: GameContent, preferredTile?: AxialCoord | null): AxialCoord | null {
-  const buildRadius = currentBuildRadius(state, content);
-  const spawnLanes = currentSpawnLanes(state, content);
-  if (preferredTile && isBuildable(preferredTile, buildRadius, spawnLanes) && !occupied(state, preferredTile)) {
+  const buildableTiles = currentBoardFootprint(state, content).buildableTiles;
+  if (preferredTile && isBuildableTile(state, preferredTile, content) && !occupied(state, preferredTile)) {
     return { ...preferredTile };
   }
 
-  const candidates = createHexGrid(currentGridRadius(state, content))
-    .filter((tile) => isBuildable(tile, buildRadius, spawnLanes))
+  const candidates = buildableTiles
     .filter((tile) => !occupied(state, tile))
     .sort((left, right) =>
       (hexDistance(left, CENTER) - hexDistance(right, CENTER)) ||
@@ -1870,7 +1863,7 @@ function hudWorldLandmarkEntry(state: RunState, landmarkId: WorldLandmarkId, con
   return {
     id: landmarkId,
     label: landmarkId === 'metashop' ? 'Metashop' : 'Beer Shop',
-    tile: landmarkTileForWave(state.waveIndex, landmarkId, content),
+    tile: landmarkTileForState(state, landmarkId, content),
     visible: landmarkVisible(state, landmarkId),
     enabled: landmarkEnabled(state, landmarkId),
     locked: landmarkLocked(state, landmarkId),
@@ -2310,14 +2303,12 @@ function alliesToHeal(state: RunState, defender: DefenderInstance, stats: UnitSt
 function tryBlink(state: RunState, defender: DefenderInstance, content: GameContent): boolean {
   if (!defender.tile || !defender.skills.includes('blink_step') || state.timeMs < defender.blinkReadyAtMs) return false;
   const from = { ...defender.tile };
-  const buildRadius = currentBuildRadius(state, content);
-  const spawnLanes = currentSpawnLanes(state, content);
   const hpRatio = defender.hp / Math.max(1, derivedStats(state, defender, content).maxHp);
   if (hpRatio >= 0.5) return false;
 
   const canUseBlinkTile = (tile: AxialCoord | null): tile is AxialCoord => {
     if (!tile) return false;
-    return isBuildable(tile, buildRadius, spawnLanes) &&
+    return isBuildableTile(state, tile, content) &&
       !occupied(state, tile) &&
       !sameCoord(tile, defender.tile as AxialCoord);
   };
@@ -2357,11 +2348,8 @@ function tryBlinkTowardEnemy(state: RunState, defender: DefenderInstance, stats:
   const targetEnemy = nearestEnemy(state, defender.tile);
   if (!targetEnemy) return false;
 
-  const buildRadius = currentBuildRadius(state, content);
-  const spawnLanes = currentSpawnLanes(state, content);
   const from = cloneCoord(defender.tile);
-  const destination = createHexGrid(currentGridRadius(state, content))
-    .filter((tile) => isBuildable(tile, buildRadius, spawnLanes))
+  const destination = currentBoardFootprint(state, content).buildableTiles
     .filter((tile) => !occupied(state, tile))
     .filter((tile) => !sameCoord(tile, defender.tile as AxialCoord))
     .filter((tile) => hexDistance(tile, targetEnemy.tile) <= stats.range)
@@ -2387,8 +2375,6 @@ function moveDefenderTowardSaunaThreat(
   cooldownMultiplier: number
 ): boolean {
   if (!defender.tile) return false;
-  const buildRadius = currentBuildRadius(state, content);
-  const spawnLanes = currentSpawnLanes(state, content);
 
   const threat = saunaThreats(state, content)
     .sort((left, right) => (hexDistance(defender.tile as AxialCoord, left.tile) - hexDistance(defender.tile as AxialCoord, right.tile)) || (left.hp - right.hp))[0];
@@ -2397,7 +2383,7 @@ function moveDefenderTowardSaunaThreat(
   const currentThreatDistance = hexDistance(defender.tile, threat.tile);
   const currentCenterDistance = hexDistance(defender.tile, CENTER);
   const nextTile = DIRS.map((dir) => add(defender.tile as AxialCoord, dir))
-    .filter((tile) => isBuildable(tile, buildRadius, spawnLanes) && !occupied(state, tile))
+    .filter((tile) => isBuildableTile(state, tile, content) && !occupied(state, tile))
     .sort((left, right) =>
       (hexDistance(left, threat.tile) - hexDistance(right, threat.tile)) ||
       (hexDistance(left, CENTER) - hexDistance(right, CENTER)) ||
@@ -3046,13 +3032,11 @@ function syncPebblePathProgress(enemy: EnemyInstance, path: AxialCoord[]): void 
 }
 
 function candidatePebbleBottleTiles(state: RunState, content: GameContent): AxialCoord[] {
-  const gridRadius = currentGridRadius(state, content);
   const spawnLanes = currentSpawnLanes(state, content);
-  const landmarkTiles = WORLD_LANDMARK_IDS.map((landmarkId) => landmarkTileForWave(state.waveIndex, landmarkId, content));
+  const landmarkTiles = WORLD_LANDMARK_IDS.map((landmarkId) => landmarkTileForState(state, landmarkId, content));
   const pathTiles = pebblePathForCurrentWave(state, content);
-  return createHexGrid(gridRadius)
+  return currentBoardFootprint(state, content).buildableTiles
     .filter((tile) => hexDistance(tile, CENTER) >= 2)
-    .filter((tile) => hexDistance(tile, CENTER) < gridRadius)
     .filter((tile) => !spawnLanes.some((lane) => sameCoord(lane, tile)))
     .filter((tile) => !landmarkTiles.some((landmarkTile) => sameCoord(landmarkTile, tile)))
     .filter((tile) => !pathTiles.some((pathTile) => sameCoord(pathTile, tile)))
@@ -3102,7 +3086,7 @@ function movePebbleTowardTile(
   const bottleHuntMoveCooldownMs = pebbleBottleHuntMoveCooldownMs(state, enemy);
   const nextTile = DIRS
     .map((dir) => add(enemy.tile, dir))
-    .filter((candidate) => hexDistance(candidate, CENTER) <= currentGridRadius(state, content))
+    .filter((candidate) => isTileInBoard(state, candidate, content))
     .sort((left, right) =>
       (hexDistance(left, targetTile) - hexDistance(right, targetTile))
       || (hexDistance(left, CENTER) - hexDistance(right, CENTER))
@@ -3238,7 +3222,7 @@ function enemyTarget(state: RunState, enemy: EnemyInstance, content: GameContent
 
 function moveEnemyTowardCenter(state: RunState, enemy: EnemyInstance, content: GameContent): boolean {
   const tile = DIRS.map((dir) => add(enemy.tile, dir))
-    .filter((next) => hexDistance(next, CENTER) <= currentGridRadius(state, content))
+    .filter((next) => isTileInBoard(state, next, content))
     .filter((next) => !occupied(state, next))
     .sort((left, right) => (hexDistance(left, CENTER) - hexDistance(right, CENTER)) || (left.r - right.r) || (left.q - right.q))[0];
   if (!tile) return false;
@@ -3569,6 +3553,8 @@ function awardWave(state: RunState, content: GameContent): void {
   healSauna(state, content);
   normalizeLivingDefenders(state, content);
   if (clearedWave.isBoss) {
+    const expansionDirection = chooseNextExpansionDirection(state);
+    state.boardExpansionDirections.push(expansionDirection);
     state.phase = 'prep';
     state.overlayMode = 'modifier_draft';
     state.waveElapsedMs = 0;
@@ -3578,10 +3564,10 @@ function awardWave(state: RunState, content: GameContent): void {
     if (!rollGlobalModifierDraftOffersIntoState(state, content)) {
       state.overlayMode = 'none';
       scheduleAutoplay(state);
-      state.message = 'Boss down. No modifier synergies were live, so the run keeps rolling.';
+      state.message = `Boss down. The sauna grounds expand to the ${boardExpansionDirectionLabel(expansionDirection)}. No modifier synergies were live, so the run keeps rolling.`;
       return;
     }
-    state.message = 'Boss down. Pick one global modifier before the next wave.';
+    state.message = `Boss down. The sauna grounds expand to the ${boardExpansionDirectionLabel(expansionDirection)}. Pick one global modifier before the next wave.`;
     return;
   }
   if (upcomingWave.isBoss) {
@@ -4479,6 +4465,7 @@ export function createInitialState(
     endUserHordeMomentum: 0,
     endUserHordeTier: 0,
     endUserHordeNextSurgeAtMs: 0,
+    boardExpansionDirections: [],
     speechBubbles: [],
     nextSpeechBubbleId: 1,
     bossSpeechReadyAtMs: 0,
@@ -4727,9 +4714,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       if (next.overlayMode === 'intermission') return next;
       const defender = getDefender(next, next.selectedDefenderId);
       if (!defender || (defender.location !== 'ready' && defender.location !== 'sauna')) return next;
-      const buildRadius = currentBuildRadius(next, content);
-      const spawnLanes = currentSpawnLanes(next, content);
-      if (!isBuildable(action.tile, buildRadius, spawnLanes) || occupied(next, action.tile)) {
+      if (!isBuildableTile(next, action.tile, content) || occupied(next, action.tile)) {
         next.message = 'That hex is not available.';
         return next;
       }
@@ -5162,11 +5147,12 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
 }
 
 export function createSnapshot(state: RunState, content: GameContent): GameSnapshot {
-  const gridRadius = currentGridRadius(state, content);
-  const buildRadius = currentBuildRadius(state, content);
-  const spawnTiles = currentSpawnLanes(state, content);
-  const tiles = createHexGrid(gridRadius);
-  const buildableTiles = tiles.filter((tile) => isBuildable(tile, buildRadius, spawnTiles));
+  const footprint = currentBoardFootprint(state, content);
+  const gridRadius = footprint.boundingRadius;
+  const buildRadius = footprint.buildRadius;
+  const spawnTiles = footprint.spawnTiles;
+  const tiles = footprint.tiles;
+  const buildableTiles = footprint.buildableTiles;
   const selected = getDefender(state, state.selectedDefenderId);
   const selectedEnemy = getEnemy(state, state.selectedEnemyInstanceId);
   const selectedLoot = getInventoryDrop(state, state.selectedInventoryDropId);

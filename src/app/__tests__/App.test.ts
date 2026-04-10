@@ -1,3 +1,4 @@
+import { createElement } from 'react';
 import {
   formatPatchNotesDate,
   getHudUtilityButtons,
@@ -7,10 +8,13 @@ import {
   resolveBoardPointerAction,
   shouldAutoOpenPatchNotes
 } from '../uiHelpers';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { gameContent } from '../../content/gameContent';
 import { createDefaultMetaProgress, createInitialState, createSnapshot } from '../../game/logic';
 import { DEFAULT_BOARD_CAMERA } from '../../game/render/layout';
 import { getTileViewportPosition } from '../../game/render';
+import { BottomDock } from '../components/BottomDock';
+import { SelectionCard } from '../components/SelectionCard';
 
 describe('App popup helpers', () => {
   it('keeps landmark popups inside the frame near the top-left edge', () => {
@@ -105,7 +109,7 @@ describe('App popup helpers', () => {
     });
   });
 
-  it('maps Q, W and E to recruit refresh, recruit level up, and sauna reroll', () => {
+  it('maps Q and W globally, but E only when the sauna is selected', () => {
     const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
     state.sisu.current = 12;
     const saunaHero = state.recruitOffers.find((entry) => entry !== null)!.candidate;
@@ -114,10 +118,43 @@ describe('App popup helpers', () => {
     state.defenders.push(saunaHero);
     state.saunaDefenderId = saunaHero.id;
     const snapshot = createSnapshot(state, gameContent);
+    state.selectedMapTarget = 'sauna';
+    const saunaSelectedSnapshot = createSnapshot(state, gameContent);
 
     expect(resolveGameplayHotkeyAction(snapshot, 'q', { guideStepActive: false, patchNotesOpen: false })).toEqual({ type: 'rerollRecruitOffers' });
     expect(resolveGameplayHotkeyAction(snapshot, 'w', { guideStepActive: false, patchNotesOpen: false })).toEqual({ type: 'levelUpRecruitment' });
-    expect(resolveGameplayHotkeyAction(snapshot, 'e', { guideStepActive: false, patchNotesOpen: false })).toEqual({ type: 'rerollSaunaDefender' });
+    expect(resolveGameplayHotkeyAction(snapshot, 'e', { guideStepActive: false, patchNotesOpen: false })).toBeNull();
+    expect(resolveGameplayHotkeyAction(saunaSelectedSnapshot, 'e', { guideStepActive: false, patchNotesOpen: false })).toEqual({ type: 'rerollSaunaDefender' });
+  });
+
+  it('keeps sauna reroll out of the default dock and inside the selected sauna view', () => {
+    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+    state.sisu.current = 12;
+    const saunaHero = state.recruitOffers.find((entry) => entry !== null)!.candidate;
+    saunaHero.location = 'sauna';
+    saunaHero.tile = null;
+    state.defenders.push(saunaHero);
+    state.saunaDefenderId = saunaHero.id;
+
+    const snapshot = createSnapshot(state, gameContent);
+    const dockMarkup = renderToStaticMarkup(createElement(BottomDock, {
+      snapshot,
+      dispatch: () => undefined
+    }));
+
+    expect(dockMarkup).not.toContain('Inspect Sauna');
+    expect(dockMarkup).not.toContain('Reroll (E');
+
+    state.selectedMapTarget = 'sauna';
+    const selectedSaunaSnapshot = createSnapshot(state, gameContent);
+    const selectionMarkup = renderToStaticMarkup(createElement(SelectionCard, {
+      selectedDefender: selectedSaunaSnapshot.hud.selectedDefender,
+      selectedSauna: selectedSaunaSnapshot.hud.selectedSauna,
+      selectedEnemy: selectedSaunaSnapshot.hud.selectedEnemy,
+      dispatch: () => undefined
+    }));
+
+    expect(selectionMarkup).toContain('Reroll (E');
   });
 
   it('blocks gameplay hotkeys while blocking overlays are active', () => {

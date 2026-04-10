@@ -426,8 +426,8 @@ button {
   right: 18px;
   bottom: 18px;
   display: grid;
-  gap: 10px;
-  padding: 10px;
+  gap: 8px;
+  padding: 8px;
   border-radius: 20px;
   backdrop-filter: blur(14px);
   background:
@@ -485,6 +485,11 @@ button {
   gap: 8px;
 }
 
+.market-dock-card--full {
+  padding: 8px;
+  gap: 6px;
+}
+
 .reserve-card {
   display: grid;
   gap: 8px;
@@ -510,7 +515,7 @@ button {
 .market-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(176px, 208px);
-  gap: 8px;
+  gap: 6px;
   align-items: stretch;
 }
 
@@ -520,12 +525,12 @@ button {
 
 .market-action-stack {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   align-content: start;
 }
 
 .market-action-stack > button {
-  min-height: 64px;
+  min-height: 52px;
   height: auto;
 }
 
@@ -551,8 +556,9 @@ button {
 
 .market-card {
   display: grid;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
+  padding: 8px;
 }
 
 .sauna-dock-card .panel-copy,
@@ -574,7 +580,7 @@ button {
 
 .offer-lore {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -767,7 +773,7 @@ button {
 .secondary-button,
 .ghost-button,
 .mini-button {
-  padding: 9px 12px;
+  padding: 8px 10px;
 }
 
 .primary-button {
@@ -946,7 +952,7 @@ em {
     left: 18px;
     right: 18px;
     bottom: 18px;
-    max-height: min(38vh, 360px);
+    max-height: min(34vh, 320px);
     overflow: auto;
   }
 

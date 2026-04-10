@@ -8,7 +8,8 @@ import {
   createSnapshot,
   stepState
 } from '../logic';
-import { getTileViewportPosition, pickDefenderAtCanvasPoint } from '../render';
+import { boardExpansionDirectionVector } from '../boardGeometry';
+import { getTileViewportPosition, pickDefenderAtCanvasPoint, pickTileAtCanvasPoint } from '../render';
 
 function prepState() {
   const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
@@ -90,6 +91,23 @@ describe('Sauna Defense V2 logic', () => {
       'pressure',
       'breach'
     ]);
+  });
+
+  it('compresses later waves into faster bursts and spawns several enemies on the same beat', () => {
+    const wave6 = createWaveDefinition(6, gameContent);
+    const wave10 = createWaveDefinition(10, gameContent);
+    const wave15 = createWaveDefinition(15, gameContent);
+    const burstMap = wave6.spawns.reduce((acc, spawn) => {
+        acc.set(spawn.atMs, [...(acc.get(spawn.atMs) ?? []), spawn]);
+        return acc;
+      }, new Map());
+    const concurrentBursts = Array.from(burstMap.values()).filter((group) => group.length > 1);
+
+    expect(Math.max(...wave6.spawns.map((spawn) => spawn.atMs))).toBeLessThan(5000);
+    expect(Math.max(...wave10.spawns.map((spawn) => spawn.atMs))).toBeLessThan(6000);
+    expect(Math.max(...wave15.spawns.map((spawn) => spawn.atMs))).toBeLessThan(12000);
+    expect(concurrentBursts.length).toBeGreaterThan(0);
+    expect(concurrentBursts.some((group) => new Set(group.map((spawn) => spawn.laneIndex)).size > 1)).toBe(true);
   });
 
   it('makes Pebble ignore defenders and continue along its scripted path', () => {
@@ -3265,15 +3283,18 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.globalModifierDraftOffers).toHaveLength(3);
     expect(snapshot.hud.globalModifierDraftOffers.every((entry) => entry.stackCount > 0)).toBe(true);
     expect(new Set(snapshot.hud.globalModifierDraftOffers.map((entry) => entry.id)).size).toBe(3);
-    expect(snapshot.config.gridRadius).toBe(7);
-    expect(snapshot.config.buildRadius).toBe(6);
-    expect(snapshot.tiles).toHaveLength(169);
-    expect(snapshot.spawnTiles).toHaveLength(8);
-    expect(snapshot.spawnTiles.every((tile) => Math.max(Math.abs(tile.q), Math.abs(tile.r), Math.abs(-tile.q - tile.r)) === 7)).toBe(true);
-    expect(snapshot.buildableTiles.some((tile) => Math.max(Math.abs(tile.q), Math.abs(tile.r), Math.abs(-tile.q - tile.r)) === 6)).toBe(true);
+    expect(state.boardExpansionDirections).toHaveLength(1);
+    expect(snapshot.config.gridRadius).toBe(10);
+    expect(snapshot.config.buildRadius).toBe(9);
+    expect(snapshot.tiles).toHaveLength(131);
+    expect(snapshot.spawnTiles).toHaveLength(6);
+    const expansionVector = boardExpansionDirectionVector(state.boardExpansionDirections[0]);
+    expect(snapshot.spawnTiles).toContainEqual({ q: expansionVector.q * 10, r: expansionVector.r * 10 });
+    expect(snapshot.buildableTiles).toContainEqual({ q: expansionVector.q * 6, r: expansionVector.r * 6 });
+    expect(snapshot.buildableTiles).toContainEqual({ q: expansionVector.q * 9, r: expansionVector.r * 9 });
   });
 
-  it('moves world landmarks outward on the expanded map after the first boss', () => {
+  it('keeps landmarks on the board while avoiding the moved spawn frontier after expansion', () => {
     let state = prepState();
     state.phase = 'wave';
     state.waveIndex = 5;
@@ -3296,9 +3317,26 @@ describe('Sauna Defense V2 logic', () => {
     const snapshot = createSnapshot(state, gameContent);
     const metashop = snapshot.hud.worldLandmarks.find((entry) => entry.id === 'metashop');
     const beerShop = snapshot.hud.worldLandmarks.find((entry) => entry.id === 'beer_shop');
+    const spawnKeys = new Set(snapshot.spawnTiles.map((tile) => `${tile.q},${tile.r}`));
+    const tileKeys = new Set(snapshot.tiles.map((tile) => `${tile.q},${tile.r}`));
 
-    expect(metashop?.tile).toEqual({ q: 4, r: -7 });
-    expect(beerShop?.tile).toEqual({ q: -4, r: 7 });
+    expect(metashop).toBeTruthy();
+    expect(beerShop).toBeTruthy();
+    expect(tileKeys.has(`${metashop!.tile.q},${metashop!.tile.r}`)).toBe(true);
+    expect(tileKeys.has(`${beerShop!.tile.q},${beerShop!.tile.r}`)).toBe(true);
+    expect(spawnKeys.has(`${metashop!.tile.q},${metashop!.tile.r}`)).toBe(false);
+    expect(spawnKeys.has(`${beerShop!.tile.q},${beerShop!.tile.r}`)).toBe(false);
+  });
+
+  it('allows picking tiles on the new expansion arm after a boss clear', () => {
+    let state = prepState();
+    state.boardExpansionDirections = ['north'];
+    const snapshot = createSnapshot(state, gameContent);
+    const rect = { left: 0, top: 0, width: 900, height: 700 } as DOMRect;
+    const armTile = { q: 0, r: -8 };
+    const point = getTileViewportPosition(snapshot, rect.width, rect.height, armTile);
+
+    expect(pickTileAtCanvasPoint(snapshot, rect, point.x, point.y)).toEqual(armTile);
   });
 
   it('stores the picked global modifier and closes the boss reward overlay', () => {

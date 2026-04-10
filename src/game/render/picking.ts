@@ -1,4 +1,4 @@
-import { hexDistance } from '../geometry';
+import { coordKey } from '../geometry';
 import type { AxialCoord, BoardCamera, GameSnapshot } from '../types';
 import { DEFAULT_BOARD_CAMERA, getBoardLayout, pixelToAxial, type BoardLayout } from './layout';
 
@@ -27,7 +27,8 @@ export function pickTileAtCanvasPoint(
 ): AxialCoord | null {
   const layout = getBoardLayout(rect.width, rect.height, snapshot.config.gridRadius, camera);
   const tile = pixelToAxial(clientX - rect.left, clientY - rect.top, layout);
-  return hexDistance(tile, { q: 0, r: 0 }) > snapshot.config.gridRadius ? null : tile;
+  const tileKeys = new Set(snapshot.tiles.map(coordKey));
+  return tileKeys.has(coordKey(tile)) ? tile : null;
 }
 
 export function pickDefenderAtCanvasPoint(
