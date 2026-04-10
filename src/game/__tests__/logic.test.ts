@@ -3343,6 +3343,7 @@ describe('Sauna Defense V2 logic', () => {
     let state = prepState();
     state.phase = 'wave';
     state.waveIndex = 5;
+    state.saunaDefenderId = null;
     state.currentWave = {
       index: 5,
       isBoss: true,
@@ -3358,6 +3359,10 @@ describe('Sauna Defense V2 logic', () => {
 
     state = stepState(state, 16, gameContent);
     const picked = state.globalModifierDraftOffers[0];
+
+    expect(state.steamEarned).toBe(gameContent.config.steamPerBossWave);
+    expect(state.message).toContain(`+${gameContent.config.steamPerBossWave} Steam`);
+
     state = applyAction(state, { type: 'draftGlobalModifier', modifierId: picked }, gameContent);
 
     expect(state.overlayMode).toBe('none');

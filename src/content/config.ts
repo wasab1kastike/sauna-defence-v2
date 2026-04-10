@@ -21,6 +21,7 @@ export const config: GameConfig = {
     recruitCostStep: 2,
     recruitWaveStep: 1,
     steamPerSaunaWave: 1,
+    steamPerBossWave: 4,
     saunaHealPerPrep: 5,
     baseLootChance: 0.18,
     bossLootChance: 1,

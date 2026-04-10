@@ -487,6 +487,7 @@ export interface GameConfig {
   recruitBaseCost: number;
   recruitCostStep: number;
   steamPerSaunaWave: number;
+  steamPerBossWave: number;
   saunaHealPerPrep: number;
   baseLootChance: number;
   bossLootChance: number;

@@ -3550,6 +3550,7 @@ function awardWave(state: RunState, content: GameContent): void {
   const alcoholBonus = alcoholTotals(state, content);
   state.sisu.current += Math.max(0, clearedWave.rewardSisu + (alcoholBonus.rewardSisu ?? 0));
   if (state.saunaDefenderId) state.steamEarned += content.config.steamPerSaunaWave;
+  if (clearedWave.isBoss) state.steamEarned += content.config.steamPerBossWave;
   healSauna(state, content);
   normalizeLivingDefenders(state, content);
   if (clearedWave.isBoss) {
@@ -3564,10 +3565,10 @@ function awardWave(state: RunState, content: GameContent): void {
     if (!rollGlobalModifierDraftOffersIntoState(state, content)) {
       state.overlayMode = 'none';
       scheduleAutoplay(state);
-      state.message = `Boss down. The sauna grounds expand to the ${boardExpansionDirectionLabel(expansionDirection)}. No modifier synergies were live, so the run keeps rolling.`;
+      state.message = `Boss down. +${content.config.steamPerBossWave} Steam. The sauna grounds expand to the ${boardExpansionDirectionLabel(expansionDirection)}. No modifier synergies were live, so the run keeps rolling.`;
       return;
     }
-    state.message = `Boss down. The sauna grounds expand to the ${boardExpansionDirectionLabel(expansionDirection)}. Pick one global modifier before the next wave.`;
+    state.message = `Boss down. +${content.config.steamPerBossWave} Steam. The sauna grounds expand to the ${boardExpansionDirectionLabel(expansionDirection)}. Pick one global modifier before the next wave.`;
     return;
   }
   if (upcomingWave.isBoss) {
