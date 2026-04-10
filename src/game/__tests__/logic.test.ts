@@ -4024,9 +4024,9 @@ describe('Sauna Defense V2 logic', () => {
     state.overlayMode = 'intermission';
     state.phase = 'lost';
     state.meta.shopUnlocked = true;
-    state.meta.steam = 30;
     state.meta.upgrades.beer_shop_unlock = 1;
     state = createInitialState(gameContent, state.meta, 42, true, false);
+    state.sisu.current = 30;
 
     const offer = state.beerShopOffers[0];
     expect(offer).toBeTruthy();
@@ -4042,10 +4042,10 @@ describe('Sauna Defense V2 logic', () => {
   it('lets the player buy beer with the beer shop unlock even if the metashop is still locked', () => {
     const meta = createDefaultMetaProgress();
     meta.shopUnlocked = false;
-    meta.steam = 30;
     meta.upgrades.beer_shop_unlock = 1;
 
     let state = createInitialState(gameContent, meta, 42, false, false);
+    state.sisu.current = 30;
     const snapshot = createSnapshot(state, gameContent);
     const offer = state.beerShopOffers[0];
 
@@ -4063,9 +4063,9 @@ describe('Sauna Defense V2 logic', () => {
     state.overlayMode = 'intermission';
     state.phase = 'lost';
     state.meta.shopUnlocked = true;
-    state.meta.steam = 40;
     state.meta.upgrades.beer_shop_unlock = 1;
     state = createInitialState(gameContent, state.meta, 123, true, false);
+    state.sisu.current = 40;
 
     expect(state.beerShopOffers.length).toBeGreaterThanOrEqual(2);
     const first = state.beerShopOffers[0];
@@ -4088,7 +4088,7 @@ describe('Sauna Defense V2 logic', () => {
     state.overlayMode = 'none';
     state.meta.shopUnlocked = true;
     state.meta.upgrades.beer_shop_unlock = 1;
-    state.meta.steam = 20;
+    state.sisu.current = 20;
     state.saunaHp = 1;
     state.pendingSpawns = [];
     state.enemies = [{
@@ -4143,10 +4143,10 @@ describe('Sauna Defense V2 logic', () => {
   it('keeps beer shop landmark and purchases available in prep, wave, and intermission', () => {
     const meta = createDefaultMetaProgress();
     meta.shopUnlocked = true;
-    meta.steam = 30;
     meta.upgrades.beer_shop_unlock = 1;
 
     let state = createInitialState(gameContent, meta, 42, false, false);
+    state.sisu.current = 30;
     let snapshot = createSnapshot(state, gameContent);
     const prepLandmark = snapshot.hud.worldLandmarks.find((entry) => entry.id === 'beer_shop');
     expect(prepLandmark?.visible).toBe(true);
@@ -4159,7 +4159,7 @@ describe('Sauna Defense V2 logic', () => {
 
     state.phase = 'wave';
     state.overlayMode = 'none';
-    state.meta.steam = 30;
+    state.sisu.current = 30;
     const waveOffer = state.beerShopOffers.find((offer) => offer.alcoholId !== prepOffer.alcoholId) ?? state.beerShopOffers[0];
     state = applyAction(state, { type: 'buyBeerShopOffer', offerId: waveOffer.offerId }, gameContent);
     expect(state.activeAlcohols.length).toBeGreaterThan(0);
@@ -4168,6 +4168,41 @@ describe('Sauna Defense V2 logic', () => {
     state.phase = 'lost';
     snapshot = createSnapshot(state, gameContent);
     expect(snapshot.hud.worldLandmarks.find((entry) => entry.id === 'beer_shop')?.enabled).toBe(true);
+  });
+
+  it('lets the player buy beer with SISU even when Steam is empty', () => {
+    const meta = createDefaultMetaProgress();
+    meta.shopUnlocked = false;
+    meta.steam = 0;
+    meta.upgrades.beer_shop_unlock = 1;
+
+    let state = createInitialState(gameContent, meta, 42, false, false);
+    state.sisu.current = 30;
+    const offer = state.beerShopOffers[0];
+
+    state = applyAction(state, { type: 'buyBeerShopOffer', offerId: offer.offerId }, gameContent);
+
+    expect(state.activeAlcohols).toHaveLength(1);
+    expect(state.sisu.current).toBeLessThan(30);
+  });
+
+  it('blocks beer purchases when SISU is too low even if Steam is available', () => {
+    const meta = createDefaultMetaProgress();
+    meta.shopUnlocked = false;
+    meta.steam = 99;
+    meta.upgrades.beer_shop_unlock = 1;
+
+    let state = createInitialState(gameContent, meta, 42, false, false);
+    const offer = state.beerShopOffers[0];
+    state.sisu.current = Math.max(0, gameContent.alcoholDefinitions[offer.alcoholId].price - 1);
+
+    const snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.beerShopOffers.find((entry) => entry.id === offer.offerId)?.canBuy).toBe(false);
+
+    state = applyAction(state, { type: 'buyBeerShopOffer', offerId: offer.offerId }, gameContent);
+
+    expect(state.activeAlcohols).toHaveLength(0);
+    expect(state.message).toContain('Not enough SISU');
   });
 
   it('keeps only one non-blocking hud panel open at a time', () => {

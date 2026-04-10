@@ -256,6 +256,28 @@ describe('App popup helpers', () => {
     expect(snapshot.hud.activePanel).toBeNull();
   });
 
+  it('surfaces SISU-based Beer Shop purchase labels in the HUD data', () => {
+    const meta = createDefaultMetaProgress();
+    meta.upgrades.beer_shop_unlock = 1;
+
+    const state = createInitialState(gameContent, meta, 42, false);
+    state.sisu.current = 30;
+    const firstOffer = state.beerShopOffers[0]!;
+    const firstSnapshot = createSnapshot(state, gameContent);
+    const firstHudOffer = firstSnapshot.hud.beerShopOffers.find((offer) => offer.id === firstOffer.offerId);
+
+    expect(firstSnapshot.hud.sisu).toBe(30);
+    expect(firstHudOffer?.purchaseLabel).toContain('SISU');
+    expect(firstHudOffer?.purchaseLabel).toContain('Buy Drink');
+
+    state.activeAlcohols = [{ alcoholId: firstOffer.alcoholId, stacks: 1 }];
+    const stackedSnapshot = createSnapshot(state, gameContent);
+    const stackedHudOffer = stackedSnapshot.hud.beerShopOffers.find((offer) => offer.id === firstOffer.offerId);
+
+    expect(stackedHudOffer?.purchaseLabel).toContain('Stack Drink');
+    expect(stackedHudOffer?.purchaseLabel).toContain('SISU');
+  });
+
   it('blocks gameplay hotkeys during intermission', () => {
     const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
     state.phase = 'lost';

@@ -658,7 +658,7 @@ export function App() {
         <div className="popup-scroll-stack">
           <section className="popup-section">
             <div className="mini-tag-row">
-              <span className="mini-tag">Steam {snapshot.hud.bankedSteam}</span>
+              <span className="mini-tag">SISU {snapshot.hud.sisu}</span>
               <span className="mini-tag">Shop Level {snapshot.hud.beerShopLevel}</span>
               <span className="mini-tag">Active {snapshot.hud.beerActiveSlotCount}/{snapshot.hud.beerActiveSlotCap}</span>
             </div>

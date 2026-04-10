@@ -2286,7 +2286,7 @@ function rollBeerShopOffersIntoState(state: RunState, content: GameContent): voi
 function canBuyBeerOffer(state: RunState, offer: BeerShopOffer, content: GameContent): boolean {
   if (!beerShopUnlocked(state)) return false;
   const definition = content.alcoholDefinitions[offer.alcoholId];
-  if (state.meta.steam < definition.price) return false;
+  if (state.sisu.current < definition.price) return false;
   const active = activeAlcoholEntry(state, offer.alcoholId);
   if (active) return true;
   return state.activeAlcohols.length < beerActiveSlotCapForTier(beerShopTier(state));
@@ -5305,8 +5305,8 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       const offer = next.beerShopOffers.find((entry) => entry.offerId === action.offerId);
       if (!offer) return next;
       const definition = content.alcoholDefinitions[offer.alcoholId];
-      if (next.meta.steam < definition.price) {
-        next.message = `Not enough Steam for ${definition.name}.`;
+      if (next.sisu.current < definition.price) {
+        next.message = `Not enough SISU for ${definition.name}.`;
         return next;
       }
       const existing = activeAlcoholEntry(next, offer.alcoholId);
@@ -5314,7 +5314,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         next.message = 'No free drink slot. Dump an active drink first or stack one you already have.';
         return next;
       }
-      next.meta.steam -= definition.price;
+      next.sisu.current -= definition.price;
       if (existing) {
         existing.stacks += 1;
         next.message = `${definition.name} was poured again. The upside grows, and the downside doubles.`;
@@ -5599,8 +5599,8 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         negativeEffectText: formatAlcoholModifier(definition.negative, 'negative'),
         canBuy: canBuyBeerOffer(state, offer, content),
         purchaseLabel: activeAlcoholEntry(state, offer.alcoholId)
-          ? `Stack Drink (${definition.price} Steam)`
-          : `Buy Drink (${definition.price} Steam)`
+          ? `Stack Drink (${definition.price} SISU)`
+          : `Buy Drink (${definition.price} SISU)`
       };
     }),
     activeAlcohols: state.activeAlcohols.map((active) => {
