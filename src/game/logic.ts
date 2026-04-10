@@ -3406,7 +3406,7 @@ function metaUpgradeSoftcapReached(state: RunState, upgradeId: MetaUpgradeId, co
   return isRepeatableMetaUpgrade(upgradeId) && state.meta.upgrades[upgradeId] > metaSoftcapLevel(upgradeId, content);
 }
 
-function nextMetaUpgradeEffectText(state: RunState, upgradeId: MetaUpgradeId, content: GameContent): string | null {
+function nextMetaUpgradeEffectText(state: RunState, upgradeId: MetaUpgradeId): string | null {
   const currentLevel = state.meta.upgrades[upgradeId];
   const nextLevel = currentLevel + 1;
   switch (upgradeId) {
@@ -5306,7 +5306,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         maxed: cost === null,
         repeatable: isRepeatableMetaUpgrade(upgradeId),
         softcapReached: metaUpgradeSoftcapReached(state, upgradeId, content),
-        nextEffectText: nextMetaUpgradeEffectText(state, upgradeId, content)
+        nextEffectText: nextMetaUpgradeEffectText(state, upgradeId)
       };
     }),
     worldLandmarks
