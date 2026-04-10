@@ -1855,7 +1855,7 @@ function landmarkStatusText(state: RunState, landmarkId: WorldLandmarkId, conten
       }
       return metashopEnabled(state)
         ? 'Browse permanent upgrades between runs.'
-        : 'Metashop opens between runs only.';
+        : 'Kyläkauppa opens between runs only.';
     case 'beer_shop':
       return `Bartender live with ${state.activeAlcohols.length}/${beerActiveSlotCapForTier(beerShopTier(state))} active drink slots filled.`;
     default:
@@ -1866,7 +1866,7 @@ function landmarkStatusText(state: RunState, landmarkId: WorldLandmarkId, conten
 function hudWorldLandmarkEntry(state: RunState, landmarkId: WorldLandmarkId, content: GameContent): HudWorldLandmarkEntry {
   return {
     id: landmarkId,
-    label: landmarkId === 'metashop' ? 'Metashop' : 'Beer Shop',
+    label: landmarkId === 'metashop' ? 'Kyläkauppa' : 'Beer Shop',
     tile: landmarkTileForState(state, landmarkId, content),
     visible: landmarkVisible(state, landmarkId),
     enabled: landmarkEnabled(state, landmarkId),
@@ -4286,8 +4286,8 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
       return {
         title: state.phase === 'lost' ? 'Shop Locked' : 'Run Lobby',
         body: state.phase === 'lost'
-          ? 'You unlocked the between-run lobby, but the actual metashop still needs one Steam-powered grand opening.'
-          : 'No metashop before the first run. Survive one shift first, then decide if the grand opening is worth the Steam.'
+          ? 'You unlocked the between-run lobby, but the actual Kyläkauppa still needs one Steam-powered grand opening.'
+          : 'No Kyläkauppa before the first run. Survive one shift first, then decide if the grand opening is worth the Steam.'
       };
     }
     return {
@@ -4622,7 +4622,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         }
         next.message = inventoryUnlocked(next)
           ? 'Loot and stash opened.'
-          : 'Fresh loot is visible here. Overflow stash unlocks from the metashop.';
+          : 'Fresh loot is visible here. Overflow stash unlocks from the Kyläkauppa.';
       }
       return next;
     }
@@ -4696,7 +4696,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       setActiveHudPanel(next, 'loot');
       if (!inventoryUnlocked(next)) {
         next.inventoryOpen = false;
-        next.message = 'Overflow Stash unlocks from the metashop.';
+        next.message = 'Overflow Stash unlocks from the Kyläkauppa.';
       }
       return next;
     case 'toggleRecruitment':
@@ -5067,12 +5067,12 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     case 'unlockMetaShop': {
       if (next.overlayMode !== 'intermission' || next.meta.shopUnlocked) return next;
       if (next.meta.steam < content.config.metaShopUnlockCost) {
-        next.message = 'Not enough Steam to open the metashop yet.';
+        next.message = 'Not enough Steam to open the Kyläkauppa yet.';
         return next;
       }
       next.meta.steam -= content.config.metaShopUnlockCost;
       next.meta.shopUnlocked = true;
-      next.message = 'The metashop shutters creak open for future runs.';
+      next.message = 'The Kyläkauppa shutters creak open for future runs.';
       return next;
     }
     case 'toggleAutoplay':

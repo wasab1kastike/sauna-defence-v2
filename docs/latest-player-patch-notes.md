@@ -12,7 +12,7 @@ Sauna oppi pitamaan classit tallessa, ja patch notes muistaa nyt vanhatkin loyly
 ## Parannuksia
 
 - Karttaa voi nyt pannata vapaammin ylos ja alas, ja alapalkki huomioidaan clampissa jotta kaupat eivat jaa dockin alle piiloon.
-- Metashop ja Beer Shop spawnivat nyt deterministisesti saunan lahelle eivatka katoa kartan reunoille.
+- Kylakauppa ja Beer Shop spawnivat nyt deterministisesti saunan lahelle eivatka katoa kartan reunoille.
 - Boss-clearit avaavat karttaa nyt yhteen suuntaan kerrallaan, ja jokainen bossi maksaa varman `4 Steam` palkinnon.
 
 ## Korjauksia

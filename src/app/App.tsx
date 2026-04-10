@@ -19,7 +19,6 @@ import {
   formatRarity,
   getHudUtilityButtons,
   getLandmarkPopupStyle,
-  getLandmarkStyle,
   GUIDE_STEPS,
   resolveBoardPointerAction,
   resolveGameplayHotkeyAction,
@@ -647,7 +646,7 @@ export function App() {
                   ))}
                 </div>
               ) : <p className="panel-copy small-copy">No overflow loot stored.</p>
-            ) : <p className="panel-copy small-copy">Buy the Overflow Stash upgrade from the metashop to keep extra loot.</p>}
+            ) : <p className="panel-copy small-copy">Buy the Overflow Stash upgrade from the Kyläkauppa to keep extra loot.</p>}
           </section>
           {renderSelectedLootDetail()}
         </div>
@@ -726,7 +725,7 @@ export function App() {
         </div>
       );
     } else if (activePanel === 'metashop') {
-      title = 'Metashop';
+      title = 'Kyläkauppa';
       subtitle = activeLandmark?.statusText ?? 'Endless between-run progression with softcaps instead of hard endings.';
       const repeatableUpgrades = snapshot.hud.metaUpgrades.filter((upgrade) => upgrade.repeatable);
       const utilityUpgrades = snapshot.hud.metaUpgrades.filter((upgrade) => !upgrade.repeatable);
@@ -736,7 +735,7 @@ export function App() {
             <section className="popup-section">
               <div className="popup-card">
                 <strong>Grand Opening</strong>
-                <small>Unlock the metashop once and keep it available in future runs.</small>
+                <small>Unlock the Kyläkauppa once and keep it available in future runs.</small>
                 <small>Cost {snapshot.hud.metaShopUnlockCost} Steam</small>
                 <button
                   className="mini-button"
@@ -955,18 +954,6 @@ export function App() {
             <HudUtilityRail activePanel={activePanel} buttons={utilityButtons} dispatch={dispatch} />
 
             {renderBottomDock()}
-
-            {snapshot.hud.worldLandmarks.map((landmark) => (
-              <button
-                key={landmark.id}
-                className={landmark.selected ? 'landmark-chip selected' : 'landmark-chip'}
-                style={getLandmarkStyle(snapshot, frameSize, landmark, boardCamera)}
-                onClick={() => dispatch({ type: 'selectWorldLandmark', landmarkId: landmark.id })}
-              >
-                <strong>{landmark.label}</strong>
-                <small>{landmark.badgeText}</small>
-              </button>
-            ))}
 
             {renderSelectionCard()}
             {renderPanelPopup()}
