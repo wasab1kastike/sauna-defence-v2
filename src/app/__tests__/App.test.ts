@@ -1,4 +1,4 @@
-import { createElement } from 'react';
+import { act, createElement } from 'react';
 import {
   formatPatchNotesDate,
   getHudUtilityButtons,
@@ -9,11 +9,14 @@ import {
   shouldAutoOpenPatchNotes
 } from '../uiHelpers';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { createRoot } from 'react-dom/client';
 import { gameContent } from '../../content/gameContent';
+import { allPatchNotes } from '../../content/patchNotes';
 import { createDefaultMetaProgress, createInitialState, createSnapshot } from '../../game/logic';
 import { clampBoardCamera, DEFAULT_BOARD_CAMERA } from '../../game/render/layout';
 import { getTileViewportPosition } from '../../game/render';
 import { BottomDock } from '../components/BottomDock';
+import { PatchNotesOverlay } from '../components/PatchNotesOverlay';
 import { SelectionCard } from '../components/SelectionCard';
 
 describe('App popup helpers', () => {
@@ -101,6 +104,53 @@ describe('App popup helpers', () => {
   it('formats patch note dates to player-friendly Finnish date text', () => {
     expect(formatPatchNotesDate('2026-04-04')).toContain('2026');
     expect(formatPatchNotesDate('not-a-date')).toBe('not-a-date');
+  });
+
+  it('lets players browse older patch notes inside the modal', async () => {
+    const reactActEnv = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const previousActFlag = reactActEnv.IS_REACT_ACT_ENVIRONMENT;
+    reactActEnv.IS_REACT_ACT_ENVIRONMENT = true;
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(PatchNotesOverlay, { onClose: () => undefined }));
+    });
+
+    const buttons = () => Array.from(container.querySelectorAll('button'));
+    const newerButton = () => buttons().find((button) => button.textContent?.includes('Uudempi')) as HTMLButtonElement;
+    const olderButton = () => buttons().find((button) => button.textContent?.includes('Vanhempi')) as HTMLButtonElement;
+
+    expect(container.textContent).toContain(`Versio ${allPatchNotes[0].version}`);
+    expect(newerButton().disabled).toBe(true);
+    expect(olderButton().disabled).toBe(false);
+
+    await act(async () => {
+      olderButton().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain(`Versio ${allPatchNotes[1].version}`);
+    expect(newerButton().disabled).toBe(false);
+
+    await act(async () => {
+      olderButton().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain(`Versio ${allPatchNotes[2].version}`);
+    expect(olderButton().disabled).toBe(true);
+
+    await act(async () => {
+      newerButton().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain(`Versio ${allPatchNotes[1].version}`);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    reactActEnv.IS_REACT_ACT_ENVIRONMENT = previousActFlag;
   });
 
   it('maps A, S, D and F to the four recruit market slots', () => {

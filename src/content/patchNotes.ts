@@ -1,4 +1,4 @@
-import generatedPatchNotes from './generated/latest-player-patch-notes.json';
+import generatedPatchNotesHistory from './generated/player-patch-notes-history.json';
 
 export type PatchNotesSection = {
   id: string;
@@ -13,4 +13,5 @@ export type PatchNotesEntry = {
   sections: PatchNotesSection[];
 };
 
-export const latestPatchNotes: PatchNotesEntry = generatedPatchNotes;
+export const allPatchNotes: PatchNotesEntry[] = generatedPatchNotesHistory;
+export const latestPatchNotes: PatchNotesEntry = allPatchNotes[0];

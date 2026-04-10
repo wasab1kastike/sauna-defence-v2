@@ -1976,14 +1976,16 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.saunaDefenderId).toBe(boardHero!.id);
   });
 
-  it('rerolls the sauna hero identity and class while preserving progression and loadout', () => {
+  it('rerolls the sauna hero identity and stats while preserving class, subclasses, progression and loadout', () => {
     let state = prepState();
     const defender = state.defenders.find((entry) => entry.location === 'sauna');
     expect(defender).toBeTruthy();
 
+    defender!.templateId = 'hurler';
     defender!.name = 'Before';
     defender!.title = 'Old Title';
     defender!.lore = 'Old lore';
+    defender!.tokenStyleId = 99;
     defender!.stats = {
       maxHp: 99,
       damage: 99,
@@ -2009,10 +2011,12 @@ describe('Sauna Defense V2 logic', () => {
     expect(updated.name).not.toBe('Before');
     expect(updated.title).not.toBe('Old Title');
     expect(updated.lore).not.toBe('Old lore');
+    expect(updated.tokenStyleId).not.toBe(99);
     expect(updated.stats.maxHp).not.toBe(99);
+    expect(updated.templateId).toBe('hurler');
     expect(updated.level).toBe(7);
     expect(updated.xp).toBe(70);
-    expect(updated.subclassIds).toEqual([]);
+    expect(updated.subclassIds).toEqual(['stonewall']);
     expect(updated.items).toEqual(['iron_whisk']);
     expect(updated.skills).toEqual(['steam_shield']);
     expect(updated.kills).toBe(3);

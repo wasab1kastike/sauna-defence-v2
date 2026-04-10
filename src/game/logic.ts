@@ -83,7 +83,7 @@ import {
 } from './recruitment';
 import {
   autoFillSaunaFromBench as autoFillSaunaFromBenchFromModule,
-  rerollSaunaDefenderIdentityAndClass as rerollSaunaDefenderIdentityAndClassFromModule
+  rerollSaunaDefenderIdentityAndStats as rerollSaunaDefenderIdentityAndStatsFromModule
 } from './sauna';
 
 const DIRS: AxialCoord[] = [
@@ -274,7 +274,6 @@ const saunaDeps = {
   derivedMaxHp: (state: RunState, defender: DefenderInstance, content: GameContent) => derivedStats(state, defender, content).maxHp,
   generateLore,
   generateName,
-  pickTemplateId: (state: RunState) => pick(state, DEF_IDS),
   randomInt,
   rollBaseStatsForTemplate
 };
@@ -1316,12 +1315,12 @@ function rerollDefenderIdentityAndStats(
   defender.hp = Math.min(defender.hp, derivedStats(state, defender, content).maxHp);
 }
 
-function rerollSaunaDefenderIdentityAndClass(
+function rerollSaunaDefenderIdentityAndStats(
   state: RunState,
   defender: DefenderInstance,
   content: GameContent
 ): void {
-  rerollSaunaDefenderIdentityAndClassFromModule(state, defender, content, saunaDeps);
+  rerollSaunaDefenderIdentityAndStatsFromModule(state, defender, content, saunaDeps);
 }
 
 function newDefender(state: RunState, templateId: DefenderTemplateId, content: GameContent): DefenderInstance {
@@ -4784,10 +4783,10 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       }
       const previousName = defender.name;
       next.sisu.current -= cost;
-      rerollSaunaDefenderIdentityAndClass(next, defender, content);
+      rerollSaunaDefenderIdentityAndStats(next, defender, content);
       next.benchRerollCountsByDefenderId[defender.id] = (next.benchRerollCountsByDefenderId[defender.id] ?? 0) + 1;
       normalizeDefender(next, defender, content);
-      next.message = `${previousName} reforged into ${defender.name} ${defender.title} for ${cost} SISU.`;
+      next.message = `${previousName} rerolled into ${defender.name} ${defender.title} for ${cost} SISU.`;
       return next;
     }
     case 'activateSisu':

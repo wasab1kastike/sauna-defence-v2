@@ -122,6 +122,16 @@ export function toPlayerPatchNotes(version, date, playerNotes) {
   };
 }
 
+export function collectPlayerPatchNotesHistory(releases) {
+  return releases.flatMap((release) => {
+    try {
+      return [toPlayerPatchNotes(release.version, release.date, parsePlayerNotes(release.body))];
+    } catch {
+      return [];
+    }
+  });
+}
+
 export function toPlayerPatchNotesMarkdown(patchNotes) {
   const lines = [
     '# Latest Player Patch Notes',

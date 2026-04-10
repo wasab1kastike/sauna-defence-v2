@@ -21,14 +21,52 @@ All notable changes to this project are documented in this file.
 - [internal] Ei viela merkintoja.
 
 ### Changed
-- [internal] `scripts/check-player-patch-notes.mjs` validates now that generated JSON/Markdown patch notes match current release version/date, not only that changelog metadata exists.
-- [internal] `docs/balance.md` now includes a wave-by-wave spawn recap table for waves 1-30 to keep GitHub Pages-facing balance docs in sync with current logic.
+- [internal] Ei viela merkintoja.
+
+### Fixed
+- [internal] Ei viela merkintoja.
+
+### Breaking
+- [internal] Ei viela merkintoja.
+
+## 0.1.2 - 2026-04-10
+
+### Player Notes
+
+#### Intro
+Sauna oppi pitamaan classit tallessa, ja patch notes muistaa nyt vanhatkin loylyt. Taman paivityksen jalkeen voit selailla release-historiaa ilman GitHub-retkea.
+
+#### New Features
+- Patch Notes -ikkunassa voi nyt selailla vanhempia releaseja suoraan `Vanhempi`- ja `Uudempi`-napeilla.
+- Sauna reroll pitaa nyt heroisi paaclassin, subclass-branchit, levelin, XP:n ja loadoutin tallessa samalla kun identiteetti ja base-stat-rollit menevat uusiksi.
+
+#### General Improvements
+- Karttaa voi nyt pannata vapaammin ylos ja alas, ja alapalkki huomioidaan clampissa jotta kaupat eivat jaa dockin alle piiloon.
+- Metashop ja Beer Shop spawnivat nyt deterministisesti saunan lahelle eivatka katoa kartan reunoille.
+- Boss-clearit avaavat karttaa nyt yhteen suuntaan kerrallaan, ja jokainen bossi maksaa varman `4 Steam` palkinnon.
+
+#### General Fixes
+- Pebblen ensikohtaaminen ei enaa jyrsi splash-damagea viereisiin puolustajiin, ja sen tempo on rauhallisempi vaikka kesto pysyy ennallaan.
+- Patch notes -sisalto generoidaan nyt release-historiaksi, joten uusin versio ja in-game notes eivat jaa eri aikakausille.
+
+### Added
+- [player] Patch Notes -modal now supports browsing older releases with built-in `Vanhempi` and `Uudempi` controls.
+- [internal] Player patch note generation now emits a release-history JSON artifact instead of a single latest-entry blob.
+
+### Changed
+- [player] Sauna reroll now preserves main class, subclass branches, level, XP, items, skills, and kills while rerolling only identity, portrait, lore, and class-appropriate stat rolls.
+- [player] Board camera now allows more vertical travel and respects the bottom dock safe area so nearby landmarks stay visible.
+- [player] Metashop and Beer Shop now spawn on deterministic nearby tiles around the sauna instead of outer-edge anchors.
 - [player] Balance pass increased enemies per wave by scaling non-boss composition with cycle (higher brute cap + extra spawn picks), making each 5-wave block visibly denser.
 - [player] Wave ramp now escalates to explicit spawn-density anchors (wave 6=15, wave 10=30, wave 15=60, wave 20=100), while tutorial waves 1-4 stay unchanged for onboarding.
 - [player] Defender selection now uses a scroll-bounded character card so core hero stats stay visible in the first viewport slice while longer loadouts continue below.
 - [player] Full item + skill loadouts now use a compact selection-card variant with tighter stat chips and row chrome for faster scanning without hurting readability.
+- [player] Boss clears now expand the board directionally instead of inflating the map evenly, and each boss now guarantees `4 Steam`.
+- [internal] `scripts/check-player-patch-notes.mjs` now validates the generated patch-notes history against `CHANGELOG.md` and `package.json`.
+- [internal] `docs/balance.md` now includes a wave-by-wave spawn recap table for waves 1-30 to keep GitHub Pages-facing balance docs in sync with current logic.
 
 ### Fixed
+- [player] Pebble now moves slower, deals less damage, and no longer splashes nearby defenders during its grind attack.
 - [internal] CI now catches stale generated patch-notes artifacts before release by validating generated files against `CHANGELOG.md` + `package.json`.
 
 ### Breaking

@@ -1,21 +1,21 @@
 # Latest Player Patch Notes
 
-Version 0.1.1 (2026-04-09)
+Version 0.1.2 (2026-04-10)
 
-Pebble loysi pullokorin ja recruit market oppi pysymaan omassa dockissaan. Taman paivityksen jalkeen uudet bossi- ja UI-muutokset ovat valmiit Pages-deployta varten.
+Sauna oppi pitamaan classit tallessa, ja patch notes muistaa nyt vanhatkin loylyt. Taman paivityksen jalkeen voit selailla release-historiaa ilman GitHub-retkea.
 
 ## Uutta
 
-- Pebble boss waves now spawn three beer bottles on the map. Pebble hunts them before the sauna, and each bottle it eats buffs later Pebble encounters in the same run.
-- End-User Horde uses its custom horde sprite pack when the branch is deployed to Pages.
+- Patch Notes -ikkunassa voi nyt selailla vanhempia releaseja suoraan `Vanhempi`- ja `Uudempi`-napeilla.
+- Sauna reroll pitaa nyt heroisi paaclassin, subclass-branchit, levelin, XP:n ja loadoutin tallessa samalla kun identiteetti ja base-stat-rollit menevat uusiksi.
 
 ## Parannuksia
 
-- Pebble now starts at 320 HP and comes back with +40 HP on each later Pebble encounter in the same run.
-- Boss HUD now surfaces Pebble bottle progress with live `Bottles` and `Bottle Stacks` tags during Pebble waves.
-- The latest player-facing patch notes now describe the boss and recruit-market changes for version 0.1.1.
+- Karttaa voi nyt pannata vapaammin ylos ja alas, ja alapalkki huomioidaan clampissa jotta kaupat eivat jaa dockin alle piiloon.
+- Metashop ja Beer Shop spawnivat nyt deterministisesti saunan lahelle eivatka katoa kartan reunoille.
+- Boss-clearit avaavat karttaa nyt yhteen suuntaan kerrallaan, ja jokainen bossi maksaa varman `4 Steam` palkinnon.
 
 ## Korjauksia
 
-- Recruitment market actions are now fully dock-native again. Refresh, per-offer reroll, level up, and buys clear any stale legacy recruit popup state instead of reopening the old right-side market panel.
-- Pebble bottle targets now render directly on the board, and selected Pebble stats reflect the live boss damage/max HP values instead of stale archetype-only numbers.
+- Pebblen ensikohtaaminen ei enaa jyrsi splash-damagea viereisiin puolustajiin, ja sen tempo on rauhallisempi vaikka kesto pysyy ennallaan.
+- Patch notes -sisalto generoidaan nyt release-historiaksi, joten uusin versio ja in-game notes eivat jaa eri aikakausille.

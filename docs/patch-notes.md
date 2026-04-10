@@ -47,8 +47,8 @@ npm run build:patch-notes
 Skripti:
 
 - lukee `CHANGELOG.md` uusimman release-kohdan,
-- parsii vain `### Player Notes` -osion,
-- kirjoittaa UI:lle JSON-tiedoston `src/content/generated/latest-player-patch-notes.json`,
+- parsii kaikki release-kohdat, joissa on kelvollinen `### Player Notes` -osio,
+- kirjoittaa UI:lle historiatiedoston `src/content/generated/player-patch-notes-history.json`,
 - kirjoittaa dokumentaatioversion `docs/latest-player-patch-notes.md`.
 
 ## CI-validointi
@@ -65,7 +65,7 @@ Tarkistus varmistaa, etta:
 - kyseisessa release-kohdassa on `### Player Notes`,
 - `#### Intro` on olemassa ja sisaltaa tekstia,
 - pelaajille nakyvissa osioissa on yhteensa vahintaan yksi bullet,
-- `src/content/generated/latest-player-patch-notes.json` sisaltaa saman version + paivamaaran kuin release,
+- `src/content/generated/player-patch-notes-history.json` sisaltaa uusimman releasen version + paivamaaran seka release-historian oikeassa jarjestyksessa,
 - `docs/latest-player-patch-notes.md` sisaltaa saman version + paivamaaran kuin release.
 
 Sama tarkistus ajetaan CI:ssa workflowssa `changelog-check.yml`.

@@ -1,7 +1,7 @@
-import { latestPatchNotes } from '../patchNotes';
+import { allPatchNotes, latestPatchNotes } from '../patchNotes';
 
 describe('player patch notes content', () => {
-  it('uses intro and ordered player-facing sections', () => {
+  it('uses intro and ordered player-facing sections for the latest release', () => {
     expect(latestPatchNotes.version).toMatch(/^\d+\.\d+\.\d+$/);
     expect(latestPatchNotes.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(latestPatchNotes.intro.trim().length).toBeGreaterThan(0);
@@ -18,5 +18,11 @@ describe('player patch notes content', () => {
       expect(section.title.trim().length).toBeGreaterThan(0);
       expect(Array.isArray(section.items)).toBe(true);
     }
+  });
+
+  it('exposes patch note history newest first', () => {
+    expect(allPatchNotes.length).toBeGreaterThan(1);
+    expect(allPatchNotes[0]).toEqual(latestPatchNotes);
+    expect(allPatchNotes.map((entry) => entry.version)).toEqual(['0.1.2', '0.1.1', '0.1.0']);
   });
 });
