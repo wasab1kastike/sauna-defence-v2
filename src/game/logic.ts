@@ -3093,7 +3093,7 @@ function triggerBattleHymn(state: RunState, defender: DefenderInstance): void {
   for (const ally of recipients) {
     ally.battleHymnBuffExpiresAtMs = state.timeMs + BATTLE_HYMN_BUFF_MS;
     if (ally.tile) {
-      pushFx(state, 'pulse', ally.tile, 260, defender.tile);
+      pushFx(state, 'battle_hymn', ally.tile, 320, defender.tile);
     }
   }
   defender.battleHymnReadyAtMs = state.timeMs + BATTLE_HYMN_COOLDOWN_MS;
@@ -3159,7 +3159,7 @@ function performDefenderBasicAttack(
   }
   if (defender.skills.includes('steam_shield')) {
     defender.hp = Math.min(stats.maxHp, defender.hp + 3);
-    pushFx(state, 'heal', defender.tile, 220);
+    pushFx(state, 'steam_shield', defender.tile, 260);
   }
   triggerBattleHymn(state, defender);
   return true;

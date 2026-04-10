@@ -104,12 +104,14 @@ export type CombatFxKind =
   | 'defender_hit'
   | 'sauna_hit'
   | 'heal'
+  | 'steam_shield'
   | 'fireball'
   | 'spin'
   | 'blink'
   | 'boss_hit'
   | 'chain'
   | 'volley'
+  | 'battle_hymn'
   | 'pulse';
 export type MapTarget = 'defender' | 'sauna' | 'enemy';
 export type HudPanelId = 'modifiers' | 'loot' | 'recruit' | 'beer_shop' | 'metashop';

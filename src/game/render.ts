@@ -105,6 +105,8 @@ const END_USER_HORDE_SPRITE_URLS = [
 ];
 const PEBBLE_HEAD_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_head.png`;
 const PEBBLE_BODY_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_body.png`;
+const SAUNA_SPRITE_URL = `${import.meta.env.BASE_URL}Buildings/sauna.png`;
+const METASHOP_SPRITE_URL = `${import.meta.env.BASE_URL}Buildings/sauna-kiosk.png`;
 const BEER_SHOP_SPRITE_URL = `${import.meta.env.BASE_URL}Buildings/olutkauppa.png`;
 const PEBBLE_BASE_RENDER_HP = 260;
 const PEBBLE_RENDER_HP_STEP = 60;
@@ -135,8 +137,11 @@ const processedPortraits = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 let pebbleHeadSprite: HTMLImageElement | null | undefined;
 let pebbleBodySprite: HTMLImageElement | null | undefined;
 const processedPebbleSprites = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
+let saunaSprite: HTMLImageElement | null | undefined;
+let metashopSprite: HTMLImageElement | null | undefined;
 let beerShopSprite: HTMLImageElement | null | undefined;
 const processedBackdropSprites = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
+const processedHordeSprites = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 
 export function collectFireballTelegraphTiles(snapshot: GameSnapshot): AxialCoord[] {
   const tiles = new Map<string, AxialCoord>();
@@ -639,7 +644,7 @@ export function resolveEndUserHordeSpriteIndexes(instanceId: number): [number, n
 }
 
 export function canRenderEndUserHordeSprites(instanceId: number): boolean {
-  return resolveEndUserHordeSpriteIndexes(instanceId).every((index) => isDrawableImage(getEndUserHordeSprite(index)));
+  return resolveEndUserHordeSpriteIndexes(instanceId).every((index) => isDrawableImage(getProcessedHordeSprite(getEndUserHordeSprite(index))));
 }
 
 function getDefenderSpriteSheet(): HTMLImageElement | null {
@@ -684,6 +689,28 @@ function getBeerShopSprite(): HTMLImageElement | null {
     beerShopSprite.src = BEER_SHOP_SPRITE_URL;
   }
   return beerShopSprite;
+}
+
+function getSaunaSprite(): HTMLImageElement | null {
+  if (typeof Image === 'undefined') {
+    return null;
+  }
+  if (!saunaSprite) {
+    saunaSprite = new Image();
+    saunaSprite.src = SAUNA_SPRITE_URL;
+  }
+  return saunaSprite;
+}
+
+function getMetashopSprite(): HTMLImageElement | null {
+  if (typeof Image === 'undefined') {
+    return null;
+  }
+  if (!metashopSprite) {
+    metashopSprite = new Image();
+    metashopSprite.src = METASHOP_SPRITE_URL;
+  }
+  return metashopSprite;
 }
 
 function isDrawableImage(image: HTMLImageElement | HTMLCanvasElement | null | undefined): image is HTMLImageElement | HTMLCanvasElement {
@@ -872,27 +899,7 @@ function rgbaDistance(
   return Math.abs(left.r - right.r) + Math.abs(left.g - right.g) + Math.abs(left.b - right.b);
 }
 
-function getProcessedPebbleSprite(image: HTMLImageElement | null): HTMLCanvasElement | HTMLImageElement | null {
-  if (!image || !image.complete || image.naturalWidth === 0 || typeof document === 'undefined') {
-    return image;
-  }
-
-  const cached = processedPebbleSprites.get(image);
-  if (cached) {
-    return cached;
-  }
-
-  const canvas = document.createElement('canvas');
-  canvas.width = image.naturalWidth;
-  canvas.height = image.naturalHeight;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) {
-    return image;
-  }
-
-  ctx.drawImage(image, 0, 0);
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const { data, width, height } = imageData;
+function sampleCornerBackground(data: Uint8ClampedArray, width: number, height: number) {
   const cornerSamples = [
     { r: data[0], g: data[1], b: data[2] },
     { r: data[(width - 1) * 4], g: data[(width - 1) * 4 + 1], b: data[(width - 1) * 4 + 2] },
@@ -907,7 +914,8 @@ function getProcessedPebbleSprite(image: HTMLImageElement | null): HTMLCanvasEle
       b: data[((height * width) - 1) * 4 + 2]
     }
   ];
-  const background = cornerSamples.reduce(
+
+  return cornerSamples.reduce(
     (total, sample) => ({
       r: total.r + sample.r / cornerSamples.length,
       g: total.g + sample.g / cornerSamples.length,
@@ -915,10 +923,36 @@ function getProcessedPebbleSprite(image: HTMLImageElement | null): HTMLCanvasEle
     }),
     { r: 0, g: 0, b: 0 }
   );
+}
 
+function pixelBrightness(pixel: { r: number; g: number; b: number }) {
+  return (pixel.r + pixel.g + pixel.b) / 3;
+}
+
+function pixelSaturation(pixel: { r: number; g: number; b: number }) {
+  return Math.max(pixel.r, pixel.g, pixel.b) - Math.min(pixel.r, pixel.g, pixel.b);
+}
+
+interface BackdropCleanupOptions {
+  threshold: number;
+  brightThreshold: number;
+  lowSaturationThreshold: number;
+  softenThreshold: number;
+}
+
+function cleanupBackdropImageData(imageData: ImageData, options: BackdropCleanupOptions): void {
+  const { data, width, height } = imageData;
+  const background = sampleCornerBackground(data, width, height);
   const visited = new Uint8Array(width * height);
   const queue: number[] = [];
-  const threshold = 72;
+
+  const similarityScore = (pixel: { r: number; g: number; b: number }) => {
+    const distanceScore = 1 - Math.min(1, rgbaDistance(pixel, background) / Math.max(1, options.threshold));
+    const brightness = pixelBrightness(pixel);
+    const saturation = pixelSaturation(pixel);
+    const brightWash = brightness >= options.brightThreshold && saturation <= options.lowSaturationThreshold ? 1 : 0;
+    return Math.max(distanceScore, brightWash * 0.92);
+  };
 
   const enqueue = (x: number, y: number) => {
     if (x < 0 || y < 0 || x >= width || y >= height) return;
@@ -926,8 +960,9 @@ function getProcessedPebbleSprite(image: HTMLImageElement | null): HTMLCanvasEle
     if (visited[index]) return;
     visited[index] = 1;
     const offset = index * 4;
+    if (data[offset + 3] === 0) return;
     const pixel = { r: data[offset], g: data[offset + 1], b: data[offset + 2] };
-    if (data[offset + 3] === 0 || rgbaDistance(pixel, background) > threshold) return;
+    if (similarityScore(pixel) < 0.28) return;
     queue.push(index);
   };
 
@@ -943,7 +978,15 @@ function getProcessedPebbleSprite(image: HTMLImageElement | null): HTMLCanvasEle
   while (queue.length > 0) {
     const index = queue.pop()!;
     const offset = index * 4;
-    data[offset + 3] = 0;
+    const pixel = { r: data[offset], g: data[offset + 1], b: data[offset + 2] };
+    const score = similarityScore(pixel);
+    if (score >= options.softenThreshold) {
+      data[offset + 3] = 0;
+    } else {
+      const fade = 1 - ((score - 0.28) / Math.max(0.001, options.softenThreshold - 0.28)) * 0.82;
+      data[offset + 3] = Math.round(data[offset + 3] * Math.max(0, Math.min(1, fade)));
+    }
+
     const x = index % width;
     const y = Math.floor(index / width);
     enqueue(x + 1, y);
@@ -951,95 +994,59 @@ function getProcessedPebbleSprite(image: HTMLImageElement | null): HTMLCanvasEle
     enqueue(x, y + 1);
     enqueue(x, y - 1);
   }
+}
 
+export function applySoftBackdropCleanupForTest(imageData: ImageData, variant: 'horde' | 'pebble' | 'backdrop'): ImageData {
+  const options =
+    variant === 'horde'
+      ? { threshold: 118, brightThreshold: 184, lowSaturationThreshold: 42, softenThreshold: 0.72 }
+      : variant === 'backdrop'
+        ? { threshold: 60, brightThreshold: 210, lowSaturationThreshold: 28, softenThreshold: 0.8 }
+        : { threshold: 72, brightThreshold: 205, lowSaturationThreshold: 36, softenThreshold: 0.8 };
+  cleanupBackdropImageData(imageData, options);
+  return imageData;
+}
+
+function processSpriteWithBackdropCleanup(
+  image: HTMLImageElement | null,
+  cache: WeakMap<HTMLImageElement, HTMLCanvasElement>,
+  variant: 'horde' | 'pebble' | 'backdrop'
+): HTMLCanvasElement | HTMLImageElement | null {
+  if (!image || !image.complete || image.naturalWidth === 0 || typeof document === 'undefined') {
+    return image;
+  }
+
+  const cached = cache.get(image);
+  if (cached) {
+    return cached;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) {
+    return image;
+  }
+
+  ctx.drawImage(image, 0, 0);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  applySoftBackdropCleanupForTest(imageData, variant);
   ctx.putImageData(imageData, 0, 0);
-  processedPebbleSprites.set(image, canvas);
+  cache.set(image, canvas);
   return canvas;
 }
 
+function getProcessedPebbleSprite(image: HTMLImageElement | null): HTMLCanvasElement | HTMLImageElement | null {
+  return processSpriteWithBackdropCleanup(image, processedPebbleSprites, 'pebble');
+}
+
 function getProcessedBackdropSprite(image: HTMLImageElement | null): HTMLCanvasElement | HTMLImageElement | null {
-  if (!image || !image.complete || image.naturalWidth === 0 || typeof document === 'undefined') {
-    return image;
-  }
+  return processSpriteWithBackdropCleanup(image, processedBackdropSprites, 'backdrop');
+}
 
-  const cached = processedBackdropSprites.get(image);
-  if (cached) {
-    return cached;
-  }
-
-  const canvas = document.createElement('canvas');
-  canvas.width = image.naturalWidth;
-  canvas.height = image.naturalHeight;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) {
-    return image;
-  }
-
-  ctx.drawImage(image, 0, 0);
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const { data, width, height } = imageData;
-  const cornerSamples = [
-    { r: data[0], g: data[1], b: data[2] },
-    { r: data[(width - 1) * 4], g: data[(width - 1) * 4 + 1], b: data[(width - 1) * 4 + 2] },
-    {
-      r: data[((height - 1) * width) * 4],
-      g: data[((height - 1) * width) * 4 + 1],
-      b: data[((height - 1) * width) * 4 + 2]
-    },
-    {
-      r: data[((height * width) - 1) * 4],
-      g: data[((height * width) - 1) * 4 + 1],
-      b: data[((height * width) - 1) * 4 + 2]
-    }
-  ];
-  const background = cornerSamples.reduce(
-    (total, sample) => ({
-      r: total.r + sample.r / cornerSamples.length,
-      g: total.g + sample.g / cornerSamples.length,
-      b: total.b + sample.b / cornerSamples.length
-    }),
-    { r: 0, g: 0, b: 0 }
-  );
-
-  const visited = new Uint8Array(width * height);
-  const queue: number[] = [];
-  const threshold = 60;
-
-  const enqueue = (x: number, y: number) => {
-    if (x < 0 || y < 0 || x >= width || y >= height) return;
-    const index = y * width + x;
-    if (visited[index]) return;
-    visited[index] = 1;
-    const offset = index * 4;
-    const pixel = { r: data[offset], g: data[offset + 1], b: data[offset + 2] };
-    if (data[offset + 3] === 0 || rgbaDistance(pixel, background) > threshold) return;
-    queue.push(index);
-  };
-
-  for (let x = 0; x < width; x += 1) {
-    enqueue(x, 0);
-    enqueue(x, height - 1);
-  }
-  for (let y = 0; y < height; y += 1) {
-    enqueue(0, y);
-    enqueue(width - 1, y);
-  }
-
-  while (queue.length > 0) {
-    const index = queue.pop()!;
-    const offset = index * 4;
-    data[offset + 3] = 0;
-    const x = index % width;
-    const y = Math.floor(index / width);
-    enqueue(x + 1, y);
-    enqueue(x - 1, y);
-    enqueue(x, y + 1);
-    enqueue(x, y - 1);
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-  processedBackdropSprites.set(image, canvas);
-  return canvas;
+function getProcessedHordeSprite(image: HTMLImageElement | null): HTMLCanvasElement | HTMLImageElement | null {
+  return processSpriteWithBackdropCleanup(image, processedHordeSprites, 'horde');
 }
 
 function drawDefenderPortrait(
@@ -1897,16 +1904,16 @@ function drawHordeMemberBoss(
   }
 
   const [frontIndex, leftIndex, rightIndex] = resolveEndUserHordeSpriteIndexes(instanceId);
-  const frontSprite = getEndUserHordeSprite(frontIndex);
-  const leftSprite = getEndUserHordeSprite(leftIndex);
-  const rightSprite = getEndUserHordeSprite(rightIndex);
+  const frontSprite = getProcessedHordeSprite(getEndUserHordeSprite(frontIndex));
+  const leftSprite = getProcessedHordeSprite(getEndUserHordeSprite(leftIndex));
+  const rightSprite = getProcessedHordeSprite(getEndUserHordeSprite(rightIndex));
   const intensity = clamp(hordeCount / 10, 0.35, 1);
-  drawGroundShadow(ctx, { x: center.x, y: center.y + radius * 0.85 }, radius * 0.9, radius * 0.28, 'rgba(11, 8, 6, 0.35)');
-  drawGlowDisc(ctx, center, radius * (1.5 + intensity * 0.4), 'rgba(255, 182, 126, 0.28)', 'rgba(183, 48, 24, 0)', 0.76);
+  drawGroundShadow(ctx, { x: center.x, y: center.y + radius * 0.9 }, radius * 1.02, radius * 0.3, 'rgba(11, 8, 6, 0.42)');
+  drawGlowDisc(ctx, { x: center.x, y: center.y + radius * 0.12 }, radius * (1.44 + intensity * 0.32), 'rgba(255, 182, 126, 0.22)', 'rgba(183, 48, 24, 0)', 0.72);
   const sway = Math.sin(timeMs * 0.003 + instanceId) * radius * 0.05;
-  drawBaselineSprite(ctx, leftSprite!, { x: center.x - radius * 0.34 + sway * 0.45, y: center.y + radius * 0.04 }, radius * 1.7, radius * 2.35, center.y + radius * 0.78, true);
-  drawBaselineSprite(ctx, rightSprite!, { x: center.x + radius * 0.32 - sway * 0.4, y: center.y + radius * 0.08 }, radius * 1.62, radius * 2.25, center.y + radius * 0.8, true);
-  drawBaselineSprite(ctx, frontSprite!, { x: center.x, y: center.y - radius * 0.02 + sway }, radius * 2.05, radius * 2.8, center.y + radius * 0.82, true);
+  drawBaselineSprite(ctx, leftSprite!, { x: center.x - radius * 0.34 + sway * 0.45, y: center.y + radius * 0.05 }, radius * 1.64, radius * 2.3, center.y + radius * 0.8, true);
+  drawBaselineSprite(ctx, rightSprite!, { x: center.x + radius * 0.32 - sway * 0.4, y: center.y + radius * 0.08 }, radius * 1.58, radius * 2.18, center.y + radius * 0.81, true);
+  drawBaselineSprite(ctx, frontSprite!, { x: center.x, y: center.y - radius * 0.01 + sway }, radius * 1.98, radius * 2.72, center.y + radius * 0.84, true);
   return true;
 }
 
@@ -2057,33 +2064,37 @@ function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, lay
           const explosionPhase = clamp((progress - 0.34) / 0.66);
           if (progress < 0.48) {
             const orb = pointLerp(secondary, center, easeOutCubic(travelPhase));
-            drawAfterimageTrail(ctx, secondary, orb, 'rgba(255, 154, 74, 0.95)', 0.9);
-            drawGlowDisc(ctx, orb, layout.hexSize * 0.42, 'rgba(255,245,196,0.98)', 'rgba(255,136,58,0)', 0.95);
-            drawGlowDisc(ctx, orb, layout.hexSize * 0.2, 'rgba(255,255,245,0.95)', 'rgba(255,255,255,0)', 0.95);
-            drawSparkBurst(ctx, orb, layout.hexSize * 0.24, '#ffd27b', 0.9 * (1 - travelPhase * 0.5), 4, travelPhase * Math.PI);
-            drawEmberParticles(ctx, orb, layout.hexSize * 0.55, travelPhase * 0.55, event.id * 13.1, '#ffcb73', 6);
+            drawAfterimageTrail(ctx, secondary, orb, 'rgba(255, 120, 36, 0.98)', 1);
+            drawGlowDisc(ctx, orb, layout.hexSize * 0.56, 'rgba(255,212,120,0.96)', 'rgba(255,118,46,0)', 0.98);
+            drawGlowDisc(ctx, orb, layout.hexSize * 0.32, 'rgba(255,247,221,0.98)', 'rgba(255,255,255,0)', 0.98);
+            drawGlowDisc(ctx, orb, layout.hexSize * 0.16, 'rgba(255,255,255,0.98)', 'rgba(255,255,255,0)', 0.94);
+            drawSparkBurst(ctx, orb, layout.hexSize * 0.34, '#ffd27b', 1 - travelPhase * 0.38, 6, travelPhase * Math.PI * 1.2);
+            drawEmberParticles(ctx, orb, layout.hexSize * 0.82, travelPhase * 0.7, event.id * 13.1, '#ffcb73', 10);
           }
           if (progress > 0.28) {
-            drawGlowDisc(ctx, center, layout.hexSize * (0.55 + explosionPhase * 0.9), 'rgba(255,226,150,0.95)', 'rgba(255,108,46,0)', 0.85);
-            drawShockRing(ctx, center, layout.hexSize * (0.16 + explosionPhase * 0.9), '#ffd27b', Math.max(2, layout.hexSize * 0.08), 0.95 - explosionPhase * 0.4);
-            drawSparkBurst(ctx, center, layout.hexSize * (0.28 + explosionPhase * 0.62), '#fff0be', 0.9 - explosionPhase * 0.4, 7, explosionPhase * Math.PI * 0.7);
-            drawEmberParticles(ctx, center, layout.hexSize * 1.45, explosionPhase, event.id * 7.7, '#ffb05f', 16);
-            drawSmokeParticles(ctx, center, layout.hexSize * 1.2, explosionPhase, event.id * 9.4, 'rgba(51, 36, 31, 1)', 8);
+            drawGlowDisc(ctx, center, layout.hexSize * (0.92 + explosionPhase * 1.08), 'rgba(255,236,176,0.98)', 'rgba(255,98,38,0)', 0.92);
+            drawGlowDisc(ctx, center, layout.hexSize * (0.46 + explosionPhase * 0.54), 'rgba(255,255,236,0.9)', 'rgba(255,255,255,0)', 0.9);
+            drawShockRing(ctx, center, layout.hexSize * (0.24 + explosionPhase * 1.14), '#ffd27b', Math.max(3, layout.hexSize * 0.1), 1 - explosionPhase * 0.32);
+            drawShockRing(ctx, center, layout.hexSize * (0.44 + explosionPhase * 1.52), 'rgba(255,185,108,0.64)', Math.max(1.8, layout.hexSize * 0.05), 0.78 - explosionPhase * 0.24);
+            drawSparkBurst(ctx, center, layout.hexSize * (0.44 + explosionPhase * 0.84), '#fff0be', 0.98 - explosionPhase * 0.36, 10, explosionPhase * Math.PI * 0.92);
+            drawEmberParticles(ctx, center, layout.hexSize * 1.95, explosionPhase, event.id * 7.7, '#ff9d47', 24);
+            drawSmokeParticles(ctx, center, layout.hexSize * 1.55, explosionPhase, event.id * 9.4, 'rgba(51, 36, 31, 1)', 12);
           }
         } else {
-          drawGlowDisc(ctx, center, layout.hexSize * (0.74 + progress * 1.12), 'rgba(255,228,172,0.96)', 'rgba(255,104,48,0)', 0.96);
-          drawShockRing(ctx, center, layout.hexSize * (0.28 + progress * 1.18), '#ffd27b', Math.max(3, layout.hexSize * 0.09), 0.94);
-          drawShockRing(ctx, center, layout.hexSize * (0.48 + progress * 1.48), 'rgba(255,188,112,0.56)', Math.max(1.5, layout.hexSize * 0.05), 0.72);
-          drawSparkBurst(ctx, center, layout.hexSize * (0.44 + progress * 0.92), '#fff0be', 0.96 - progress * 0.42, 10, progress * Math.PI * 0.9);
-          drawEmberParticles(ctx, center, layout.hexSize * 1.9, progress, event.id * 7.7, '#ffb05f', 22);
-          drawSmokeParticles(ctx, center, layout.hexSize * 1.7, progress, event.id * 9.4, 'rgba(51, 36, 31, 1)', 12);
+          drawGlowDisc(ctx, center, layout.hexSize * (0.96 + progress * 1.28), 'rgba(255,228,172,0.96)', 'rgba(255,104,48,0)', 0.96);
+          drawGlowDisc(ctx, center, layout.hexSize * (0.42 + progress * 0.56), 'rgba(255,250,228,0.9)', 'rgba(255,255,255,0)', 0.9);
+          drawShockRing(ctx, center, layout.hexSize * (0.36 + progress * 1.34), '#ffd27b', Math.max(3, layout.hexSize * 0.09), 0.94);
+          drawShockRing(ctx, center, layout.hexSize * (0.58 + progress * 1.74), 'rgba(255,188,112,0.56)', Math.max(1.5, layout.hexSize * 0.05), 0.72);
+          drawSparkBurst(ctx, center, layout.hexSize * (0.56 + progress * 1.08), '#fff0be', 0.96 - progress * 0.34, 12, progress * Math.PI * 1.12);
+          drawEmberParticles(ctx, center, layout.hexSize * 2.15, progress, event.id * 7.7, '#ff9d47', 28);
+          drawSmokeParticles(ctx, center, layout.hexSize * 1.9, progress, event.id * 9.4, 'rgba(51, 36, 31, 1)', 14);
         }
         break;
       case 'spin':
-        drawGlowDisc(ctx, center, layout.hexSize * (0.78 + Math.sin(progress * Math.PI) * 0.28), 'rgba(255,220,144,0.46)', 'rgba(255,171,77,0)', 0.84);
-        drawShockRing(ctx, center, layout.hexSize * (0.9 + progress * 0.38), 'rgba(255,211,125,0.78)', Math.max(3, layout.hexSize * 0.09), 0.82);
-        drawShockRing(ctx, center, layout.hexSize * (1.08 + progress * 0.54), 'rgba(255,171,77,0.34)', Math.max(2, layout.hexSize * 0.05), 0.62);
-        drawSparkBurst(ctx, center, layout.hexSize * (1.02 + progress * 0.26), '#ffecc5', 0.4, 14, progress * Math.PI * 6.2);
+        drawGlowDisc(ctx, center, layout.hexSize * (0.86 + Math.sin(progress * Math.PI) * 0.34), 'rgba(255,220,144,0.52)', 'rgba(255,171,77,0)', 0.88);
+        drawShockRing(ctx, center, layout.hexSize * (0.94 + progress * 0.52), 'rgba(255,211,125,0.82)', Math.max(3, layout.hexSize * 0.09), 0.86);
+        drawShockRing(ctx, center, layout.hexSize * (1.14 + progress * 0.68), 'rgba(255,171,77,0.4)', Math.max(2, layout.hexSize * 0.05), 0.68);
+        drawSparkBurst(ctx, center, layout.hexSize * (1.08 + progress * 0.34), '#ffecc5', 0.5, 16, progress * Math.PI * 7.1);
         drawEmberParticles(ctx, center, layout.hexSize * 1.45, progress, event.id * 8.3, '#ffb05f', 18);
         for (let flare = 0; flare < 6; flare += 1) {
           const angle = progress * Math.PI * 5.6 + (Math.PI * 2 * flare) / 6;
@@ -2109,21 +2120,39 @@ function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, lay
         break;
       case 'blink':
         if (secondary) {
+          drawGlowDisc(ctx, secondary, layout.hexSize * (0.24 + (1 - progress) * 0.22), 'rgba(201,245,255,0.72)', 'rgba(104,202,255,0)', 0.9);
           drawAfterimageTrail(ctx, secondary, center, 'rgba(120, 214, 255, 0.98)', 1);
-          drawLightningArc(ctx, secondary, center, 'rgba(142, 232, 255, 0.46)', Math.max(2, layout.hexSize * 0.05), 0.62, event.id * 2.7);
-          drawLightningArc(ctx, secondary, center, 'rgba(219, 250, 255, 0.3)', Math.max(1, layout.hexSize * 0.025), 0.74, event.id * 3.9);
+          drawLightningArc(ctx, secondary, center, 'rgba(142, 232, 255, 0.58)', Math.max(2.2, layout.hexSize * 0.055), 0.68, event.id * 2.7);
+          drawLightningArc(ctx, secondary, center, 'rgba(219, 250, 255, 0.38)', Math.max(1.2, layout.hexSize * 0.03), 0.82, event.id * 3.9);
         }
-        drawGlowDisc(ctx, center, layout.hexSize * (0.34 + progress * 0.46), 'rgba(213,249,255,0.82)', 'rgba(100,188,255,0)', 0.9);
-        drawShockRing(ctx, center, layout.hexSize * (0.22 + progress * 0.42), '#91dfff', Math.max(2.3, layout.hexSize * 0.07), 0.88);
-        drawSparkBurst(ctx, center, layout.hexSize * (0.3 + progress * 0.24), '#dff8ff', 0.72, 8, progress * Math.PI * 3.2);
+        drawGlowDisc(ctx, center, layout.hexSize * (0.42 + progress * 0.54), 'rgba(213,249,255,0.86)', 'rgba(100,188,255,0)', 0.94);
+        drawShockRing(ctx, center, layout.hexSize * (0.26 + progress * 0.5), '#91dfff', Math.max(2.5, layout.hexSize * 0.08), 0.92);
+        drawSparkBurst(ctx, center, layout.hexSize * (0.38 + progress * 0.3), '#dff8ff', 0.8, 10, progress * Math.PI * 3.8);
         break;
       case 'chain':
         if (secondary) {
-          drawLightningArc(ctx, secondary, center, '#b9f2ff', Math.max(2, layout.hexSize * 0.08), 0.94, event.id * 7.9);
-          drawLightningArc(ctx, secondary, center, '#6dd6ff', Math.max(1.2, layout.hexSize * 0.04), 0.9, event.id * 9.1);
+          drawLightningArc(ctx, secondary, center, '#d8f8ff', Math.max(2.5, layout.hexSize * 0.09), 0.96, event.id * 7.9);
+          drawLightningArc(ctx, secondary, center, '#6dd6ff', Math.max(1.6, layout.hexSize * 0.05), 0.94, event.id * 9.1);
+          drawLightningArc(ctx, secondary, center, 'rgba(125, 227, 255, 0.44)', Math.max(1, layout.hexSize * 0.025), 0.88, event.id * 11.4);
         }
-        drawGlowDisc(ctx, center, layout.hexSize * (0.24 + progress * 0.2), 'rgba(214,248,255,0.68)', 'rgba(117,206,255,0)', 0.78);
-        drawSparkBurst(ctx, center, layout.hexSize * 0.28, '#d4fbff', 0.78, 5, progress * Math.PI * 2.8);
+        drawGlowDisc(ctx, center, layout.hexSize * (0.28 + progress * 0.24), 'rgba(214,248,255,0.74)', 'rgba(117,206,255,0)', 0.82);
+        drawShockRing(ctx, center, layout.hexSize * (0.18 + progress * 0.26), 'rgba(166, 240, 255, 0.82)', Math.max(1.6, layout.hexSize * 0.05), 0.76);
+        drawSparkBurst(ctx, center, layout.hexSize * 0.36, '#d4fbff', 0.84, 7, progress * Math.PI * 3.2);
+        break;
+      case 'steam_shield':
+        drawGlowDisc(ctx, center, layout.hexSize * (0.42 + progress * 0.46), 'rgba(214,255,246,0.62)', 'rgba(113,228,197,0)', 0.88);
+        drawShockRing(ctx, center, layout.hexSize * (0.32 + progress * 0.52), 'rgba(173, 246, 226, 0.9)', Math.max(2.4, layout.hexSize * 0.07), 0.88);
+        drawShockRing(ctx, center, layout.hexSize * (0.18 + progress * 0.38), 'rgba(235, 255, 250, 0.74)', Math.max(1.2, layout.hexSize * 0.035), 0.74);
+        drawSmokeParticles(ctx, center, layout.hexSize * 0.88, progress, event.id * 4.2, 'rgba(214, 255, 244, 1)', 7);
+        drawSparkBurst(ctx, center, layout.hexSize * 0.26, '#ebfff8', 0.52, 4, progress * Math.PI * 2.6);
+        break;
+      case 'battle_hymn':
+        if (secondary) {
+          drawLightningArc(ctx, secondary, center, 'rgba(255, 215, 133, 0.36)', Math.max(1.2, layout.hexSize * 0.035), 0.56, event.id * 2.1);
+        }
+        drawGlowDisc(ctx, center, layout.hexSize * (0.34 + progress * 0.42), 'rgba(255,234,182,0.68)', 'rgba(255,176,77,0)', 0.86);
+        drawShockRing(ctx, center, layout.hexSize * (0.2 + progress * 0.44), 'rgba(255, 220, 142, 0.88)', Math.max(2.1, layout.hexSize * 0.06), 0.84);
+        drawSparkBurst(ctx, center, layout.hexSize * (0.22 + progress * 0.24), '#fff1d6', 0.66, 6, progress * Math.PI * 2.5);
         break;
       case 'volley':
         if (secondary) {
@@ -2207,6 +2236,28 @@ function drawMetashopLandmark(
   enabled: boolean,
   locked: boolean
 ) {
+  const sprite = getProcessedBackdropSprite(getMetashopSprite());
+  if (isDrawableImage(sprite)) {
+    drawWorldLandmarkShadow(ctx, center, size * 1.9, size * 0.96);
+    drawGlowDisc(
+      ctx,
+      { x: center.x, y: center.y - size * 0.08 },
+      size * (selected ? 1.04 : 0.9),
+      locked
+        ? 'rgba(132, 122, 112, 0.18)'
+        : enabled
+          ? 'rgba(255, 205, 118, 0.24)'
+          : 'rgba(170, 170, 170, 0.16)',
+      'rgba(0,0,0,0)',
+      0.8
+    );
+    ctx.save();
+    ctx.globalAlpha = locked ? 0.64 : enabled ? 1 : 0.84;
+    drawBaselineSprite(ctx, sprite, center, size * 2.4, size * 1.95, center.y + size * 0.5);
+    ctx.restore();
+    return;
+  }
+
   const width = size * 1.08;
   const height = size * 0.9;
   drawWorldLandmarkShadow(ctx, center, width, height);
@@ -2321,6 +2372,60 @@ function drawWorldLandmarks(ctx: CanvasRenderingContext2D, snapshot: GameSnapsho
       ctx.restore();
     }
   }
+}
+
+function drawCentralSauna(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, layout: BoardLayout) {
+  const saunaCenter = axialToPixel({ q: 0, r: 0 }, layout);
+  const saunaGlow = ctx.createRadialGradient(
+    saunaCenter.x,
+    saunaCenter.y,
+    layout.hexSize * 0.1,
+    saunaCenter.x,
+    saunaCenter.y,
+    layout.hexSize * 1.4
+  );
+  saunaGlow.addColorStop(0, 'rgba(255, 216, 126, 0.98)');
+  saunaGlow.addColorStop(0.5, 'rgba(255, 159, 88, 0.7)');
+  saunaGlow.addColorStop(1, 'rgba(255, 159, 88, 0)');
+  ctx.fillStyle = saunaGlow;
+  ctx.beginPath();
+  ctx.arc(saunaCenter.x, saunaCenter.y, layout.hexSize * 1.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  const sprite = getProcessedBackdropSprite(getSaunaSprite());
+  if (isDrawableImage(sprite)) {
+    drawWorldLandmarkShadow(ctx, saunaCenter, layout.hexSize * 2.15, layout.hexSize);
+    drawBaselineSprite(
+      ctx,
+      sprite,
+      saunaCenter,
+      layout.hexSize * 2.75,
+      layout.hexSize * 2.15,
+      saunaCenter.y + layout.hexSize * 0.6
+    );
+  } else {
+    ctx.beginPath();
+    ctx.arc(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.58, 0, Math.PI * 2);
+    ctx.fillStyle = '#f9ca79';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.29, 0, Math.PI * 2);
+    ctx.fillStyle = '#76411f';
+    ctx.fill();
+  }
+
+  if (snapshot.hud.saunaSelected) {
+    ctx.beginPath();
+    ctx.arc(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.82, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(234, 255, 250, 0.95)';
+    ctx.lineWidth = 2.8;
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#fff2da';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `700 ${Math.max(10, layout.hexSize * 0.32)}px Trebuchet MS`;
+  ctx.fillText(snapshot.hud.saunaOccupancyLabel, saunaCenter.x, saunaCenter.y - layout.hexSize * 0.96);
 }
 
 function drawPebbleBottleTargets(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, layout: BoardLayout) {
@@ -2457,36 +2562,7 @@ export function paintSnapshot(
   drawFireballTelegraphs(ctx, snapshot, layout);
   drawWorldLandmarks(ctx, snapshot, layout);
   drawPebbleBottleTargets(ctx, snapshot, layout);
-
-  const saunaCenter = axialToPixel({ q: 0, r: 0 }, layout);
-  const saunaGlow = ctx.createRadialGradient(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.1, saunaCenter.x, saunaCenter.y, layout.hexSize * 1.4);
-  saunaGlow.addColorStop(0, 'rgba(255, 216, 126, 0.98)');
-  saunaGlow.addColorStop(0.5, 'rgba(255, 159, 88, 0.7)');
-  saunaGlow.addColorStop(1, 'rgba(255, 159, 88, 0)');
-  ctx.fillStyle = saunaGlow;
-  ctx.beginPath();
-  ctx.arc(saunaCenter.x, saunaCenter.y, layout.hexSize * 1.3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.58, 0, Math.PI * 2);
-  ctx.fillStyle = '#f9ca79';
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.29, 0, Math.PI * 2);
-  ctx.fillStyle = '#76411f';
-  ctx.fill();
-  if (snapshot.hud.saunaSelected) {
-    ctx.beginPath();
-    ctx.arc(saunaCenter.x, saunaCenter.y, layout.hexSize * 0.82, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(234, 255, 250, 0.95)';
-    ctx.lineWidth = 2.8;
-    ctx.stroke();
-  }
-  ctx.fillStyle = '#fff2da';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `700 ${Math.max(10, layout.hexSize * 0.32)}px Trebuchet MS`;
-  ctx.fillText(snapshot.hud.saunaOccupancyLabel, saunaCenter.x, saunaCenter.y - layout.hexSize * 0.96);
+  drawCentralSauna(ctx, snapshot, layout);
 
   for (const defender of snapshot.state.defenders) {
     if (defender.location !== 'board' || !defender.tile) continue;

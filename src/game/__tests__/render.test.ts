@@ -1,4 +1,5 @@
 import {
+  applySoftBackdropCleanupForTest,
   canRenderEndUserHordeSprites,
   collectPebbleBottleTiles,
   collectFireballTelegraphTiles,
@@ -79,6 +80,24 @@ describe('render helpers', () => {
   it('exposes deterministic horde sprite picks and reports fallback when custom sprites are unavailable', () => {
     expect(resolveEndUserHordeSpriteIndexes(7)).toEqual([1, 3, 5]);
     expect(canRenderEndUserHordeSprites(7)).toBe(false);
+  });
+
+  it('soft-cleans pale horde backdrops while keeping the foreground opaque', () => {
+    const imageData = {
+      width: 3,
+      height: 3,
+      data: new Uint8ClampedArray([
+        244, 240, 232, 255, 242, 238, 230, 255, 243, 239, 231, 255,
+        243, 239, 231, 255, 176, 82, 54, 255, 242, 238, 230, 255,
+        244, 240, 232, 255, 242, 238, 230, 255, 243, 239, 231, 255
+      ])
+    } as ImageData;
+
+    applySoftBackdropCleanupForTest(imageData, 'horde');
+
+    expect(imageData.data[3]).toBe(0);
+    expect(imageData.data[7]).toBe(0);
+    expect(imageData.data[19]).toBe(255);
   });
 
   it('exposes Pebble bottle tiles for rendering only during Pebble boss waves', () => {

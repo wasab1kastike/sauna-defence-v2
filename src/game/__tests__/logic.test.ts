@@ -1696,6 +1696,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(updatedAttacker.attackReadyAtMs).toBe(state.timeMs + 600);
     expect(updatedAdjacent.battleHymnBuffExpiresAtMs).toBe(state.timeMs + 3000);
     expect(updatedDistant.battleHymnBuffExpiresAtMs).toBe(0);
+    expect(state.fxEvents.filter((event) => event.kind === 'battle_hymn')).toHaveLength(2);
     expect(createSnapshot(state, gameContent).hud.selectedDefender?.attackCooldownMs).toBe(600);
 
     state.selectedDefenderId = adjacent!.id;
@@ -1789,6 +1790,42 @@ describe('Sauna Defense V2 logic', () => {
     const updatedOwner = state.defenders.find((defender) => defender.id === owner!.id)!;
     expect(updatedOwner.kills).toBe(1);
     expect(updatedOwner.battleHymnReadyAtMs).toBe(state.timeMs + 14000);
+  });
+
+  it('emits a dedicated Steam Shield effect when the skill heals after an attack', () => {
+    let state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready');
+    expect(defender).toBeTruthy();
+
+    defender!.location = 'board';
+    defender!.tile = { q: 0, r: -1 };
+    defender!.homeTile = { q: 0, r: -1 };
+    defender!.skills = ['steam_shield'];
+    defender!.stats.maxHp = 20;
+    defender!.stats.damage = 4;
+    defender!.stats.range = 1;
+    defender!.stats.attackCooldownMs = 900;
+    defender!.hp = 10;
+    defender!.attackReadyAtMs = 0;
+
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: 0 },
+      hp: 12,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    const updated = state.defenders.find((entry) => entry.id === defender!.id)!;
+    expect(updated.hp).toBe(13);
+    expect(state.fxEvents.some((event) => event.kind === 'steam_shield')).toBe(true);
   });
 
   it('does not reduce Battle Hymn cooldown from ally kills while the buff is active', () => {
