@@ -27,7 +27,7 @@ export const bossRotation: BossRotationEntry[] = [
     bossId: 'pebble',
     bossCategory: 'breach',
     name: 'Pebble',
-    hint: 'Small on the first visit, fast on bottles, then bigger, tankier and slower every time it returns.'
+    hint: 'Small on the first visit and hungry for bottles, then bigger, tankier and slower every time it returns.'
   },
   {
     bossId: 'end_user_horde',

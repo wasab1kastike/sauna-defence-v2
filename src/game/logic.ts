@@ -206,12 +206,14 @@ const PEBBLE_DEVOUR_DAMAGE_PER_STACK = 2;
 const PEBBLE_DEVOUR_HEAL_RATIO = 0.35;
 const PEBBLE_BOTTLE_TARGET_COUNT = 3;
 const PEBBLE_BOTTLE_DAMAGE_PER_STACK = 2;
+const PEBBLE_FIRST_ENCOUNTER_DAMAGE_PENALTY = 2;
 const PEBBLE_BASE_MAX_HP = 260;
 const PEBBLE_MAX_HP_STEP = 60;
-const PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_MS = 1320;
+const PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_MS = 1440;
 const PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_STEP = 140;
-const PEBBLE_PATH_MOVE_COOLDOWN_MS = 1780;
+const PEBBLE_PATH_MOVE_COOLDOWN_MS = 1920;
 const PEBBLE_PATH_MOVE_COOLDOWN_STEP = 160;
+const ENEMY_STAT_SCALING_MULTIPLIER = 0.7;
 const LIVE_SAUNA_RETREAT_SISU_COST = 3;
 const LIVE_SAUNA_RETREAT_COOLDOWN_MS = 12000;
 const BLINK_MOTION_DURATION_MS = 320;
@@ -1533,8 +1535,11 @@ function scaledEnemyMaxHp(
   return Math.max(
     1,
     Math.round(
-      baseMaxHp * enemyHpMultiplier(index, content, isBossWave)
-      + enemyMaxHpFlatBonus(index, threat, content, isBossWave)
+      baseMaxHp
+      + (
+        baseMaxHp * (enemyHpMultiplier(index, content, isBossWave) - 1)
+        + enemyMaxHpFlatBonus(index, threat, content, isBossWave)
+      ) * ENEMY_STAT_SCALING_MULTIPLIER
     )
   );
 }
@@ -1551,7 +1556,7 @@ function enemyDamageBonus(index: number, content: GameContent, isBossWave: boole
 
 function scaledEnemyDamage(baseDamage: number, index: number, content: GameContent, isBossWave: boolean): number {
   void content;
-  return Math.max(1, baseDamage + enemyDamageBonus(index, content, isBossWave));
+  return Math.max(1, baseDamage + Math.round(enemyDamageBonus(index, content, isBossWave) * ENEMY_STAT_SCALING_MULTIPLIER));
 }
 
 function spawnIntervalMs(index: number, content: GameContent, modifier = 0): number {
@@ -3508,7 +3513,10 @@ function enemyAttackDamage(state: RunState, enemy: EnemyInstance, content: GameC
     return scaledDamage + swarmDamageBonus(state);
   }
   if (archetype.behavior === 'pebble') {
-    return Math.max(1, scaledDamage - 2) + pebbleBottleDamageBonus(state) + pebbleDamageBonus(enemy);
+    const firstEncounterPenalty = pebbleEncounterTierForEnemy(state, enemy) === 0
+      ? PEBBLE_FIRST_ENCOUNTER_DAMAGE_PENALTY
+      : 0;
+    return Math.max(1, scaledDamage - 2 - firstEncounterPenalty) + pebbleBottleDamageBonus(state) + pebbleDamageBonus(enemy);
   }
   return scaledDamage;
 }
