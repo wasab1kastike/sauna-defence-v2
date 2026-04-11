@@ -216,8 +216,8 @@ describe('Sauna Defense V2 logic', () => {
     }];
 
     let snapshot = createSnapshot(state, gameContent);
-    expect(snapshot.hud.selectedEnemy?.maxHp).toBe(120);
-    expect(snapshot.hud.selectedEnemy?.damage).toBe(18);
+    expect(snapshot.hud.selectedEnemy?.maxHp).toBe(106);
+    expect(snapshot.hud.selectedEnemy?.damage).toBe(16);
 
     state.currentWave = createWaveDefinition(45, gameContent);
     state.pebbleEncounterCount = 2;
@@ -252,8 +252,8 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(state.enemies).toHaveLength(1);
     expect(state.enemies[0]?.archetypeId).toBe('brute');
-    expect(state.enemies[0]?.hp).toBe(120);
-    expect(state.enemies[0]?.waveScaledMaxHp).toBe(120);
+    expect(state.enemies[0]?.hp).toBe(106);
+    expect(state.enemies[0]?.waveScaledMaxHp).toBe(106);
   });
 
   it('normalizes legacy unscaled normal enemies to the current wave HP curve', () => {
@@ -688,7 +688,7 @@ describe('Sauna Defense V2 logic', () => {
     state = stepState(state, 16, gameContent);
 
     expect(state.enemies[0]?.tile).toEqual({ q: 1, r: -6 });
-    expect(state.enemies[0]?.moveReadyAtMs - state.timeMs).toBe(1440);
+    expect(state.enemies[0]?.moveReadyAtMs - state.timeMs).toBe(1600);
   });
 
   it('uses the slower path cooldown for the first Pebble encounter when no bottles remain', () => {
@@ -726,7 +726,7 @@ describe('Sauna Defense V2 logic', () => {
     state = stepState(state, 16, gameContent);
 
     expect(state.enemies[0]?.tile).toEqual({ q: 1, r: -5 });
-    expect(state.enemies[0]?.moveReadyAtMs - state.timeMs).toBe(1920);
+    expect(state.enemies[0]?.moveReadyAtMs - state.timeMs).toBe(2080);
   });
 
   it('softens first Pebble encounter attack damage without lowering tankiness', () => {
@@ -754,7 +754,7 @@ describe('Sauna Defense V2 logic', () => {
     const snapshot = createSnapshot(state, gameContent);
 
     expect(snapshot.hud.selectedEnemy?.maxHp).toBe(340);
-    expect(snapshot.hud.selectedEnemy?.damage).toBe(10);
+    expect(snapshot.hud.selectedEnemy?.damage).toBe(8);
   });
 
   it('increases Pebble bottle and path move cooldowns on later encounters', () => {
@@ -795,8 +795,8 @@ describe('Sauna Defense V2 logic', () => {
     const bottleState = stepState(buildPebbleState(true), 16, gameContent);
     const pathState = stepState(buildPebbleState(false), 16, gameContent);
 
-    expect(bottleState.enemies[0]?.moveReadyAtMs - bottleState.timeMs).toBe(1720);
-    expect(pathState.enemies[0]?.moveReadyAtMs - pathState.timeMs).toBe(2240);
+    expect(bottleState.enemies[0]?.moveReadyAtMs - bottleState.timeMs).toBe(1880);
+    expect(pathState.enemies[0]?.moveReadyAtMs - pathState.timeMs).toBe(2400);
   });
 
   it('rejoins Pebble to the forward scripted path after the last bottle is gone', () => {
@@ -1087,12 +1087,12 @@ describe('Sauna Defense V2 logic', () => {
 
     const bottleSnapshot = createSnapshot(state, gameContent);
     expect(bottleSnapshot.hud.selectedEnemy?.maxHp).toBe(920);
-    expect(bottleSnapshot.hud.selectedEnemy?.moveCooldownMs).toBe(1580);
+    expect(bottleSnapshot.hud.selectedEnemy?.moveCooldownMs).toBe(1740);
     expect(bottleSnapshot.hud.selectedEnemy?.damage).toBe(17);
 
     state.pebbleBottleTargets = [];
     const pathSnapshot = createSnapshot(state, gameContent);
-    expect(pathSnapshot.hud.selectedEnemy?.moveCooldownMs).toBe(2080);
+    expect(pathSnapshot.hud.selectedEnemy?.moveCooldownMs).toBe(2240);
   });
 
   it('surfaces defender kill counts in selected-hero HUD data', () => {

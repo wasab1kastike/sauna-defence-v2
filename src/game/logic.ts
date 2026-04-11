@@ -206,14 +206,15 @@ const PEBBLE_DEVOUR_DAMAGE_PER_STACK = 2;
 const PEBBLE_DEVOUR_HEAL_RATIO = 0.35;
 const PEBBLE_BOTTLE_TARGET_COUNT = 3;
 const PEBBLE_BOTTLE_DAMAGE_PER_STACK = 2;
-const PEBBLE_FIRST_ENCOUNTER_DAMAGE_PENALTY = 2;
+const PEBBLE_FIRST_ENCOUNTER_DAMAGE_PENALTY = 4;
 const PEBBLE_BASE_MAX_HP = 260;
 const PEBBLE_MAX_HP_STEP = 60;
-const PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_MS = 1440;
+const PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_MS = 1600;
 const PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_STEP = 140;
-const PEBBLE_PATH_MOVE_COOLDOWN_MS = 1920;
+const PEBBLE_PATH_MOVE_COOLDOWN_MS = 2080;
 const PEBBLE_PATH_MOVE_COOLDOWN_STEP = 160;
-const ENEMY_STAT_SCALING_MULTIPLIER = 0.7;
+const ENEMY_BOSS_STAT_SCALING_MULTIPLIER = 0.7;
+const ENEMY_NORMAL_STAT_SCALING_MULTIPLIER = 0.6;
 const LIVE_SAUNA_RETREAT_SISU_COST = 3;
 const LIVE_SAUNA_RETREAT_COOLDOWN_MS = 12000;
 const BLINK_MOTION_DURATION_MS = 320;
@@ -1525,6 +1526,10 @@ function enemyMaxHpFlatBonus(index: number, threat: number, content: GameContent
   return cycle * threat * (isBossWave ? 3 : 2);
 }
 
+function enemyStatScalingMultiplier(isBossWave: boolean): number {
+  return isBossWave ? ENEMY_BOSS_STAT_SCALING_MULTIPLIER : ENEMY_NORMAL_STAT_SCALING_MULTIPLIER;
+}
+
 function scaledEnemyMaxHp(
   baseMaxHp: number,
   index: number,
@@ -1539,7 +1544,7 @@ function scaledEnemyMaxHp(
       + (
         baseMaxHp * (enemyHpMultiplier(index, content, isBossWave) - 1)
         + enemyMaxHpFlatBonus(index, threat, content, isBossWave)
-      ) * ENEMY_STAT_SCALING_MULTIPLIER
+      ) * enemyStatScalingMultiplier(isBossWave)
     )
   );
 }
@@ -1556,7 +1561,7 @@ function enemyDamageBonus(index: number, content: GameContent, isBossWave: boole
 
 function scaledEnemyDamage(baseDamage: number, index: number, content: GameContent, isBossWave: boolean): number {
   void content;
-  return Math.max(1, baseDamage + Math.round(enemyDamageBonus(index, content, isBossWave) * ENEMY_STAT_SCALING_MULTIPLIER));
+  return Math.max(1, baseDamage + Math.round(enemyDamageBonus(index, content, isBossWave) * enemyStatScalingMultiplier(isBossWave)));
 }
 
 function spawnIntervalMs(index: number, content: GameContent, modifier = 0): number {
