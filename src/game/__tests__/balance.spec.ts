@@ -216,12 +216,17 @@ describe('balance baseline regression metrics', () => {
     expect(avgHpWave10).toBe(0);
     expect(avgHpWave15).toBe(0);
 
-    expect(avgGuardianSurvival).toBeCloseTo(1 / 6, 10);
-    expect(avgMenderSurvival).toBeCloseTo(2 / 3, 10);
+    expect(avgGuardianSurvival).toBe(0);
+    expect(avgMenderSurvival).toBe(0);
     expect(avgHurlerSurvival).toBe(0);
   });
 
-  it('locks the new late-game spawn count anchors', () => {
+  it('keeps onboarding counts stable while locking the new late-game spawn anchors', () => {
+    expect(createWaveDefinition(1, gameContent).spawns).toHaveLength(3);
+    expect(createWaveDefinition(4, gameContent).spawns).toHaveLength(5);
+    expect(createWaveDefinition(6, gameContent).spawns).toHaveLength(15);
+    expect(createWaveDefinition(10, gameContent).spawns).toHaveLength(32);
+    expect(createWaveDefinition(15, gameContent).spawns).toHaveLength(67);
     expect(createWaveDefinition(20, gameContent).spawns).toHaveLength(112);
     expect(createWaveDefinition(25, gameContent).spawns).toHaveLength(157);
     expect(createWaveDefinition(30, gameContent).spawns).toHaveLength(212);

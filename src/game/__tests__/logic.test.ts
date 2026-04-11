@@ -166,11 +166,23 @@ describe('Sauna Defense V2 logic', () => {
     const wave15 = createWaveDefinition(15, gameContent);
     const concurrentBursts = burstGroups(wave6).filter((group) => group.length > 1);
 
-    expect(Math.max(...wave6.spawns.map((spawn) => spawn.atMs))).toBeLessThan(5000);
-    expect(Math.max(...wave10.spawns.map((spawn) => spawn.atMs))).toBeLessThan(1400);
-    expect(Math.max(...wave15.spawns.map((spawn) => spawn.atMs))).toBeLessThan(1800);
+    expect(Math.max(...wave6.spawns.map((spawn) => spawn.atMs))).toBeLessThan(4300);
+    expect(Math.max(...wave10.spawns.map((spawn) => spawn.atMs))).toBeLessThan(1100);
+    expect(Math.max(...wave15.spawns.map((spawn) => spawn.atMs))).toBeLessThan(1500);
+    expect(Math.max(...burstGroups(wave10).map((group) => group.length))).toBeGreaterThanOrEqual(7);
+    expect(Math.max(...burstGroups(wave15).map((group) => group.length))).toBeGreaterThanOrEqual(8);
     expect(concurrentBursts.length).toBeGreaterThan(0);
     expect(concurrentBursts.some((group) => new Set(group.map((spawn) => spawn.laneIndex)).size > 1)).toBe(true);
+  });
+
+  it('adds multi-lane burst chaos before full six-lane volleys take over', () => {
+    const wave8 = createWaveDefinition(8, gameContent);
+    const richestBurst = burstGroups(wave8)
+      .map((group) => new Set(group.map((spawn) => spawn.laneIndex)).size)
+      .sort((left, right) => right - left)[0];
+
+    expect(richestBurst).toBeGreaterThanOrEqual(3);
+    expect(hasFullLaneVolley(wave8)).toBe(false);
   });
 
   it('uses all six spawn lanes in synchronized volleys from wave 10 onward', () => {
@@ -3265,6 +3277,62 @@ describe('Sauna Defense V2 logic', () => {
     state.timeMs = state.defenders.find((defender) => defender.id === attacker!.id)?.fireballReadyAtMs ?? state.timeMs;
     snapshot = createSnapshot(state, gameContent);
     expect(snapshot.hud.selectedDefender?.fireballLabel).toBe('Fireball ready');
+  });
+
+  it('quickens fireball cooldowns once mid-game chaos kicks in', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(attacker).toBeTruthy();
+    attacker!.location = 'board';
+    attacker!.tile = { q: 0, r: -1 };
+    attacker!.skills.push('fireball');
+    attacker!.attackReadyAtMs = 0;
+    state.currentWave = createWaveDefinition(12, gameContent);
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [{
+      instanceId: 1,
+      archetypeId: 'raider',
+      tokenStyleId: 0,
+      tile: { q: 0, r: -2 },
+      hp: 20,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: 999999,
+      moveReadyAtMs: 999999
+    }];
+
+    state = stepState(state, 16, gameContent);
+
+    const updated = state.defenders.find((defender) => defender.id === attacker!.id)!;
+    expect(updated.fireballReadyAtMs - state.timeMs).toBeLessThan(12000);
+    expect(createSnapshot(state, gameContent).hud.selectedDefender?.fireballLabel).toBe('Fireball 10s');
+  });
+
+  it('lets Chain Spark fork into extra targets from wave 10 onward', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.location === 'ready');
+    expect(attacker).toBeTruthy();
+    attacker!.location = 'board';
+    attacker!.tile = { q: 0, r: -1 };
+    attacker!.homeTile = { q: 0, r: -1 };
+    attacker!.skills.push('chain_spark');
+    attacker!.stats.damage = 10;
+    attacker!.stats.range = 1;
+    attacker!.attackReadyAtMs = 0;
+    state.currentWave = createWaveDefinition(12, gameContent);
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [
+      { instanceId: 1, archetypeId: 'raider', tokenStyleId: 0, tile: { q: 0, r: -2 }, hp: 20, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 },
+      { instanceId: 2, archetypeId: 'raider', tokenStyleId: 0, tile: { q: 1, r: -2 }, hp: 20, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 },
+      { instanceId: 3, archetypeId: 'raider', tokenStyleId: 0, tile: { q: -1, r: -1 }, hp: 20, lastHitByDefenderId: null, attackReadyAtMs: 999999, moveReadyAtMs: 999999 }
+    ];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies.find((enemy) => enemy.instanceId === 2)?.hp).toBe(16);
+    expect(state.enemies.find((enemy) => enemy.instanceId === 3)?.hp).toBe(17);
+    expect(state.fxEvents.filter((event) => event.kind === 'chain')).toHaveLength(2);
   });
 
   it('grants xp and levels up a hero from combat kills', () => {
