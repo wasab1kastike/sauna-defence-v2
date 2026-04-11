@@ -1574,12 +1574,21 @@ function scaledEnemyDamage(baseDamage: number, index: number, content: GameConte
 function spawnIntervalMs(index: number, content: GameContent, modifier = 0): number {
   const cycle = cycleNumber(index, content);
   const slot = slotInCycle(index, content);
-  const perCycleCompression = cycle * 18;
-  const slotStep = 44 + cycle * 3;
-  const minInterval = Math.max(180, Math.floor(content.config.minSpawnIntervalMs * 0.5));
+  const chaosCompression =
+    index >= 10
+      ? Math.round(waveChaosRamp(index) * 92)
+      : index >= 5
+        ? Math.round(waveChaosRamp(index) * 54)
+        : 0;
+  const perCycleCompression = cycle * 18 + Math.round(waveChaosRamp(index) * 18);
+  const slotStep = 44 + cycle * 3 + (index >= 10 ? 4 : index >= 5 ? 2 : 0);
+  const minInterval = Math.max(
+    index >= 21 ? 140 : index >= 10 ? 160 : 180,
+    Math.floor(content.config.minSpawnIntervalMs * (index >= 21 ? 0.36 : index >= 10 ? 0.42 : 0.5))
+  );
   return Math.max(
     minInterval,
-    660 - cycle * Math.max(24, Math.floor(content.config.spawnIntervalStepMs * 0.7)) - perCycleCompression - slot * slotStep + modifier
+    660 - cycle * Math.max(24, Math.floor(content.config.spawnIntervalStepMs * 0.7)) - perCycleCompression - slot * slotStep - chaosCompression + modifier
   );
 }
 
@@ -1634,35 +1643,43 @@ function waveSpawnBand(index: number): WaveSpawnBand {
   return 'legacy';
 }
 
+function waveChaosRamp(index: number): number {
+  if (index <= 4) return 0;
+  if (index <= 9) return 0.12 + (index - 5) * 0.03;
+  if (index <= 14) return 0.28 + (index - 10) * 0.035;
+  if (index <= 20) return 0.46 + (index - 15) * 0.035;
+  return 0.68 + Math.min(0.32, (index - 21) * 0.035);
+}
+
 function targetSpawnCountForWave(index: number): number {
   if (index <= 4) return 0;
-  if (index <= 10) return Math.round(15 + (index - 6) * (15 / 4));
-  if (index <= 15) return 30 + (index - 10) * 6;
-  if (index <= 20) return 60 + (index - 15) * 8;
-  if (index <= 25) return 100 + (index - 20) * 8;
-  return 140 + (index - 25) * 10;
+  if (index <= 10) return Math.round(15 + (index - 6) * (17 / 4));
+  if (index <= 15) return 32 + (index - 10) * 7;
+  if (index <= 20) return 67 + (index - 15) * 9;
+  if (index <= 25) return 112 + (index - 20) * 9;
+  return 157 + (index - 25) * 11;
 }
 
 function lateWaveIntervalModifier(index: number, pattern: Exclude<WavePattern, 'tutorial' | 'boss_pressure' | 'boss_breach'>): number {
   const band = waveSpawnBand(index);
   if (band === 'legacy') {
-    if (pattern === 'surge') return -70;
-    if (pattern === 'staggered') return 35;
-    return 0;
+    if (pattern === 'surge') return -90;
+    if (pattern === 'staggered') return 20;
+    return index >= 7 ? -20 : 0;
   }
   if (band === 'wide') {
-    if (pattern === 'surge') return -180;
-    if (pattern === 'staggered') return -110;
-    return -140;
+    if (pattern === 'surge') return -205;
+    if (pattern === 'staggered') return -130;
+    return -165;
   }
   if (band === 'dense') {
-    if (pattern === 'surge') return -230;
-    if (pattern === 'staggered') return -170;
-    return -195;
+    if (pattern === 'surge') return -255;
+    if (pattern === 'staggered') return -190;
+    return -215;
   }
-  if (pattern === 'surge') return -280;
-  if (pattern === 'staggered') return -210;
-  return -240;
+  if (pattern === 'surge') return -320;
+  if (pattern === 'staggered') return -235;
+  return -270;
 }
 
 function burstSizeForWave(
@@ -1674,22 +1691,25 @@ function burstSizeForWave(
   laneCount: number
 ): number {
   const band = waveSpawnBand(index);
-  if (band === 'wide') return Math.min(remaining, laneCount);
+  if (band === 'wide') {
+    const extra = pattern === 'surge' || beatIndex % 2 === 1 ? 2 : 1;
+    return Math.min(remaining, laneCount + extra);
+  }
   if (band === 'dense') {
-    const extra = pattern === 'surge' || beatIndex % 3 === 2 ? 2 : 0;
+    const extra = pattern === 'surge' ? 3 : beatIndex % 3 === 2 ? 3 : 2;
     return Math.min(remaining, laneCount + extra);
   }
   if (band === 'overdrive') {
-    const extra = beatIndex % 2 === 0 ? laneCount : 3;
+    const extra = beatIndex % 2 === 0 ? laneCount + 2 : 4;
     return Math.min(remaining, laneCount + extra);
   }
-  if (pattern === 'split') return Math.min(remaining, 2 + ((beatIndex + cycle) % 3 === 2 ? 1 : 0));
+  if (pattern === 'split') return Math.min(remaining, 2 + ((beatIndex + cycle) % 3 === 2 ? 1 : 0) + (index >= 8 ? 1 : 0));
   if (pattern === 'staggered') {
     if (beatIndex < 2) return 1;
-    return Math.min(remaining, 2 + ((beatIndex + cycle) % 2));
+    return Math.min(remaining, 2 + ((beatIndex + cycle) % 2) + (index >= 8 ? 1 : 0));
   }
-  if (pattern === 'spearhead') return Math.min(remaining, remaining >= 3 ? 3 : 2);
-  return Math.min(remaining, 3);
+  if (pattern === 'spearhead') return Math.min(remaining, remaining >= 4 || index >= 8 ? 4 : 3);
+  return Math.min(remaining, index >= 8 ? 4 : 3);
 }
 
 function laneSlotsForBeat(
@@ -1716,20 +1736,20 @@ function laneSlotsForBeat(
 
   if (pattern === 'split') {
     return beatIndex % 2 === 0
-      ? [baseLane, altLane, supportLane]
-      : [supportLane, flankLane, altLane];
+      ? (index >= 8 ? [baseLane, altLane, supportLane, flankLane] : [baseLane, altLane, supportLane])
+      : (index >= 8 ? [supportLane, flankLane, altLane, baseLane] : [supportLane, flankLane, altLane]);
   }
   if (pattern === 'staggered') {
     if (beatIndex === 0) return [baseLane];
     if (beatIndex === 1) return [altLane];
     return beatIndex % 2 === 0
-      ? [supportLane, baseLane, altLane]
-      : [altLane, supportLane, flankLane];
+      ? (index >= 8 ? [supportLane, baseLane, altLane, flankLane] : [supportLane, baseLane, altLane])
+      : (index >= 8 ? [altLane, supportLane, flankLane, baseLane] : [altLane, supportLane, flankLane]);
   }
   if (pattern === 'spearhead') {
-    return [baseLane, flankLane, supportLane];
+    return index >= 8 ? [baseLane, flankLane, supportLane, altLane] : [baseLane, flankLane, supportLane];
   }
-  return [baseLane, flankLane, altLane];
+  return index >= 8 ? [baseLane, flankLane, altLane, supportLane] : [baseLane, flankLane, altLane];
 }
 
 function upscaleEnemyListToTarget(base: EnemyUnitId[], targetCount: number, cycle: number): EnemyUnitId[] {
@@ -1853,7 +1873,7 @@ function buildEndUserHordeSpawns(index: number, content: GameContent): WaveSpawn
       atMs += spawnIndex > 0 && spawnIndex % 4 === 3 ? 280 : 180;
       continue;
     }
-    atMs += spawnIndex % lanes.length === lanes.length - 1 ? 120 : 0;
+    atMs += spawnIndex % lanes.length === lanes.length - 1 ? (band === 'overdrive' ? 70 : 90) : 0;
   }
 
   return spawns;
@@ -1908,11 +1928,11 @@ function buildBossSpawns(index: number, content: GameContent, bossId: BossId): W
   while (spawns.length < targetCount) {
     const remaining = targetCount - spawns.length;
     const volleySize = band === 'wide'
-      ? Math.min(remaining, laneCount)
+      ? Math.min(remaining, laneCount + 2)
       : band === 'dense'
-        ? Math.min(remaining, laneCount + 2)
+        ? Math.min(remaining, laneCount + 3)
         : band === 'overdrive'
-          ? Math.min(remaining, laneCount + (spawns.length % 2 === 0 ? laneCount : 3))
+          ? Math.min(remaining, laneCount + (spawns.length % 2 === 0 ? laneCount + 2 : 4))
           : 1;
 
     for (let localIndex = 0; localIndex < volleySize; localIndex += 1) {
@@ -1927,14 +1947,14 @@ function buildBossSpawns(index: number, content: GameContent, bossId: BossId): W
     }
 
     if (band === 'wide') {
-      atMs += 150;
+      atMs += 135;
       continue;
     }
     if (band === 'dense') {
-      atMs += 120;
+      atMs += 105;
       continue;
     }
-    atMs += 90;
+    atMs += 78;
   }
 
   return spawns;
@@ -2580,7 +2600,7 @@ function scheduleFireball(
     damageSnapshot: Math.max(1, Math.round(damageSnapshot))
   };
   state.pendingFireballs.push(pending);
-  defender.fireballReadyAtMs = state.timeMs + FIREBALL_COOLDOWN_MS;
+  defender.fireballReadyAtMs = state.timeMs + skillCooldownMsForState(state, FIREBALL_COOLDOWN_MS);
 }
 
 function resolvePendingFireballs(state: RunState): void {
@@ -2603,6 +2623,40 @@ function resolvePendingFireballs(state: RunState): void {
 
 function addHitStop(state: RunState, durationMs: number): void {
   state.hitStopMs = Math.max(state.hitStopMs, durationMs);
+}
+
+function combatChaosProgressForWave(index: number): number {
+  if (index <= 4) return 0;
+  if (index <= 9) return 0.1 + (index - 5) * 0.03;
+  if (index <= 14) return 0.24 + (index - 10) * 0.03;
+  if (index <= 20) return 0.39 + (index - 15) * 0.025;
+  return 0.53 + Math.min(0.2, (index - 21) * 0.025);
+}
+
+function defenderCadenceMultiplier(state: RunState): number {
+  return 1 + combatChaosProgressForWave(state.currentWave.index) * 0.6;
+}
+
+function enemyCadenceMultiplier(state: RunState): number {
+  return 1 + combatChaosProgressForWave(state.currentWave.index) * 0.42;
+}
+
+function skillCadenceMultiplier(state: RunState): number {
+  return 1 + combatChaosProgressForWave(state.currentWave.index) * 0.8;
+}
+
+function skillCooldownMsForState(state: RunState, baseCooldownMs: number): number {
+  return Math.max(1000, Math.round(baseCooldownMs / skillCadenceMultiplier(state)));
+}
+
+function enemyCooldownMsForState(state: RunState, baseCooldownMs: number): number {
+  return Math.max(220, Math.round(baseCooldownMs / enemyCadenceMultiplier(state)));
+}
+
+function chainSparkExtraTargets(state: RunState): number {
+  if (state.currentWave.index >= 21) return 2;
+  if (state.currentWave.index >= 10) return 1;
+  return 0;
 }
 
 function nearestEnemy(state: RunState, tile: AxialCoord): EnemyInstance | null {
@@ -2665,7 +2719,7 @@ function tryBlink(state: RunState, defender: DefenderInstance, content: GameCont
   if (!retreatTile) return false;
 
   moveDefenderToTile(state, defender, retreatTile, 'blink', BLINK_MOTION_DURATION_MS, from);
-  defender.blinkReadyAtMs = state.timeMs + BLINK_STEP_COOLDOWN_MS;
+  defender.blinkReadyAtMs = state.timeMs + skillCooldownMsForState(state, BLINK_STEP_COOLDOWN_MS);
   pushFx(state, 'blink', defender.tile, 420, from);
   return true;
 }
@@ -2689,7 +2743,7 @@ function tryBlinkTowardEnemy(state: RunState, defender: DefenderInstance, stats:
   if (!destination) return false;
 
   moveDefenderToTile(state, defender, destination, 'blink', BLINK_MOTION_DURATION_MS, from);
-  defender.blinkReadyAtMs = state.timeMs + BLINK_STEP_COOLDOWN_MS;
+  defender.blinkReadyAtMs = state.timeMs + skillCooldownMsForState(state, BLINK_STEP_COOLDOWN_MS);
   pushFx(state, 'blink', destination, 320, from);
   return true;
 }

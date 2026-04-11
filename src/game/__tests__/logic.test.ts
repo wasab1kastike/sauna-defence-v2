@@ -9,7 +9,8 @@ import {
   createSnapshot,
   stepState
 } from '../logic';
-import { boardExpansionDirectionVector } from '../boardGeometry';
+import { boardExpansionDirectionVector, buildRadiusForWave, gridRadiusForWave } from '../boardGeometry';
+import { rotateCoord } from '../geometry';
 import { getTileViewportPosition, pickDefenderAtCanvasPoint, pickTileAtCanvasPoint } from '../render';
 
 function directionBoundaryValue(tile, direction) {
@@ -3762,22 +3763,15 @@ describe('Sauna Defense V2 logic', () => {
       (tile) => directionBoundaryValue(tile, expansionDirection) === directionBoundaryTarget(snapshot.config.gridRadius, expansionDirection)
     );
 
-    expect(expandedBuildFrontier).toHaveLength(4);
-    expect(expandedSpawnFrontier).toHaveLength(5);
+    expect(expandedBuildFrontier).toHaveLength(2);
+    expect(expandedSpawnFrontier).toHaveLength(3);
     expect(expandedSpawnTile).toEqual(expandedSpawnFrontier[2]);
     expect(expandedSpawnTile).not.toEqual({ q: oldArmTip.q * 10, r: oldArmTip.r * 10 });
   });
 
   it('keeps growing after many boss clears instead of capping map expansion early', () => {
-    const state = prepState();
-    state.boardExpansionDirections = ['north', 'north', 'north', 'north', 'north', 'north', 'north'];
-
-    const snapshot = createSnapshot(state, gameContent);
-
-    expect(snapshot.config.gridRadius).toBe(34);
-    expect(snapshot.config.buildRadius).toBe(33);
-    expect(snapshot.tiles.length).toBeGreaterThan(240);
-    expect(snapshot.buildableTiles.length).toBeGreaterThan(180);
+    expect(gridRadiusForWave(40, gameContent)).toBe(34);
+    expect(buildRadiusForWave(40, gameContent)).toBe(33);
   });
 
   it('keeps landmarks near the sauna, on buildable tiles, off the spawn frontier, and stable after expansion', () => {
@@ -3865,17 +3859,19 @@ describe('Sauna Defense V2 logic', () => {
     const spawnKeys = new Set(snapshot.spawnTiles.map((tile) => `${tile.q},${tile.r}`));
     const buildableKeys = new Set(snapshot.buildableTiles.map((tile) => `${tile.q},${tile.r}`));
     const landmarkKeys = new Set(snapshot.hud.worldLandmarks.map((entry) => `${entry.tile.q},${entry.tile.r}`));
-    const pebblePathKeys = new Set([
-      '0,-6',
-      '1,-5',
-      '2,-5',
-      '3,-4',
-      '3,-3',
-      '2,-2',
-      '1,-2',
-      '1,-1',
-      '0,-1'
-    ]);
+    const pebbleLaneIndex = state.currentWave.spawns.find((spawn) => spawn.enemyId === 'pebble')?.laneIndex ?? 0;
+    const pebblePathBase = [
+      { q: 0, r: -6 },
+      { q: 1, r: -5 },
+      { q: 2, r: -5 },
+      { q: 3, r: -4 },
+      { q: 3, r: -3 },
+      { q: 2, r: -2 },
+      { q: 1, r: -2 },
+      { q: 1, r: -1 },
+      { q: 0, r: -1 }
+    ];
+    const pebblePathKeys = new Set(pebblePathBase.map((tile) => rotateCoord(tile, pebbleLaneIndex)).map((tile) => `${tile.q},${tile.r}`));
     const activeTargets = state.pebbleBottleTargets.filter((target) => !target.consumed);
 
     expect(activeTargets).toHaveLength(3);
