@@ -7,7 +7,7 @@ import type {
 } from './types';
 import { coordKey, hexDistance } from './geometry';
 
-const EXPANSION_STEP_LENGTH = 3;
+const EXPANSION_STEP_LENGTH = 4;
 const LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'hall_of_fame', 'beer_shop'];
 
 const BOARD_DIRECTIONS: Array<{
@@ -62,10 +62,14 @@ function mixSeed(seed: number, salt: number): number {
 }
 
 function expansionCounts(expansions: BoardExpansionDirection[]): Record<BoardExpansionDirection, number> {
-  return BOARD_DIRECTIONS.reduce((acc, entry) => {
-    acc[entry.id] = expansions.filter((direction) => direction === entry.id).length;
+  const counts = BOARD_DIRECTIONS.reduce((acc, entry) => {
+    acc[entry.id] = 0;
     return acc;
   }, {} as Record<BoardExpansionDirection, number>);
+  for (const direction of expansions) {
+    counts[direction] += 1;
+  }
+  return counts;
 }
 
 function boundsForRadius(
@@ -183,12 +187,12 @@ export function buildBoardFootprint(state: RunState, content: GameContent): Boar
 
 export function gridRadiusForWave(index: number, content: GameContent): number {
   const bossCount = defeatedBossCountForWave(index, content);
-  return content.config.gridRadius + (bossCount > 0 ? EXPANSION_STEP_LENGTH * Math.min(bossCount, 6) : 0);
+  return content.config.gridRadius + (bossCount > 0 ? EXPANSION_STEP_LENGTH * bossCount : 0);
 }
 
 export function buildRadiusForWave(index: number, content: GameContent): number {
   const bossCount = defeatedBossCountForWave(index, content);
-  return content.config.buildRadius + (bossCount > 0 ? EXPANSION_STEP_LENGTH * Math.min(bossCount, 6) : 0);
+  return content.config.buildRadius + (bossCount > 0 ? EXPANSION_STEP_LENGTH * bossCount : 0);
 }
 
 export function currentGridRadius(state: RunState, content: GameContent): number {

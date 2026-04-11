@@ -172,10 +172,10 @@ export function App() {
     return () => observer.disconnect();
   }, [snapshot?.hud.showIntermission]);
 
-  const getBoardCameraSafeArea = (nextSnapshot: GameSnapshot | null) => ({
+  const getBoardCameraSafeArea = useCallback((nextSnapshot: GameSnapshot | null) => ({
     topInset: 18,
     bottomInset: nextSnapshot && !nextSnapshot.hud.showIntermission ? bottomDockHeight + 28 : 18
-  });
+  }), [bottomDockHeight]);
 
   useEffect(() => {
     if (!snapshot || frameSize.width <= 0 || frameSize.height <= 0) {
@@ -193,7 +193,7 @@ export function App() {
         ? camera
         : clamped;
     });
-  }, [bottomDockHeight, frameSize.height, frameSize.width, snapshot, snapshot?.config.gridRadius]);
+  }, [frameSize.height, frameSize.width, getBoardCameraSafeArea, snapshot, snapshot?.config.gridRadius]);
 
   useEffect(() => {
     if (!snapshot || snapshot.hud.introOpen || snapshot.hud.showIntermission || guideSeen || guideStep !== null) {

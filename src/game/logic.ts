@@ -4883,6 +4883,7 @@ export function createInitialState(
     selectedWorldLandmarkId: null,
     landmarkTiles: {
       metashop: { q: 0, r: 0 },
+      hall_of_fame: { q: 0, r: 0 },
       beer_shop: { q: 0, r: 0 }
     },
     introOpen,

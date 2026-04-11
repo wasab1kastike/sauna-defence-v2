@@ -64,9 +64,12 @@ export function loadMeta(storage?: Storage | null): MetaProgress {
       typeof parsed.activeHallOfFameNameId === 'string' && parsed.activeHallOfFameNameId in defaults.hallOfFameNameLevels
         ? parsed.activeHallOfFameNameId
         : null;
+    const steam = typeof parsed.steam === 'number' && Number.isFinite(parsed.steam) ? parsed.steam : 0;
+    const completedRuns =
+      typeof parsed.completedRuns === 'number' && Number.isFinite(parsed.completedRuns) ? parsed.completedRuns : 0;
     return {
-      steam: Number.isFinite(parsed.steam) ? parsed.steam : 0,
-      completedRuns: Number.isFinite(parsed.completedRuns) ? parsed.completedRuns : 0,
+      steam,
+      completedRuns,
       shopUnlocked: parsed.shopUnlocked === true,
       upgrades: {
         ...defaults.upgrades,

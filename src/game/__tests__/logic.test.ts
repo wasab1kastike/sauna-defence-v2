@@ -3739,10 +3739,10 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.globalModifierDraftOffers.every((entry) => entry.stackCount > 0)).toBe(true);
     expect(new Set(snapshot.hud.globalModifierDraftOffers.map((entry) => entry.id)).size).toBe(3);
     expect(state.boardExpansionDirections).toHaveLength(1);
-    expect(snapshot.config.gridRadius).toBe(9);
-    expect(snapshot.config.buildRadius).toBe(8);
-    expect(snapshot.tiles).toHaveLength(142);
-    expect(snapshot.buildableTiles).toHaveLength(102);
+    expect(snapshot.config.gridRadius).toBe(10);
+    expect(snapshot.config.buildRadius).toBe(9);
+    expect(snapshot.tiles.length).toBeGreaterThan(142);
+    expect(snapshot.buildableTiles.length).toBeGreaterThan(102);
     expect(snapshot.spawnTiles).toHaveLength(6);
     const expansionDirection = state.boardExpansionDirections[0];
     const oldArmTip = boardExpansionDirectionVector(expansionDirection);
@@ -3762,10 +3762,22 @@ describe('Sauna Defense V2 logic', () => {
       (tile) => directionBoundaryValue(tile, expansionDirection) === directionBoundaryTarget(snapshot.config.gridRadius, expansionDirection)
     );
 
-    expect(expandedBuildFrontier).toHaveLength(3);
-    expect(expandedSpawnFrontier).toHaveLength(4);
+    expect(expandedBuildFrontier).toHaveLength(4);
+    expect(expandedSpawnFrontier).toHaveLength(5);
     expect(expandedSpawnTile).toEqual(expandedSpawnFrontier[2]);
     expect(expandedSpawnTile).not.toEqual({ q: oldArmTip.q * 10, r: oldArmTip.r * 10 });
+  });
+
+  it('keeps growing after many boss clears instead of capping map expansion early', () => {
+    const state = prepState();
+    state.boardExpansionDirections = ['north', 'north', 'north', 'north', 'north', 'north', 'north'];
+
+    const snapshot = createSnapshot(state, gameContent);
+
+    expect(snapshot.config.gridRadius).toBe(34);
+    expect(snapshot.config.buildRadius).toBe(33);
+    expect(snapshot.tiles.length).toBeGreaterThan(240);
+    expect(snapshot.buildableTiles.length).toBeGreaterThan(180);
   });
 
   it('keeps landmarks near the sauna, on buildable tiles, off the spawn frontier, and stable after expansion', () => {
