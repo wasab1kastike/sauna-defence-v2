@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Ember Storm</title>
+  <desc id="desc">Three falling ember strikes on a dark storm background.</desc>
+  <defs>
+    <linearGradient id="ember" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#fff8d0"/>
+      <stop offset="45%" stop-color="#ffbd67"/>
+      <stop offset="100%" stop-color="#e05622"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="42" fill="#100d12"/>
+  <circle cx="128" cy="128" r="98" fill="#291622"/>
+  <path d="M82 55l25 60-19 0 13 44-39-60 19 0z" fill="url(#ember)"/>
+  <path d="M146 73l22 53-16 0 12 37-34-53 16 0z" fill="url(#ember)" opacity="0.92"/>
+  <path d="M109 104l25 60-18 0 13 37-38-60 18 0z" fill="url(#ember)" opacity="0.82"/>
+  <circle cx="88" cy="186" r="13" fill="#ffb45f" opacity="0.55"/>
+  <circle cx="130" cy="201" r="10" fill="#ffd08c" opacity="0.4"/>
+  <circle cx="163" cy="177" r="12" fill="#ff854f" opacity="0.48"/>
+</svg>

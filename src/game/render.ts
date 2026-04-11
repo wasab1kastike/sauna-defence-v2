@@ -157,6 +157,26 @@ export function collectFireballTelegraphTiles(snapshot: GameSnapshot): AxialCoor
   return [...tiles.values()];
 }
 
+export function collectSaunaQuakeTelegraphTiles(snapshot: GameSnapshot): AxialCoord[] {
+  const tiles = new Map<string, AxialCoord>();
+  for (const pending of snapshot.state.pendingSaunaQuakes) {
+    for (const tile of snapshot.tiles) {
+      if (hexDistance(tile, pending.targetTile) <= 1) {
+        tiles.set(coordKey(tile), tile);
+      }
+    }
+  }
+  return [...tiles.values()];
+}
+
+export function collectEmberStormTelegraphTiles(snapshot: GameSnapshot): AxialCoord[] {
+  const tiles = new Map<string, AxialCoord>();
+  for (const pending of snapshot.state.pendingEmberStormStrikes) {
+    tiles.set(coordKey(pending.targetTile), pending.targetTile);
+  }
+  return [...tiles.values()];
+}
+
 export function collectPebbleBottleTiles(snapshot: GameSnapshot): AxialCoord[] {
   if (!snapshot.state.currentWave.isBoss || snapshot.state.currentWave.bossId !== 'pebble') {
     return [];
@@ -1992,14 +2012,30 @@ function getCombatShake(snapshot: GameSnapshot) {
   let y = 0;
   for (const event of snapshot.state.fxEvents) {
     const progress = event.ageMs / event.durationMs;
-    const strength =
-      event.kind === 'sauna_hit'
-        ? 8 * (1 - progress)
-        : event.kind === 'boss_hit'
-          ? 4.5 * (1 - progress)
-          : event.kind === 'fireball'
-            ? 3.4 * (1 - progress)
-            : 0;
+    let strength = 0;
+    switch (event.kind) {
+      case 'sauna_hit':
+        strength = 8 * (1 - progress);
+        break;
+      case 'sauna_quake':
+        strength = 5.2 * (1 - progress);
+        break;
+      case 'boss_hit':
+        strength = 4.5 * (1 - progress);
+        break;
+      case 'thunder_run':
+        strength = 4.1 * (1 - progress);
+        break;
+      case 'ember_storm':
+        strength = 3.6 * (1 - progress);
+        break;
+      case 'fireball':
+        strength = 3.4 * (1 - progress);
+        break;
+      default:
+        strength = 0;
+        break;
+    }
     if (strength <= 0) continue;
     const angle = event.id * 1.73 + event.ageMs * 0.055;
     x += Math.cos(angle) * strength;
@@ -2041,6 +2077,59 @@ function drawFireballTelegraphs(ctx: CanvasRenderingContext2D, snapshot: GameSna
     const targetCenter = axialToPixel(pending.targetTile, layout);
     drawGlowDisc(ctx, targetCenter, layout.hexSize * (0.7 + progress * 0.3), 'rgba(255,188,98,0.34)', 'rgba(255,99,56,0)', 0.82);
     drawShockRing(ctx, targetCenter, layout.hexSize * (0.42 + progress * 0.18), 'rgba(255,232,182,0.92)', Math.max(2, layout.hexSize * 0.06), 0.92);
+  }
+}
+
+function drawSaunaQuakeTelegraphs(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, layout: BoardLayout) {
+  if (snapshot.state.pendingSaunaQuakes.length === 0) return;
+
+  for (const pending of snapshot.state.pendingSaunaQuakes) {
+    const timeRemaining = Math.max(0, pending.explodeAtMs - snapshot.state.timeMs);
+    const progress = 1 - Math.min(1, timeRemaining / 700);
+
+    for (const tile of snapshot.tiles) {
+      const distance = hexDistance(tile, pending.targetTile);
+      if (distance > 1) continue;
+      const center = axialToPixel(tile, layout);
+      drawTile(
+        ctx,
+        center,
+        layout.hexSize - 5,
+        distance === 0 ? `rgba(255, 154, 89, ${0.18 + progress * 0.16})` : `rgba(255, 123, 78, ${0.08 + progress * 0.1})`,
+        distance === 0 ? `rgba(255, 230, 173, ${0.72 + progress * 0.16})` : `rgba(255, 196, 138, ${0.32 + progress * 0.18})`,
+        distance === 0 ? 2.4 : 1.3
+      );
+    }
+
+    const center = axialToPixel(pending.targetTile, layout);
+    drawGlowDisc(ctx, center, layout.hexSize * (0.72 + progress * 0.22), 'rgba(255, 200, 116, 0.28)', 'rgba(255, 105, 64, 0)', 0.8);
+    drawShockRing(ctx, center, layout.hexSize * (0.38 + progress * 0.18), 'rgba(255, 228, 178, 0.9)', Math.max(2, layout.hexSize * 0.055), 0.9);
+  }
+}
+
+function drawEmberStormTelegraphs(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, layout: BoardLayout) {
+  if (snapshot.state.pendingEmberStormStrikes.length === 0) return;
+
+  for (const pending of snapshot.state.pendingEmberStormStrikes) {
+    const timeRemaining = Math.max(0, pending.strikeAtMs - snapshot.state.timeMs);
+    const progress = 1 - Math.min(1, timeRemaining / 600);
+    const center = axialToPixel(pending.targetTile, layout);
+    const beamTop = {
+      x: center.x,
+      y: center.y - layout.hexSize * (1.9 - progress * 0.7)
+    };
+
+    drawLightningArc(
+      ctx,
+      beamTop,
+      center,
+      'rgba(255, 199, 122, 0.24)',
+      Math.max(1.4, layout.hexSize * 0.04),
+      0.64,
+      pending.volleyIndex * 2.3 + pending.targetTile.q
+    );
+    drawGlowDisc(ctx, center, layout.hexSize * (0.22 + progress * 0.14), 'rgba(255, 198, 107, 0.26)', 'rgba(255, 107, 56, 0)', 0.78);
+    drawShockRing(ctx, center, layout.hexSize * (0.18 + progress * 0.1), 'rgba(255, 232, 181, 0.72)', Math.max(1.4, layout.hexSize * 0.04), 0.76);
   }
 }
 
@@ -2185,6 +2274,70 @@ function drawCombatFx(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, lay
         drawShockRing(ctx, center, layout.hexSize * (0.16 + progress * 0.46), '#a4f3c3', Math.max(2, layout.hexSize * 0.05), 0.84);
         drawEmberParticles(ctx, center, layout.hexSize * 0.75, progress, event.id * 5.8, '#deffe7', 7);
         break;
+      case 'lava_whip':
+        if (secondary) {
+          drawAfterimageTrail(ctx, secondary, center, 'rgba(255, 114, 70, 0.96)', 0.96);
+          drawLightningArc(ctx, secondary, center, 'rgba(255, 213, 149, 0.54)', Math.max(2, layout.hexSize * 0.06), 0.62, event.id * 5.6);
+        }
+        drawGlowDisc(ctx, center, layout.hexSize * (0.24 + progress * 0.18), 'rgba(255, 226, 164, 0.72)', 'rgba(255, 102, 54, 0)', 0.82);
+        drawSparkBurst(ctx, center, layout.hexSize * (0.26 + progress * 0.18), '#fff0c8', 0.8, 8, progress * Math.PI * 3.6);
+        break;
+      case 'thunder_run':
+        if (secondary) {
+          drawAfterimageTrail(ctx, secondary, center, 'rgba(113, 221, 255, 0.98)', 0.98);
+          drawLightningArc(ctx, secondary, center, 'rgba(227, 252, 255, 0.62)', Math.max(2.3, layout.hexSize * 0.07), 0.7, event.id * 6.4);
+          drawLightningArc(ctx, secondary, center, 'rgba(118, 220, 255, 0.44)', Math.max(1.5, layout.hexSize * 0.045), 0.84, event.id * 8.2);
+        }
+        drawGlowDisc(ctx, center, layout.hexSize * (0.48 + progress * 0.42), 'rgba(210, 246, 255, 0.74)', 'rgba(92, 176, 255, 0)', 0.9);
+        drawShockRing(ctx, center, layout.hexSize * (0.28 + progress * 0.58), 'rgba(163, 234, 255, 0.92)', Math.max(2.5, layout.hexSize * 0.08), 0.92);
+        drawSparkBurst(ctx, center, layout.hexSize * (0.34 + progress * 0.32), '#ebfbff', 0.84, 11, progress * Math.PI * 4.6);
+        break;
+      case 'boiling_orbit':
+        if (secondary) {
+          drawLightningArc(ctx, center, secondary, 'rgba(255, 199, 123, 0.64)', Math.max(1.8, layout.hexSize * 0.05), 0.74, event.id * 4.8);
+        }
+        drawShockRing(ctx, center, layout.hexSize * (0.42 + progress * 0.18), 'rgba(255, 197, 113, 0.8)', Math.max(2, layout.hexSize * 0.05), 0.7);
+        for (let orb = 0; orb < 3; orb += 1) {
+          const angle = progress * Math.PI * 3.8 + orb * ((Math.PI * 2) / 3);
+          const orbCenter = {
+            x: center.x + Math.cos(angle) * layout.hexSize * 0.62,
+            y: center.y + Math.sin(angle) * layout.hexSize * 0.48
+          };
+          drawGlowDisc(ctx, orbCenter, layout.hexSize * 0.16, 'rgba(255, 219, 149, 0.82)', 'rgba(255, 116, 56, 0)', 0.84);
+        }
+        break;
+      case 'sauna_quake':
+        drawGlowDisc(ctx, center, layout.hexSize * (0.72 + progress * 0.78), 'rgba(255, 220, 160, 0.7)', 'rgba(255, 92, 56, 0)', 0.92);
+        drawShockRing(ctx, center, layout.hexSize * (0.34 + progress * 0.92), 'rgba(255, 204, 124, 0.92)', Math.max(3, layout.hexSize * 0.1), 0.92);
+        drawShockRing(ctx, center, layout.hexSize * (0.5 + progress * 1.2), 'rgba(255, 150, 90, 0.52)', Math.max(2, layout.hexSize * 0.05), 0.76);
+        for (let crack = 0; crack < 4; crack += 1) {
+          const angle = (Math.PI * 2 * crack) / 4 + progress * 0.3;
+          const edge = {
+            x: center.x + Math.cos(angle) * layout.hexSize * (0.4 + progress * 0.7),
+            y: center.y + Math.sin(angle) * layout.hexSize * (0.4 + progress * 0.7)
+          };
+          drawLightningArc(ctx, center, edge, 'rgba(255, 221, 173, 0.46)', Math.max(1.4, layout.hexSize * 0.035), 0.34, event.id * 2.9 + crack);
+        }
+        break;
+      case 'afterburn_hook':
+        if (secondary) {
+          drawAfterimageTrail(ctx, secondary, center, 'rgba(255, 129, 74, 0.94)', 0.92);
+          drawLightningArc(ctx, secondary, center, 'rgba(255, 224, 160, 0.38)', Math.max(1.6, layout.hexSize * 0.04), 0.48, event.id * 3.7);
+        }
+        drawGlowDisc(ctx, center, layout.hexSize * (0.24 + progress * 0.18), 'rgba(255, 224, 163, 0.74)', 'rgba(255, 91, 47, 0)', 0.8);
+        drawSparkBurst(ctx, center, layout.hexSize * (0.24 + progress * 0.18), '#fff0cb', 0.76, 6, progress * Math.PI * 2.6);
+        break;
+      case 'ember_storm': {
+        const flare = {
+          x: center.x,
+          y: center.y - layout.hexSize * (0.8 - progress * 0.5)
+        };
+        drawAfterimageTrail(ctx, flare, center, 'rgba(255, 155, 85, 0.92)', 0.88);
+        drawGlowDisc(ctx, center, layout.hexSize * (0.42 + progress * 0.48), 'rgba(255, 213, 147, 0.78)', 'rgba(255, 96, 49, 0)', 0.88);
+        drawShockRing(ctx, center, layout.hexSize * (0.2 + progress * 0.58), 'rgba(255, 226, 165, 0.86)', Math.max(2.2, layout.hexSize * 0.07), 0.86);
+        drawEmberParticles(ctx, center, layout.hexSize * 1.1, progress, event.id * 12.4, '#ffb66b', 14);
+        break;
+      }
       case 'defender_hit':
         if (secondary) {
           const impact = pointLerp(secondary, center, 0.84);
@@ -2629,9 +2782,12 @@ export function paintSnapshot(
   }
 
   drawFireballTelegraphs(ctx, snapshot, layout);
+  drawSaunaQuakeTelegraphs(ctx, snapshot, layout);
+  drawEmberStormTelegraphs(ctx, snapshot, layout);
   drawWorldLandmarks(ctx, snapshot, layout);
   drawPebbleBottleTargets(ctx, snapshot, layout);
   drawCentralSauna(ctx, snapshot, layout);
+  const activeOrbitOwnerIds = new Set(snapshot.state.activeBoilingOrbits.map((orbit) => orbit.ownerDefenderId));
 
   for (const defender of snapshot.state.defenders) {
     if (defender.location !== 'board' || !defender.tile) continue;
@@ -2680,6 +2836,17 @@ export function paintSnapshot(
       drawTokenBase(ctx, center, radius, style, template.fill);
       drawGlyph(ctx, center, radius, style.glyph, style.glyph === 'tower' ? style.ring : style.accent);
       drawTokenLabel(ctx, center, radius, template.label, '#fff8ed');
+    }
+    if (activeOrbitOwnerIds.has(defender.id)) {
+      for (let orb = 0; orb < 3; orb += 1) {
+        const angle = snapshot.state.timeMs * 0.006 + orb * ((Math.PI * 2) / 3);
+        const orbCenter = {
+          x: center.x + Math.cos(angle) * radius * 1.14,
+          y: center.y + Math.sin(angle) * radius * 0.84
+        };
+        drawGlowDisc(ctx, orbCenter, radius * 0.2, 'rgba(255, 214, 145, 0.78)', 'rgba(255, 118, 55, 0)', 0.82);
+      }
+      drawShockRing(ctx, center, radius * 1.34, 'rgba(255, 198, 117, 0.62)', Math.max(2, layout.hexSize * 0.04), 0.62);
     }
     drawHealthBar(ctx, center, layout.hexSize * 1.04, defender.hp / Math.max(1, stats.maxHp), '#7ed8c8');
     drawDefenderName(ctx, center, radius, defender.name);

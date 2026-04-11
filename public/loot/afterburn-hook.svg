@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Afterburn Hook</title>
+  <desc id="desc">A heated hook icon with a burning trail.</desc>
+  <defs>
+    <linearGradient id="hook" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#fff5bf"/>
+      <stop offset="45%" stop-color="#ff9d59"/>
+      <stop offset="100%" stop-color="#cb3e1d"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="42" fill="#160d0d"/>
+  <circle cx="128" cy="128" r="96" fill="#351615"/>
+  <path d="M93 79c25-7 55 4 71 28 19 29 10 65-18 83-21 14-55 11-65-12-7-15 3-31 18-37 18-7 34 5 39 19" fill="none" stroke="url(#hook)" stroke-linecap="round" stroke-width="18"/>
+  <path d="M74 95c18 9 28 19 36 36" fill="none" stroke="#ffd97c" stroke-linecap="round" stroke-width="7" opacity="0.8"/>
+  <path d="M64 120c22 4 38 16 50 33" fill="none" stroke="#ff8a57" stroke-linecap="round" stroke-width="6" opacity="0.7"/>
+</svg>

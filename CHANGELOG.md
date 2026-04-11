@@ -19,11 +19,14 @@ All notable changes to this project are documented in this file.
 
 ### Added
 - [player] Sauna Kiosk now sells a one-time `Sauna Hall of Fame` unlock, which spawns as its own board landmark for title and name buffs.
+- [player] Loot pool now includes six new combat skills: `Lava Whip`, `Thunder Run`, `Boiling Orbit`, `Sauna Quake`, `Afterburn Hook`, and `Ember Storm`.
 
 ### Changed
 - [player] Title and name buffs moved out of Sauna Kiosk into the new Hall of Fame panel, while internal mastery content ids stay unchanged for compatibility.
 - [player] Hall of Fame uses the current title-prefix and surname-match rules under the new player-facing `Titles` and `Names` columns.
 - [player] Board landmarks now include Sauna Hall of Fame as a deterministic between-runs destination alongside Sauna Kiosk and Beer Shop.
+- [player] Combat effects now hit harder visually with new quake, dash, orbit, hook, and ember-storm telegraphs plus stronger impact shake on heavy skill procs.
+- [player] Skill-related global modifiers now include new synergies for `Lava Whip`, `Thunder Run`, `Boiling Orbit`, and `Afterburn Hook`.
 
 ### Fixed
 - [player] Matching-name bonuses now update dynamically after identity rerolls inside the Hall of Fame flow instead of requiring any separate refresh.

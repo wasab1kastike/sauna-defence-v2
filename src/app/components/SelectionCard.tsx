@@ -160,6 +160,7 @@ export function SelectionCard({
             <span className="mini-tag">Skills {selectedDefender.skills.length}/{selectedDefender.skillSlotCount}</span>
             {selectedDefender.blinkLabel ? <span className="mini-tag">{selectedDefender.blinkLabel}</span> : null}
             {selectedDefender.fireballLabel ? <span className="mini-tag">{selectedDefender.fireballLabel}</span> : null}
+            {selectedDefender.skillStatusLabels.map((label) => <span key={label} className="mini-tag">{label}</span>)}
           </div>
           <p className="panel-copy small-copy">Attack cadence {formatCadence(selectedDefender.attackCooldownMs)}.</p>
           {selectedDefender.nextSubclassUnlockLevel !== null ? (

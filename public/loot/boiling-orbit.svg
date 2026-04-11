@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Boiling Orbit</title>
+  <desc id="desc">A central ember surrounded by boiling orbit rings.</desc>
+  <defs>
+    <radialGradient id="core" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fff4c7"/>
+      <stop offset="50%" stop-color="#ffb75e"/>
+      <stop offset="100%" stop-color="#d84f1c"/>
+    </radialGradient>
+  </defs>
+  <rect width="256" height="256" rx="42" fill="#140d10"/>
+  <circle cx="128" cy="128" r="94" fill="#34191a" opacity="0.88"/>
+  <circle cx="128" cy="128" r="31" fill="url(#core)"/>
+  <circle cx="128" cy="128" r="58" fill="none" stroke="#ffbb65" stroke-width="10" opacity="0.85"/>
+  <circle cx="128" cy="128" r="82" fill="none" stroke="#ff8e58" stroke-width="8" opacity="0.55"/>
+  <circle cx="186" cy="128" r="10" fill="#fff1be"/>
+  <circle cx="92" cy="58" r="12" fill="#ff9e4e"/>
+  <circle cx="71" cy="157" r="9" fill="#ffd58f"/>
+  <circle cx="154" cy="201" r="11" fill="#ff8348"/>
+</svg>

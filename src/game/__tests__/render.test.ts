@@ -1,8 +1,10 @@
 import {
   applySoftBackdropCleanupForTest,
   canRenderEndUserHordeSprites,
+  collectEmberStormTelegraphTiles,
   collectPebbleBottleTiles,
   collectFireballTelegraphTiles,
+  collectSaunaQuakeTelegraphTiles,
   getTileViewportPosition,
   pickEnemyAtCanvasPoint,
   resolveEnemyRenderRadius,
@@ -189,5 +191,46 @@ describe('render helpers', () => {
     expect(telegraphKeys.has('2,-2')).toBe(true);
     expect(telegraphKeys.has('-1,-1')).toBe(true);
     expect(telegraphKeys.has('3,-2')).toBe(false);
+  });
+
+  it('exposes the sauna quake blast radius as a radius-1 telegraph', () => {
+    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+    state.pendingSaunaQuakes = [{
+      ownerDefenderId: 'guardian-1',
+      targetTile: { q: 0, r: -2 },
+      explodeAtMs: 700,
+      damageSnapshot: 8
+    }];
+
+    const snapshot = createSnapshot(state, gameContent);
+    const telegraphKeys = new Set(collectSaunaQuakeTelegraphTiles(snapshot).map((tile) => `${tile.q},${tile.r}`));
+
+    expect(telegraphKeys.has('0,-2')).toBe(true);
+    expect(telegraphKeys.has('1,-2')).toBe(true);
+    expect(telegraphKeys.has('0,-1')).toBe(true);
+    expect(telegraphKeys.has('2,-2')).toBe(false);
+  });
+
+  it('exposes ember storm telegraph tiles directly from queued strike targets', () => {
+    const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
+    state.pendingEmberStormStrikes = [
+      {
+        ownerDefenderId: 'guardian-1',
+        targetTile: { q: 0, r: -2 },
+        strikeAtMs: 260,
+        damageSnapshot: 6,
+        volleyIndex: 0
+      },
+      {
+        ownerDefenderId: 'guardian-1',
+        targetTile: { q: 1, r: -2 },
+        strikeAtMs: 520,
+        damageSnapshot: 6,
+        volleyIndex: 1
+      }
+    ];
+
+    const snapshot = createSnapshot(state, gameContent);
+    expect(collectEmberStormTelegraphTiles(snapshot)).toEqual([{ q: 0, r: -2 }, { q: 1, r: -2 }]);
   });
 });

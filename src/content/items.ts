@@ -175,6 +175,60 @@ export const skillDefinitions: GameContent['skillDefinitions'] = {
       effectText: 'On attack, grant self and adjacent allies +50% attack speed for 3s. 15s cooldown, reduced by 1s per kill.',
       flavorText: 'Half prayer, half terrace chant, all morale.',
       artPath: 'loot/battle-hymn.png'
+    },
+    lava_whip: {
+      id: 'lava_whip',
+      kind: 'skill',
+      name: 'Lava Whip',
+      rarity: 'rare',
+      effectText: 'Each attack cracks through the target and scorches enemies behind it for 60% damage.',
+      flavorText: 'Turns one good hit into a straight-line workplace incident.',
+      artPath: 'loot/lava-whip.svg'
+    },
+    thunder_run: {
+      id: 'thunder_run',
+      kind: 'skill',
+      name: 'Thunder Run',
+      rarity: 'epic',
+      effectText: 'Every 8s, ranged attacks dash you next to the target and discharge 55% damage to nearby enemies on arrival.',
+      flavorText: 'A heroic amount of movement for someone wearing sauna footwear.',
+      artPath: 'loot/thunder-run.svg'
+    },
+    boiling_orbit: {
+      id: 'boiling_orbit',
+      kind: 'skill',
+      name: 'Boiling Orbit',
+      rarity: 'rare',
+      effectText: 'Every 9s, attacking starts a 4s ember orbit that zaps nearby enemies for 40% damage every 0.6s.',
+      flavorText: 'A rotating argument made of heat, ash, and deeply unsafe confidence.',
+      artPath: 'loot/boiling-orbit.svg'
+    },
+    sauna_quake: {
+      id: 'sauna_quake',
+      kind: 'skill',
+      name: 'Sauna Quake',
+      rarity: 'epic',
+      effectText: 'Every 10s, your hit marks the target tile. After 0.7s, the whole cluster erupts for 75% damage in radius 1.',
+      flavorText: 'The floor answers back with all the patience of a furious stove.',
+      artPath: 'loot/sauna-quake.svg'
+    },
+    afterburn_hook: {
+      id: 'afterburn_hook',
+      kind: 'skill',
+      name: 'Afterburn Hook',
+      rarity: 'rare',
+      effectText: 'Hits deal +4 damage to enemies below 40% HP. Kills fling a 70% afterburn bolt into the nearest enemy.',
+      flavorText: 'A finisher for people who think restraint is support-class propaganda.',
+      artPath: 'loot/afterburn-hook.svg'
+    },
+    ember_storm: {
+      id: 'ember_storm',
+      kind: 'skill',
+      name: 'Ember Storm',
+      rarity: 'legendary',
+      effectText: 'Every 14s, your attack calls three delayed ember strikes around the target for 55% damage each.',
+      flavorText: 'Not weather. Not artillery. Somewhere in between and considerably ruder.',
+      artPath: 'loot/ember-storm.svg'
     }
   };
 
@@ -372,6 +426,46 @@ export const globalModifierDefinitions: GameContent['globalModifierDefinitions']
       countScope: 'living',
       source: { kind: 'skill', skillId: 'steam_shield' },
       effectStat: 'defense',
+      amountPerStack: 1
+    },
+    scalding_lineage: {
+      id: 'scalding_lineage',
+      rarity: 'rare',
+      name: 'Scalding Lineage',
+      description: 'Lava Whips teach the whole roster to hit through the panic instead of into it.',
+      countScope: 'living',
+      source: { kind: 'skill', skillId: 'lava_whip' },
+      effectStat: 'damage',
+      amountPerStack: 1
+    },
+    storm_surge: {
+      id: 'storm_surge',
+      rarity: 'epic',
+      name: 'Storm Surge',
+      description: 'Thunder Runs turn every clean angle into a faster follow-up.',
+      countScope: 'living',
+      source: { kind: 'skill', skillId: 'thunder_run' },
+      effectStat: 'attackCooldownMs',
+      amountPerStack: -35
+    },
+    orbiting_embers: {
+      id: 'orbiting_embers',
+      rarity: 'rare',
+      name: 'Orbiting Embers',
+      description: 'Boiling Orbit users keep the whole room wrapped in defensive heat.',
+      countScope: 'living',
+      source: { kind: 'skill', skillId: 'boiling_orbit' },
+      effectStat: 'defense',
+      amountPerStack: 1
+    },
+    hook_and_chain: {
+      id: 'hook_and_chain',
+      rarity: 'epic',
+      name: 'Hook And Chain',
+      description: 'Afterburn Hooks make everyone just a little better at finishing from safety.',
+      countScope: 'living',
+      source: { kind: 'skill', skillId: 'afterburn_hook' },
+      effectStat: 'range',
       amountPerStack: 1
     },
     cedar_swear: {

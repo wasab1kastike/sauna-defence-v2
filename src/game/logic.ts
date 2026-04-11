@@ -1,4 +1,5 @@
 import type {
+  ActiveBoilingOrbit,
   ActiveAlcoholBuff,
   AlcoholDefinition,
   AlcoholId,
@@ -32,7 +33,9 @@ import type {
   MetaProgress,
   MetaUpgradeId,
   NameMasteryId,
+  PendingEmberStormStrike,
   PendingFireball,
+  PendingSaunaQuake,
   PebbleBottleTarget,
   RecruitDestination,
   Rarity,
@@ -153,11 +156,20 @@ const WORLD_LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'hall_of_fame', 'beer
 const RECRUIT_MARKET_SLOT_COUNT = 4;
 const RECRUIT_SLOT_HOTKEYS = ['A', 'S', 'D', 'F'] as const;
 const BLINK_STEP_COOLDOWN_MS = 12000;
+const THUNDER_RUN_COOLDOWN_MS = 8000;
 const BATTLE_HYMN_COOLDOWN_MS = 15000;
 const BATTLE_HYMN_BUFF_MS = 3000;
+const BOILING_ORBIT_COOLDOWN_MS = 9000;
+const BOILING_ORBIT_DURATION_MS = 4000;
+const BOILING_ORBIT_TICK_MS = 600;
 const FIREBALL_COOLDOWN_MS = 12000;
 const FIREBALL_DELAY_MS = 1000;
 const FIREBALL_RADIUS = 2;
+const SAUNA_QUAKE_COOLDOWN_MS = 10000;
+const SAUNA_QUAKE_DELAY_MS = 700;
+const EMBER_STORM_COOLDOWN_MS = 14000;
+const EMBER_STORM_STRIKE_DELAY_MS = 260;
+const EMBER_STORM_STRIKE_STEP_MS = 260;
 const AUTOPLAY_DELAY_MS = 650;
 const SPEECH_BUBBLE_DURATION_MS = 2400;
 const SPEECH_BUBBLE_LIMIT = 3;
@@ -220,6 +232,7 @@ const ENEMY_NORMAL_STAT_SCALING_MULTIPLIER = 0.6;
 const LIVE_SAUNA_RETREAT_SISU_COST = 3;
 const LIVE_SAUNA_RETREAT_COOLDOWN_MS = 12000;
 const BLINK_MOTION_DURATION_MS = 320;
+const THUNDER_RUN_MOTION_DURATION_MS = 260;
 const SPAWN_SETTLE_DURATION_MS = 260;
 const PEBBLE_PATH_BASE: AxialCoord[] = [
   { q: 0, r: -6 },
@@ -1400,8 +1413,14 @@ function derivedStats(
 }
 
 function normalizeDefender(state: RunState, defender: DefenderInstance, content: GameContent): void {
+  defender.blinkReadyAtMs ??= 0;
+  defender.thunderRunReadyAtMs ??= 0;
   defender.battleHymnReadyAtMs ??= 0;
   defender.battleHymnBuffExpiresAtMs ??= 0;
+  defender.fireballReadyAtMs ??= 0;
+  defender.boilingOrbitReadyAtMs ??= 0;
+  defender.saunaQuakeReadyAtMs ??= 0;
+  defender.emberStormReadyAtMs ??= 0;
   defender.hp = Math.min(defender.hp, derivedStats(state, defender, content).maxHp);
 }
 
@@ -1487,9 +1506,13 @@ function newDefender(state: RunState, templateId: DefenderTemplateId, content: G
     motion: null,
     attackReadyAtMs: 0,
     blinkReadyAtMs: 0,
+    thunderRunReadyAtMs: 0,
     battleHymnReadyAtMs: 0,
     battleHymnBuffExpiresAtMs: 0,
     fireballReadyAtMs: 0,
+    boilingOrbitReadyAtMs: 0,
+    saunaQuakeReadyAtMs: 0,
+    emberStormReadyAtMs: 0,
     items: [],
     skills: [],
     kills: 0,
@@ -2567,6 +2590,31 @@ function ageFx(state: RunState, deltaMs: number): void {
     .filter((event) => event.ageMs < event.durationMs);
 }
 
+function enemyFxDurationMs(kind: CombatFxKind): number {
+  switch (kind) {
+    case 'fireball':
+      return 260;
+    case 'pulse':
+      return 280;
+    case 'lava_whip':
+      return 280;
+    case 'thunder_run':
+      return 360;
+    case 'sauna_quake':
+      return 420;
+    case 'afterburn_hook':
+      return 260;
+    case 'ember_storm':
+      return 320;
+    default:
+      return 220;
+  }
+}
+
+function healFxDurationMs(kind: CombatFxKind): number {
+  return kind === 'pulse' ? 280 : 320;
+}
+
 function scheduleFireball(
   state: RunState,
   defender: DefenderInstance,
@@ -2601,12 +2649,146 @@ function resolvePendingFireballs(state: RunState): void {
   state.pendingFireballs = remaining;
 }
 
+function scheduleSaunaQuake(
+  state: RunState,
+  defender: DefenderInstance,
+  targetTile: AxialCoord,
+  damageSnapshot: number
+): void {
+  state.pendingSaunaQuakes.push({
+    ownerDefenderId: defender.id,
+    targetTile: cloneCoord(targetTile),
+    explodeAtMs: state.timeMs + SAUNA_QUAKE_DELAY_MS,
+    damageSnapshot: Math.max(1, Math.round(damageSnapshot * 0.75))
+  });
+  defender.saunaQuakeReadyAtMs = state.timeMs + SAUNA_QUAKE_COOLDOWN_MS;
+}
+
+function resolvePendingSaunaQuakes(state: RunState): void {
+  const remaining: PendingSaunaQuake[] = [];
+  for (const pending of state.pendingSaunaQuakes) {
+    if (state.timeMs < pending.explodeAtMs) {
+      remaining.push(pending);
+      continue;
+    }
+    for (const enemy of state.enemies) {
+      if (hexDistance(enemy.tile, pending.targetTile) <= 1) {
+        applyDamageToEnemy(state, enemy, pending.damageSnapshot, pending.ownerDefenderId);
+      }
+    }
+    pushFx(state, 'sauna_quake', pending.targetTile, 420);
+    addHitStop(state, 52);
+  }
+  state.pendingSaunaQuakes = remaining;
+}
+
+function emberStormTargetTiles(state: RunState, targetTile: AxialCoord, content: GameContent): AxialCoord[] {
+  const candidates = [
+    cloneCoord(targetTile),
+    ...DIRS.map((dir) => add(targetTile, dir)).filter((tile) => isTileInBoard(state, tile, content))
+  ];
+  const unique = new Map(candidates.map((tile) => [coordKey(tile), tile]));
+  const ordered = [...unique.values()];
+  const splashTiles = ordered.slice(1);
+  for (let index = splashTiles.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomInt(state, 0, index);
+    [splashTiles[index], splashTiles[swapIndex]] = [splashTiles[swapIndex], splashTiles[index]];
+  }
+  return [ordered[0], ...splashTiles.slice(0, 2)];
+}
+
+function scheduleEmberStorm(
+  state: RunState,
+  defender: DefenderInstance,
+  targetTile: AxialCoord,
+  damageSnapshot: number,
+  content: GameContent
+): void {
+  const strikeTiles = emberStormTargetTiles(state, targetTile, content);
+  strikeTiles.forEach((tile, volleyIndex) => {
+    const strike: PendingEmberStormStrike = {
+      ownerDefenderId: defender.id,
+      targetTile: cloneCoord(tile),
+      strikeAtMs: state.timeMs + EMBER_STORM_STRIKE_DELAY_MS + EMBER_STORM_STRIKE_STEP_MS * volleyIndex,
+      damageSnapshot: Math.max(1, Math.round(damageSnapshot * 0.55)),
+      volleyIndex
+    };
+    state.pendingEmberStormStrikes.push(strike);
+  });
+  defender.emberStormReadyAtMs = state.timeMs + EMBER_STORM_COOLDOWN_MS;
+}
+
+function resolvePendingEmberStormStrikes(state: RunState): void {
+  const remaining: PendingEmberStormStrike[] = [];
+  for (const pending of state.pendingEmberStormStrikes) {
+    if (state.timeMs < pending.strikeAtMs) {
+      remaining.push(pending);
+      continue;
+    }
+    for (const enemy of state.enemies) {
+      if (sameCoord(enemy.tile, pending.targetTile)) {
+        applyDamageToEnemy(state, enemy, pending.damageSnapshot, pending.ownerDefenderId);
+      }
+    }
+    pushFx(state, 'ember_storm', pending.targetTile, 320);
+    addHitStop(state, 24);
+  }
+  state.pendingEmberStormStrikes = remaining;
+}
+
+function activateBoilingOrbit(
+  state: RunState,
+  defender: DefenderInstance,
+  damageSnapshot: number
+): void {
+  state.activeBoilingOrbits = state.activeBoilingOrbits.filter((orbit) => orbit.ownerDefenderId !== defender.id);
+  state.activeBoilingOrbits.push({
+    ownerDefenderId: defender.id,
+    expiresAtMs: state.timeMs + BOILING_ORBIT_DURATION_MS,
+    nextTickAtMs: state.timeMs + BOILING_ORBIT_TICK_MS,
+    damageSnapshot: Math.max(1, Math.round(damageSnapshot * 0.4))
+  });
+  defender.boilingOrbitReadyAtMs = state.timeMs + BOILING_ORBIT_COOLDOWN_MS;
+  if (defender.tile) {
+    pushFx(state, 'boiling_orbit', defender.tile, 340);
+  }
+}
+
+function resolveBoilingOrbits(state: RunState): void {
+  const remaining: ActiveBoilingOrbit[] = [];
+  for (const orbit of state.activeBoilingOrbits) {
+    const owner = getDefender(state, orbit.ownerDefenderId);
+    if (!owner || owner.location !== 'board' || !owner.tile) continue;
+
+    while (state.timeMs >= orbit.nextTickAtMs && orbit.nextTickAtMs < orbit.expiresAtMs) {
+      const target = state.enemies
+        .filter((enemy) => enemy.hp > 0 && hexDistance(enemy.tile, owner.tile as AxialCoord) <= 1)
+        .sort((left, right) =>
+          (left.hp - right.hp) ||
+          (hexDistance(left.tile, owner.tile as AxialCoord) - hexDistance(right.tile, owner.tile as AxialCoord)))[0] ?? null;
+      if (target) {
+        applyDamageToEnemy(state, target, orbit.damageSnapshot, owner.id);
+        pushFx(state, 'boiling_orbit', owner.tile, 220, target.tile);
+        addHitStop(state, 12);
+      }
+      orbit.nextTickAtMs += BOILING_ORBIT_TICK_MS;
+    }
+
+    if (state.timeMs < orbit.expiresAtMs) {
+      remaining.push(orbit);
+    }
+  }
+  state.activeBoilingOrbits = remaining;
+}
+
 function addHitStop(state: RunState, durationMs: number): void {
   state.hitStopMs = Math.max(state.hitStopMs, durationMs);
 }
 
 function nearestEnemy(state: RunState, tile: AxialCoord): EnemyInstance | null {
-  return [...state.enemies].sort((left, right) => (hexDistance(tile, left.tile) - hexDistance(tile, right.tile)) || (left.hp - right.hp))[0] ?? null;
+  return [...state.enemies]
+    .filter((enemy) => enemy.hp > 0)
+    .sort((left, right) => (hexDistance(tile, left.tile) - hexDistance(tile, right.tile)) || (left.hp - right.hp))[0] ?? null;
 }
 
 function saunaThreats(state: RunState, content: GameContent): EnemyInstance[] {
@@ -2772,6 +2954,20 @@ function storeLootDrop(state: RunState, drop: InventoryDrop, content: GameConten
   return 'discarded';
 }
 
+function skillDropChanceForRarity(rarity: Rarity): number {
+  switch (rarity) {
+    case 'legendary':
+      return 0.58;
+    case 'epic':
+      return 0.52;
+    case 'rare':
+      return 0.4;
+    case 'common':
+    default:
+      return 0.32;
+  }
+}
+
 function maybeDrop(state: RunState, enemyId: EnemyUnitId, content: GameContent): void {
   const alcoholBonus = alcoholTotals(state, content);
   const chance =
@@ -2784,7 +2980,7 @@ function maybeDrop(state: RunState, enemyId: EnemyUnitId, content: GameContent):
     RARITY_ORDER,
     (entry) => lootRarityWeights(state.meta.upgrades.loot_rarity)[entry]
   ) ?? 'common';
-  const kind = rng(state) < (rarity === 'epic' ? 0.5 : 0.32) ? 'skill' : 'item';
+  const kind = rng(state) < skillDropChanceForRarity(rarity) ? 'skill' : 'item';
   const chosen =
     kind === 'item'
       ? pick(
@@ -2966,7 +3162,7 @@ function applyEnemyHitWithFx(
   secondaryTile: AxialCoord | null = defender.tile
 ): { damage: number; killed: boolean } {
   const finalDamage = applyDamageToEnemy(state, enemy, Math.max(1, Math.round(baseDamage)), defender.id);
-  pushFx(state, kind, enemy.tile, kind === 'fireball' ? 260 : kind === 'pulse' ? 280 : 220, secondaryTile);
+  pushFx(state, kind, enemy.tile, enemyFxDurationMs(kind), secondaryTile);
   return { damage: finalDamage, killed: enemy.hp <= 0 };
 }
 
@@ -2986,7 +3182,7 @@ function applyHealToDefender(
   if (restored <= 0) return 0;
   target.hp = Math.min(maxHp, target.hp + restored);
   if (target.tile) {
-    pushFx(state, kind, target.tile, kind === 'pulse' ? 280 : 320, secondaryTile);
+    pushFx(state, kind, target.tile, healFxDurationMs(kind), secondaryTile);
   }
   return restored;
 }
@@ -2997,7 +3193,7 @@ function preferredEnemiesInRange(
   tile: AxialCoord,
   range: number
 ): EnemyInstance[] {
-  const enemies = state.enemies.filter((enemy) => hexDistance(tile, enemy.tile) <= range);
+  const enemies = state.enemies.filter((enemy) => enemy.hp > 0 && hexDistance(tile, enemy.tile) <= range);
   if (hasSubclass(defender, 'bucket_sniper')) {
     return enemies.sort((left, right) => {
       const leftDistance = hexDistance(tile, left.tile);
@@ -3030,6 +3226,122 @@ function findChainedTargets(state: RunState, sourceTarget: EnemyInstance, count:
     .filter((enemy) => enemy.instanceId !== sourceTarget.instanceId && hexDistance(enemy.tile, sourceTarget.tile) <= 2)
     .sort((left, right) => (left.hp - right.hp) || (hexDistance(left.tile, sourceTarget.tile) - hexDistance(right.tile, sourceTarget.tile)))
     .slice(0, count);
+}
+
+function findLavaWhipTargets(
+  state: RunState,
+  attackerTile: AxialCoord,
+  primaryTarget: EnemyInstance
+): EnemyInstance[] {
+  const primaryDistance = hexDistance(attackerTile, primaryTarget.tile);
+  return state.enemies
+    .filter((enemy) => enemy.instanceId !== primaryTarget.instanceId)
+    .filter((enemy) => hexDistance(enemy.tile, primaryTarget.tile) <= 1)
+    .filter((enemy) => hexDistance(attackerTile, enemy.tile) >= primaryDistance)
+    .sort((left, right) =>
+      (hexDistance(attackerTile, right.tile) - hexDistance(attackerTile, left.tile)) ||
+      (left.hp - right.hp))
+    .slice(0, 2);
+}
+
+function thunderRunDestination(
+  state: RunState,
+  defender: DefenderInstance,
+  target: EnemyInstance,
+  content: GameContent
+): AxialCoord | null {
+  if (!defender.tile) return null;
+  return DIRS
+    .map((dir) => add(target.tile, dir))
+    .filter((tile) => isBuildableTile(state, tile, content))
+    .filter((tile) => !occupied(state, tile))
+    .filter((tile) => !sameCoord(tile, defender.tile as AxialCoord))
+    .sort((left, right) =>
+      (hexDistance(left, defender.tile as AxialCoord) - hexDistance(right, defender.tile as AxialCoord)) ||
+      (hexDistance(left, CENTER) - hexDistance(right, CENTER)) ||
+      (left.r - right.r) ||
+      (left.q - right.q))[0] ?? null;
+}
+
+function tryThunderRun(
+  state: RunState,
+  defender: DefenderInstance,
+  primaryTarget: EnemyInstance,
+  primaryDamage: number,
+  content: GameContent
+): boolean {
+  if (!defender.tile || !defender.skills.includes('thunder_run') || state.timeMs < defender.thunderRunReadyAtMs) return false;
+  if (hexDistance(defender.tile, primaryTarget.tile) <= 1) return false;
+  const from = cloneCoord(defender.tile);
+  const destination = thunderRunDestination(state, defender, primaryTarget, content);
+  if (!destination) return false;
+
+  moveDefenderToTile(state, defender, destination, 'blink', THUNDER_RUN_MOTION_DURATION_MS, from);
+  defender.thunderRunReadyAtMs = state.timeMs + THUNDER_RUN_COOLDOWN_MS;
+  pushFx(state, 'thunder_run', destination, 380, from);
+  for (const enemy of state.enemies.filter((entry) => hexDistance(entry.tile, destination) <= 1)) {
+    applyEnemyHitWithFx(state, defender, enemy, primaryDamage * 0.55, 'thunder_run', from);
+  }
+  addHitStop(state, 38);
+  return true;
+}
+
+function triggerEquippedAttackSkills(
+  state: RunState,
+  defender: DefenderInstance,
+  primaryTarget: EnemyInstance,
+  primaryDamage: number,
+  stats: UnitStats,
+  content: GameContent
+): void {
+  if (!defender.tile) return;
+
+  if (defender.skills.includes('lava_whip')) {
+    for (const extraTarget of findLavaWhipTargets(state, defender.tile, primaryTarget)) {
+      applyEnemyHitWithFx(state, defender, extraTarget, primaryDamage * 0.6, 'lava_whip', primaryTarget.tile);
+    }
+  }
+
+  if (defender.skills.includes('fireball') && state.timeMs >= defender.fireballReadyAtMs) {
+    scheduleFireball(state, defender, primaryTarget.tile, primaryDamage);
+  }
+
+  if (defender.skills.includes('sauna_quake') && state.timeMs >= defender.saunaQuakeReadyAtMs) {
+    scheduleSaunaQuake(state, defender, primaryTarget.tile, primaryDamage);
+  }
+
+  if (defender.skills.includes('ember_storm') && state.timeMs >= defender.emberStormReadyAtMs) {
+    scheduleEmberStorm(state, defender, primaryTarget.tile, primaryDamage, content);
+  }
+
+  if (defender.skills.includes('chain_spark')) {
+    const chainedTarget = findChainedTargets(state, primaryTarget, 1)[0] ?? null;
+    if (chainedTarget) {
+      applyDamageToEnemy(state, chainedTarget, Math.max(1, Math.round(stats.damage * 0.42)), defender.id);
+      pushFx(state, 'chain', chainedTarget.tile, 220, primaryTarget.tile);
+    }
+  }
+
+  if (defender.skills.includes('steam_shield')) {
+    defender.hp = Math.min(stats.maxHp, defender.hp + 3);
+    pushFx(state, 'steam_shield', defender.tile, 260);
+  }
+
+  if (defender.skills.includes('boiling_orbit') && state.timeMs >= defender.boilingOrbitReadyAtMs) {
+    activateBoilingOrbit(state, defender, primaryDamage);
+  }
+
+  tryThunderRun(state, defender, primaryTarget, primaryDamage, content);
+
+  if (defender.skills.includes('afterburn_hook') && primaryTarget.hp <= 0) {
+    const retarget = preferredEnemiesInRange(state, defender, defender.tile, stats.range + 1)[0] ?? nearestEnemy(state, defender.tile);
+    if (retarget) {
+      applyEnemyHitWithFx(state, defender, retarget, primaryDamage * 0.7, 'afterburn_hook', primaryTarget.tile);
+      addHitStop(state, 26);
+    }
+  }
+
+  triggerBattleHymn(state, defender);
 }
 
 function subclassHealBonusAmount(
@@ -3237,6 +3549,9 @@ function performDefenderBasicAttack(
   if (hasSubclass(defender, 'white_heat_gunner') && target.hp / Math.max(1, enemyMaxHp(state, target, content)) <= 0.4) {
     hitDamage += 4;
   }
+  if (defender.skills.includes('afterburn_hook') && target.hp / Math.max(1, enemyMaxHp(state, target, content)) <= 0.4) {
+    hitDamage += 4;
+  }
   if (hasSubclass(defender, 'spark_juggler')) {
     hitDamage = Math.max(1, Math.round(hitDamage * 0.55));
   }
@@ -3259,25 +3574,7 @@ function performDefenderBasicAttack(
 
   grantCombatXp(state, defender, 1, content);
   applySubclassAttackEffects(state, defender, target, hitDamage, stats, content);
-
-  if (defender.skills.includes('fireball') && state.timeMs >= defender.fireballReadyAtMs) {
-    scheduleFireball(state, defender, target.tile, hitDamage);
-  }
-  if (defender.skills.includes('chain_spark')) {
-    const chainedTarget = state.enemies
-      .filter((enemy) => enemy.instanceId !== target.instanceId)
-      .filter((enemy) => hexDistance(enemy.tile, target.tile) <= 2)
-      .sort((left, right) => (left.hp - right.hp) || (hexDistance(left.tile, target.tile) - hexDistance(right.tile, target.tile)))[0];
-    if (chainedTarget) {
-      applyDamageToEnemy(state, chainedTarget, Math.max(1, Math.round(stats.damage * 0.42)), defender.id);
-      pushFx(state, 'chain', chainedTarget.tile, 220, target.tile);
-    }
-  }
-  if (defender.skills.includes('steam_shield')) {
-    defender.hp = Math.min(stats.maxHp, defender.hp + 3);
-    pushFx(state, 'steam_shield', defender.tile, 260);
-  }
-  triggerBattleHymn(state, defender);
+  triggerEquippedAttackSkills(state, defender, target, hitDamage, stats, content);
   return true;
 }
 
@@ -3905,6 +4202,9 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, content: GameC
   state.hitStopMs = 0;
   state.fxEvents = [];
   state.pendingFireballs = [];
+  state.pendingSaunaQuakes = [];
+  state.pendingEmberStormStrikes = [];
+  state.activeBoilingOrbits = [];
   state.speechBubbles = [];
   state.waveSwapUsed = false;
   state.nextRegenTickAtMs = state.timeMs + 1000;
@@ -3930,6 +4230,9 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, content: GameC
 function awardWave(state: RunState, content: GameContent): void {
   const clearedWave = state.currentWave;
   state.pendingFireballs = [];
+  state.pendingSaunaQuakes = [];
+  state.pendingEmberStormStrikes = [];
+  state.activeBoilingOrbits = [];
   clearPebbleEncounterTargets(state);
   resetEndUserHordeState(state);
   state.waveIndex += 1;
@@ -4176,12 +4479,24 @@ function itemAutoScore(itemId: ItemId, content: GameContent): number {
 
 function skillAutoScore(skillId: SkillId): number {
   switch (skillId) {
+    case 'ember_storm':
+      return 7.4;
+    case 'sauna_quake':
+      return 6.8;
+    case 'thunder_run':
+      return 6.5;
     case 'fireball':
       return 6.2;
     case 'spin2win':
       return 6.0;
+    case 'boiling_orbit':
+      return 5.9;
+    case 'lava_whip':
+      return 5.8;
     case 'blink_step':
       return 5.6;
+    case 'afterburn_hook':
+      return 5.5;
     case 'chain_spark':
       return 5.4;
     case 'battle_hymn':
@@ -4191,6 +4506,12 @@ function skillAutoScore(skillId: SkillId): number {
     default:
       return 0;
   }
+}
+
+function cooldownLabel(name: string, readyAtMs: number, timeMs: number): string {
+  return timeMs >= readyAtMs
+    ? `${name} ready`
+    : `${name} ${Math.ceil((readyAtMs - timeMs) / 1000)}s`;
 }
 
 function dropAutoScore(drop: InventoryDrop, content: GameContent): number {
@@ -4899,6 +5220,9 @@ export function createInitialState(
     enemies: [],
     fxEvents: [],
     pendingFireballs: [],
+    pendingSaunaQuakes: [],
+    pendingEmberStormStrikes: [],
+    activeBoilingOrbits: [],
     hitStopMs: 0,
     saunaDefenderId: null,
     pendingSpawns: [],
@@ -5639,6 +5963,9 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
   triggerBossIntroSpeech(next, content);
   maybeTriggerEndUserHordeSurge(next, content);
   resolvePendingFireballs(next);
+  resolvePendingSaunaQuakes(next);
+  resolvePendingEmberStormStrikes(next);
+  resolveBoilingOrbits(next);
   for (const defender of boardDefenders(next)) defenderAttack(next, defender, content);
   for (const enemy of next.enemies) enemyStep(next, enemy, content);
   resolveEnemyDeaths(next, content);
@@ -5651,6 +5978,9 @@ export function stepState(state: RunState, deltaMs: number, content: GameContent
     setActiveHudPanel(next, 'metashop', 'metashop');
     next.activeAlcohols = [];
     next.pendingFireballs = [];
+    next.pendingSaunaQuakes = [];
+    next.pendingEmberStormStrikes = [];
+    next.activeBoilingOrbits = [];
     clearPebbleEncounterTargets(next);
     awardMeta(next);
     rollBeerShopOffersIntoState(next, content);
@@ -5928,6 +6258,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
     canAutoAssignSelectedLoot: selectedLoot ? findAutoAssignTarget(state, selectedLoot, content) !== null : false,
     selectedDefender: selected ? (() => {
       const stats = derivedStats(state, selected, content);
+      const activeOrbit = state.activeBoilingOrbits.find((orbit) => orbit.ownerDefenderId === selected.id) ?? null;
       return {
         id: selected.id,
         name: selected.name,
@@ -5949,15 +6280,21 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
         range: stats.range,
         attackCooldownMs: stats.attackCooldownMs,
         blinkLabel: selected.skills.includes('blink_step')
-          ? state.timeMs >= selected.blinkReadyAtMs
-            ? 'Blink ready'
-            : `Blink ${Math.ceil((selected.blinkReadyAtMs - state.timeMs) / 1000)}s`
+          ? cooldownLabel('Blink', selected.blinkReadyAtMs, state.timeMs)
           : null,
         fireballLabel: selected.skills.includes('fireball')
-          ? state.timeMs >= selected.fireballReadyAtMs
-            ? 'Fireball ready'
-            : `Fireball ${Math.ceil((selected.fireballReadyAtMs - state.timeMs) / 1000)}s`
+          ? cooldownLabel('Fireball', selected.fireballReadyAtMs, state.timeMs)
           : null,
+        skillStatusLabels: [
+          selected.skills.includes('thunder_run') ? cooldownLabel('Thunder Run', selected.thunderRunReadyAtMs, state.timeMs) : null,
+          selected.skills.includes('boiling_orbit')
+            ? activeOrbit
+              ? `Boiling Orbit ${Math.max(1, Math.ceil((activeOrbit.expiresAtMs - state.timeMs) / 1000))}s`
+              : cooldownLabel('Boiling Orbit', selected.boilingOrbitReadyAtMs, state.timeMs)
+            : null,
+          selected.skills.includes('sauna_quake') ? cooldownLabel('Sauna Quake', selected.saunaQuakeReadyAtMs, state.timeMs) : null,
+          selected.skills.includes('ember_storm') ? cooldownLabel('Ember Storm', selected.emberStormReadyAtMs, state.timeMs) : null
+        ].filter((label): label is string => label !== null),
         defense: stats.defense,
         regenHpPerSecond: stats.regenHpPerSecond,
         itemSlotCount: itemSlotCap(state, content),

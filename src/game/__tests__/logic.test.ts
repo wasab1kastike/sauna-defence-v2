@@ -3266,6 +3266,253 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.selectedDefender?.fireballLabel).toBe('Fireball ready');
   });
 
+  it('lets Lava Whip crack through the target into enemies behind it', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.templateId === 'hurler')!;
+    attacker.location = 'board';
+    attacker.tile = { q: 0, r: -1 };
+    attacker.homeTile = { q: 0, r: -1 };
+    attacker.skills = ['lava_whip'];
+    attacker.stats.damage = 10;
+    attacker.stats.attackCooldownMs = 999999;
+    attacker.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 0, r: -2 },
+        hp: 20,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      },
+      {
+        instanceId: 2,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 0, r: -3 },
+        hp: 20,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      }
+    ];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies.find((enemy) => enemy.instanceId === 1)?.hp).toBe(10);
+    expect(state.enemies.find((enemy) => enemy.instanceId === 2)?.hp).toBe(14);
+    expect(state.fxEvents.some((event) => event.kind === 'lava_whip')).toBe(true);
+  });
+
+  it('uses Thunder Run to blink into range and discharge on landing', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.templateId === 'hurler')!;
+    attacker.location = 'board';
+    attacker.tile = { q: 0, r: -1 };
+    attacker.homeTile = { q: 0, r: -1 };
+    attacker.skills = ['thunder_run'];
+    attacker.stats.damage = 8;
+    attacker.stats.attackCooldownMs = 999999;
+    attacker.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 0, r: -3 },
+        hp: 20,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      }
+    ];
+
+    state = stepState(state, 16, gameContent);
+
+    const updated = state.defenders.find((defender) => defender.id === attacker.id)!;
+    expect(updated.tile).not.toEqual({ q: 0, r: -1 });
+    expect(updated.motion?.style).toBe('blink');
+    expect(updated.thunderRunReadyAtMs).toBeGreaterThan(0);
+    expect(state.enemies.find((enemy) => enemy.instanceId === 1)?.hp).toBe(8);
+    expect(state.fxEvents.some((event) => event.kind === 'thunder_run')).toBe(true);
+  });
+
+  it('activates Boiling Orbit and ticks nearby enemies over time', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.templateId === 'hurler')!;
+    attacker.location = 'board';
+    attacker.tile = { q: 0, r: -1 };
+    attacker.homeTile = { q: 0, r: -1 };
+    attacker.skills = ['boiling_orbit'];
+    attacker.stats.damage = 10;
+    attacker.stats.attackCooldownMs = 999999;
+    attacker.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 0, r: -2 },
+        hp: 30,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      },
+      {
+        instanceId: 2,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 1, r: -1 },
+        hp: 30,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      }
+    ];
+
+    state = stepState(state, 16, gameContent);
+    expect(state.activeBoilingOrbits).toHaveLength(1);
+
+    state = stepState(state, 600, gameContent);
+
+    expect(state.enemies.find((enemy) => enemy.instanceId === 2)?.hp).toBeLessThan(30);
+    expect(state.fxEvents.some((event) => event.kind === 'boiling_orbit')).toBe(true);
+  });
+
+  it('queues Sauna Quake before the delayed blast lands', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.templateId === 'hurler')!;
+    attacker.location = 'board';
+    attacker.tile = { q: 0, r: -1 };
+    attacker.homeTile = { q: 0, r: -1 };
+    attacker.skills = ['sauna_quake'];
+    attacker.stats.damage = 12;
+    attacker.stats.attackCooldownMs = 999999;
+    attacker.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 0, r: -2 },
+        hp: 30,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      },
+      {
+        instanceId: 2,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 1, r: -2 },
+        hp: 30,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      }
+    ];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.pendingSaunaQuakes).toHaveLength(1);
+    expect(state.fxEvents.some((event) => event.kind === 'sauna_quake')).toBe(false);
+
+    state = stepState(state, 700, gameContent);
+
+    expect(state.pendingSaunaQuakes).toHaveLength(0);
+    expect(state.fxEvents.some((event) => event.kind === 'sauna_quake')).toBe(true);
+    expect(state.enemies.find((enemy) => enemy.instanceId === 2)?.hp).toBeLessThan(30);
+  });
+
+  it('uses Afterburn Hook to execute weak targets and retarget the burn', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.templateId === 'hurler')!;
+    attacker.location = 'board';
+    attacker.tile = { q: 0, r: -1 };
+    attacker.homeTile = { q: 0, r: -1 };
+    attacker.skills = ['afterburn_hook'];
+    attacker.stats.damage = 5;
+    attacker.stats.attackCooldownMs = 999999;
+    attacker.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 0, r: -2 },
+        hp: 8,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      },
+      {
+        instanceId: 2,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 1, r: -2 },
+        hp: 20,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      }
+    ];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.enemies.some((enemy) => enemy.instanceId === 1)).toBe(false);
+    expect(state.enemies.find((enemy) => enemy.instanceId === 2)?.hp).toBe(14);
+    expect(state.fxEvents.some((event) => event.kind === 'afterburn_hook')).toBe(true);
+  });
+
+  it('queues Ember Storm strikes and resolves the whole volley over time', () => {
+    let state = prepState();
+    const attacker = state.defenders.find((defender) => defender.templateId === 'hurler')!;
+    attacker.location = 'board';
+    attacker.tile = { q: 0, r: -1 };
+    attacker.homeTile = { q: 0, r: -1 };
+    attacker.skills = ['ember_storm'];
+    attacker.stats.damage = 10;
+    attacker.stats.attackCooldownMs = 999999;
+    attacker.attackReadyAtMs = 0;
+    state.phase = 'wave';
+    state.pendingSpawns = [];
+    state.enemies = [
+      {
+        instanceId: 1,
+        archetypeId: 'raider',
+        tokenStyleId: 0,
+        tile: { q: 0, r: -2 },
+        hp: 30,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999
+      }
+    ];
+
+    state = stepState(state, 16, gameContent);
+
+    expect(state.pendingEmberStormStrikes).toHaveLength(3);
+    expect(state.pendingEmberStormStrikes.some((pending) => pending.volleyIndex === 0)).toBe(true);
+
+    state = stepState(state, 900, gameContent);
+
+    expect(state.pendingEmberStormStrikes).toHaveLength(0);
+    expect(state.fxEvents.some((event) => event.kind === 'ember_storm')).toBe(true);
+    expect(state.enemies.find((enemy) => enemy.instanceId === 1)?.hp).toBeLessThan(20);
+  });
+
   it('grants xp and levels up a hero from combat kills', () => {
     let state = prepState();
     const attacker = state.defenders.find((defender) => defender.location === 'ready');

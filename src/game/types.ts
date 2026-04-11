@@ -82,7 +82,13 @@ export type SkillId =
   | 'blink_step'
   | 'chain_spark'
   | 'steam_shield'
-  | 'battle_hymn';
+  | 'battle_hymn'
+  | 'lava_whip'
+  | 'thunder_run'
+  | 'boiling_orbit'
+  | 'sauna_quake'
+  | 'afterburn_hook'
+  | 'ember_storm';
 export type LootKind = 'item' | 'skill';
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
 export type RecruitDestination = 'reserve' | 'sauna';
@@ -112,7 +118,13 @@ export type CombatFxKind =
   | 'chain'
   | 'volley'
   | 'battle_hymn'
-  | 'pulse';
+  | 'pulse'
+  | 'lava_whip'
+  | 'thunder_run'
+  | 'boiling_orbit'
+  | 'sauna_quake'
+  | 'afterburn_hook'
+  | 'ember_storm';
 export type MapTarget = 'defender' | 'sauna' | 'enemy';
 export type HudPanelId = 'modifiers' | 'loot' | 'recruit' | 'beer_shop' | 'metashop' | 'hall_of_fame';
 export type WorldLandmarkId = 'metashop' | 'beer_shop' | 'hall_of_fame';
@@ -132,6 +144,10 @@ export type GlobalModifierId =
   | 'cinder_cadence'
   | 'battle_psalm'
   | 'shield_mist'
+  | 'scalding_lineage'
+  | 'storm_surge'
+  | 'orbiting_embers'
+  | 'hook_and_chain'
   | 'cedar_swear'
   | 'whisk_discipline'
   | 'salt_sight'
@@ -372,6 +388,28 @@ export interface PendingFireball {
   damageSnapshot: number;
 }
 
+export interface PendingSaunaQuake {
+  ownerDefenderId: string;
+  targetTile: AxialCoord;
+  explodeAtMs: number;
+  damageSnapshot: number;
+}
+
+export interface PendingEmberStormStrike {
+  ownerDefenderId: string;
+  targetTile: AxialCoord;
+  strikeAtMs: number;
+  damageSnapshot: number;
+  volleyIndex: number;
+}
+
+export interface ActiveBoilingOrbit {
+  ownerDefenderId: string;
+  expiresAtMs: number;
+  nextTickAtMs: number;
+  damageSnapshot: number;
+}
+
 export type UnitMotionStyle = 'step' | 'slither' | 'blink';
 
 export interface UnitMotionState {
@@ -400,9 +438,13 @@ export interface DefenderInstance {
   motion?: UnitMotionState | null;
   attackReadyAtMs: number;
   blinkReadyAtMs: number;
+  thunderRunReadyAtMs: number;
   battleHymnReadyAtMs: number;
   battleHymnBuffExpiresAtMs: number;
   fireballReadyAtMs: number;
+  boilingOrbitReadyAtMs: number;
+  saunaQuakeReadyAtMs: number;
+  emberStormReadyAtMs: number;
   items: ItemId[];
   skills: SkillId[];
   kills: number;
@@ -591,6 +633,9 @@ export interface RunState {
   enemies: EnemyInstance[];
   fxEvents: CombatFxEvent[];
   pendingFireballs: PendingFireball[];
+  pendingSaunaQuakes: PendingSaunaQuake[];
+  pendingEmberStormStrikes: PendingEmberStormStrike[];
+  activeBoilingOrbits: ActiveBoilingOrbit[];
   hitStopMs: number;
   saunaDefenderId: string | null;
   pendingSpawns: WaveSpawn[];
@@ -736,6 +781,7 @@ export interface HudSelectedDefender {
   attackCooldownMs: number;
   blinkLabel: string | null;
   fireballLabel: string | null;
+  skillStatusLabels: string[];
   defense: number;
   regenHpPerSecond: number;
   itemSlotCount: number;
