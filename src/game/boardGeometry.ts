@@ -8,7 +8,7 @@ import type {
 import { coordKey, hexDistance } from './geometry';
 
 const EXPANSION_STEP_LENGTH = 3;
-const LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'beer_shop'];
+const LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'hall_of_fame', 'beer_shop'];
 
 const BOARD_DIRECTIONS: Array<{
   id: BoardExpansionDirection;
@@ -25,6 +25,7 @@ const BOARD_DIRECTIONS: Array<{
 
 const LANDMARK_SELECTION_SALTS: Record<WorldLandmarkId, number> = {
   metashop: 0x6d657461,
+  hall_of_fame: 0x686f6631,
   beer_shop: 0x62656572
 };
 

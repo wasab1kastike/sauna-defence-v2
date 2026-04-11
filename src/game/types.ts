@@ -114,8 +114,8 @@ export type CombatFxKind =
   | 'battle_hymn'
   | 'pulse';
 export type MapTarget = 'defender' | 'sauna' | 'enemy';
-export type HudPanelId = 'modifiers' | 'loot' | 'recruit' | 'beer_shop' | 'metashop';
-export type WorldLandmarkId = 'metashop' | 'beer_shop';
+export type HudPanelId = 'modifiers' | 'loot' | 'recruit' | 'beer_shop' | 'metashop' | 'hall_of_fame';
+export type WorldLandmarkId = 'metashop' | 'beer_shop' | 'hall_of_fame';
 export type BoardExpansionDirection = 'north' | 'northeast' | 'southeast' | 'south' | 'southwest' | 'northwest';
 export type GlobalModifierCountScope = 'board' | 'living' | 'dead';
 export type GlobalModifierEffectStat = 'maxHp' | 'damage' | 'heal' | 'range' | 'attackCooldownMs' | 'defense' | 'regenHpPerSecond';
@@ -149,11 +149,12 @@ export type MetaUpgradeId =
   | 'loot_auto_assign'
   | 'loot_auto_upgrade'
   | 'item_slots'
+  | 'hall_of_fame_unlock'
   | 'beer_shop_unlock'
   | 'beer_shop_level'
   | 'sauna_auto_deploy'
   | 'sauna_slap_swap';
-export type MetaUpgradeSectionId = 'core' | 'loot' | 'sauna' | 'beer_shop';
+export type MetaUpgradeSectionId = 'core' | 'loot' | 'sauna' | 'hall_of_fame' | 'beer_shop';
 export type NameMasteryCategory = 'title' | 'surname';
 export type TitleMasteryId =
   | 'laudekuningas'
@@ -491,10 +492,10 @@ export interface MetaProgress {
   completedRuns: number;
   shopUnlocked: boolean;
   upgrades: Record<MetaUpgradeId, number>;
-  activeTitleMasteryId: TitleMasteryId | null;
-  activeSurnameMasteryId: SurnameMasteryId | null;
-  titleMasteryLevels: Record<TitleMasteryId, number>;
-  surnameMasteryLevels: Record<SurnameMasteryId, number>;
+  activeHallOfFameTitleId: TitleMasteryId | null;
+  activeHallOfFameNameId: SurnameMasteryId | null;
+  hallOfFameTitleLevels: Record<TitleMasteryId, number>;
+  hallOfFameNameLevels: Record<SurnameMasteryId, number>;
 }
 
 export interface RunPreferences {
@@ -1022,7 +1023,7 @@ export interface HudViewModel {
   wavePreview: WavePreviewEntry[];
   metaUpgrades: HudMetaUpgradeEntry[];
   titleMasteries: HudNameMasteryEntry[];
-  surnameMasteries: HudNameMasteryEntry[];
+  nameMasteries: HudNameMasteryEntry[];
   worldLandmarks: HudWorldLandmarkEntry[];
 }
 

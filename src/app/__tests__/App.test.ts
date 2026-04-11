@@ -108,8 +108,9 @@ describe('App popup helpers', () => {
     expect(formatPatchNotesDate('not-a-date')).toBe('not-a-date');
   });
 
-  it('uses Sauna Kiosk in guide copy for board landmarks', () => {
+  it('uses Sauna Kiosk and Sauna Hall of Fame in guide copy for board landmarks', () => {
     expect(GUIDE_STEPS.some((step) => step.body.includes('Sauna Kiosk'))).toBe(true);
+    expect(GUIDE_STEPS.some((step) => step.body.includes('Sauna Hall of Fame'))).toBe(true);
   });
 
   it('lets players browse older patch notes inside the modal', async () => {

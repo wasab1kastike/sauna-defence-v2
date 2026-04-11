@@ -118,6 +118,7 @@ const META_IDS: MetaUpgradeId[] = [
   'loot_auto_assign',
   'loot_auto_upgrade',
   'item_slots',
+  'hall_of_fame_unlock',
   'beer_shop_unlock',
   'beer_shop_level',
   'sauna_auto_deploy',
@@ -146,8 +147,9 @@ const SURNAME_MASTERY_IDS: SurnameMasteryId[] = [
   'ekberg'
 ];
 const META_SHOP_LABEL = 'Sauna Kiosk';
+const HALL_OF_FAME_LABEL = 'Sauna Hall of Fame';
 const CENTER: AxialCoord = { q: 0, r: 0 };
-const WORLD_LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'beer_shop'];
+const WORLD_LANDMARK_IDS: WorldLandmarkId[] = ['metashop', 'hall_of_fame', 'beer_shop'];
 const RECRUIT_MARKET_SLOT_COUNT = 4;
 const RECRUIT_SLOT_HOTKEYS = ['A', 'S', 'D', 'F'] as const;
 const BLINK_STEP_COOLDOWN_MS = 12000;
@@ -569,15 +571,16 @@ export function createDefaultMetaProgress(): MetaProgress {
       loot_auto_assign: 0,
       loot_auto_upgrade: 0,
       item_slots: 0,
+      hall_of_fame_unlock: 0,
       beer_shop_unlock: 0,
       beer_shop_level: 0,
       sauna_auto_deploy: 0,
       sauna_slap_swap: 0
     },
-    activeTitleMasteryId: null,
-    activeSurnameMasteryId: null,
-    titleMasteryLevels: createDefaultTitleMasteryLevels(),
-    surnameMasteryLevels: createDefaultSurnameMasteryLevels()
+    activeHallOfFameTitleId: null,
+    activeHallOfFameNameId: null,
+    hallOfFameTitleLevels: createDefaultTitleMasteryLevels(),
+    hallOfFameNameLevels: createDefaultSurnameMasteryLevels()
   };
 }
 
@@ -819,6 +822,10 @@ function beerShopUnlocked(state: RunState): boolean {
   return state.meta.upgrades.beer_shop_unlock > 0;
 }
 
+function hallOfFameUnlocked(state: RunState): boolean {
+  return state.meta.upgrades.hall_of_fame_unlock > 0;
+}
+
 function beerShopTier(state: RunState): number {
   return beerShopUnlocked(state) ? 1 + state.meta.upgrades.beer_shop_level : 0;
 }
@@ -915,12 +922,12 @@ function isTitleMasteryId(masteryId: NameMasteryId): masteryId is TitleMasteryId
 
 function nameMasteryLevel(state: RunState, masteryId: NameMasteryId): number {
   return isTitleMasteryId(masteryId)
-    ? state.meta.titleMasteryLevels[masteryId]
-    : state.meta.surnameMasteryLevels[masteryId];
+    ? state.meta.hallOfFameTitleLevels[masteryId]
+    : state.meta.hallOfFameNameLevels[masteryId];
 }
 
 function activeNameMasteryId(state: RunState, masteryId: NameMasteryId): NameMasteryId | null {
-  return isTitleMasteryId(masteryId) ? state.meta.activeTitleMasteryId : state.meta.activeSurnameMasteryId;
+  return isTitleMasteryId(masteryId) ? state.meta.activeHallOfFameTitleId : state.meta.activeHallOfFameNameId;
 }
 
 function defenderTitlePrefix(defender: DefenderInstance): string {
@@ -938,18 +945,18 @@ function addNamedStatBonus(target: Partial<UnitStats>, stat: GlobalModifierEffec
 
 function nameMasteryTotals(state: RunState, defender: DefenderInstance, content: GameContent): Partial<UnitStats> {
   const bonus: Partial<UnitStats> = {};
-  const titleMasteryId = state.meta.activeTitleMasteryId;
+  const titleMasteryId = state.meta.activeHallOfFameTitleId;
   if (titleMasteryId) {
     const titleDef = content.nameMasteries[titleMasteryId];
-    const titleLevel = state.meta.titleMasteryLevels[titleMasteryId];
+    const titleLevel = state.meta.hallOfFameTitleLevels[titleMasteryId];
     if (titleLevel > 0 && defenderTitlePrefix(defender) === titleDef.matchValue) {
       addNamedStatBonus(bonus, titleDef.effectStat, titleDef.amountPerRank * titleLevel);
     }
   }
-  const surnameMasteryId = state.meta.activeSurnameMasteryId;
-  if (surnameMasteryId) {
-    const surnameDef = content.nameMasteries[surnameMasteryId];
-    const surnameLevel = state.meta.surnameMasteryLevels[surnameMasteryId];
+  const nameMasteryId = state.meta.activeHallOfFameNameId;
+  if (nameMasteryId) {
+    const surnameDef = content.nameMasteries[nameMasteryId];
+    const surnameLevel = state.meta.hallOfFameNameLevels[nameMasteryId];
     if (surnameLevel > 0 && defenderSurname(defender) === surnameDef.matchValue) {
       addNamedStatBonus(bonus, surnameDef.effectStat, surnameDef.amountPerRank * surnameLevel);
     }
@@ -2097,10 +2104,16 @@ function metashopEnabled(state: RunState): boolean {
   return state.overlayMode === 'intermission';
 }
 
+function hallOfFameEnabled(state: RunState): boolean {
+  return state.overlayMode === 'intermission' && hallOfFameUnlocked(state);
+}
+
 function landmarkEnabled(state: RunState, landmarkId: WorldLandmarkId): boolean {
   switch (landmarkId) {
     case 'metashop':
       return metashopEnabled(state);
+    case 'hall_of_fame':
+      return hallOfFameEnabled(state);
     case 'beer_shop':
       return beerShopUnlocked(state);
     default:
@@ -2112,6 +2125,8 @@ function landmarkLocked(state: RunState, landmarkId: WorldLandmarkId): boolean {
   switch (landmarkId) {
     case 'metashop':
       return !state.meta.shopUnlocked;
+    case 'hall_of_fame':
+      return !hallOfFameUnlocked(state);
     case 'beer_shop':
       return !beerShopUnlocked(state);
     default:
@@ -2123,6 +2138,8 @@ function landmarkVisible(state: RunState, landmarkId: WorldLandmarkId): boolean 
   switch (landmarkId) {
     case 'metashop':
       return metashopVisible(state);
+    case 'hall_of_fame':
+      return hallOfFameUnlocked(state);
     case 'beer_shop':
       return beerShopUnlocked(state);
     default:
@@ -2136,6 +2153,8 @@ function landmarkBadgeText(state: RunState, landmarkId: WorldLandmarkId, content
       return state.meta.shopUnlocked
         ? metashopEnabled(state) ? 'Open Now' : 'Between Runs'
         : `${content.config.metaShopUnlockCost} Steam`;
+    case 'hall_of_fame':
+      return hallOfFameEnabled(state) ? 'Open Now' : 'Between Runs';
     case 'beer_shop':
       return `Level ${beerShopTier(state)}`;
     default:
@@ -2152,6 +2171,10 @@ function landmarkStatusText(state: RunState, landmarkId: WorldLandmarkId, conten
       return metashopEnabled(state)
         ? 'Browse permanent upgrades between runs.'
         : `${META_SHOP_LABEL} opens between runs only.`;
+    case 'hall_of_fame':
+      return hallOfFameEnabled(state)
+        ? 'Browse title and name buffs between runs.'
+        : `${HALL_OF_FAME_LABEL} opens between runs only.`;
     case 'beer_shop':
       return `Bartender live with ${state.activeAlcohols.length}/${beerActiveSlotCapForTier(beerShopTier(state))} active drink slots filled.`;
     default:
@@ -2162,7 +2185,11 @@ function landmarkStatusText(state: RunState, landmarkId: WorldLandmarkId, conten
 function hudWorldLandmarkEntry(state: RunState, landmarkId: WorldLandmarkId, content: GameContent): HudWorldLandmarkEntry {
   return {
     id: landmarkId,
-    label: landmarkId === 'metashop' ? META_SHOP_LABEL : 'Beer Shop',
+    label: landmarkId === 'metashop'
+      ? META_SHOP_LABEL
+      : landmarkId === 'hall_of_fame'
+        ? HALL_OF_FAME_LABEL
+        : 'Beer Shop',
     tile: landmarkTileForState(state, landmarkId, content),
     visible: landmarkVisible(state, landmarkId),
     enabled: landmarkEnabled(state, landmarkId),
@@ -4732,11 +4759,19 @@ function actionCopy(state: RunState, content: GameContent): { title: string; bod
       title: state.phase === 'lost' ? 'Run Over' : 'Before The Run',
       body: state.phase === 'lost'
         ? beerShopUnlocked(state)
-          ? 'Cash out Steam, tune the meta shop, grab something reckless from the bartender, then launch the next batch of sauna weirdos.'
-          : 'Cash out Steam, tweak the meta shop, then launch the next batch of sauna weirdos.'
+          ? hallOfFameUnlocked(state)
+            ? 'Cash out Steam, tune the kiosk, visit the Hall of Fame, grab something reckless from the bartender, then launch the next batch of sauna weirdos.'
+            : 'Cash out Steam, tune the kiosk, grab something reckless from the bartender, then launch the next batch of sauna weirdos.'
+          : hallOfFameUnlocked(state)
+            ? 'Cash out Steam, tweak the kiosk, visit the Hall of Fame, then launch the next batch of sauna weirdos.'
+            : 'Cash out Steam, tweak the kiosk, then launch the next batch of sauna weirdos.'
         : beerShopUnlocked(state)
-          ? 'Use the shop and bartender before the first wave if you want a stronger long-term run.'
-          : 'Use the shop before the first wave if you want a stronger long-term run.'
+          ? hallOfFameUnlocked(state)
+            ? 'Use the kiosk, Hall of Fame, and bartender before the first wave if you want a stronger long-term run.'
+            : 'Use the kiosk and bartender before the first wave if you want a stronger long-term run.'
+          : hallOfFameUnlocked(state)
+            ? 'Use the kiosk and Hall of Fame before the first wave if you want a stronger long-term run.'
+            : 'Use the kiosk before the first wave if you want a stronger long-term run.'
     };
   }
   if (state.overlayMode === 'paused') {
@@ -5048,6 +5083,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
         return next;
       }
       if (action.panel === 'metashop' && !metashopVisible(next)) return next;
+      if (action.panel === 'hall_of_fame' && !hallOfFameUnlocked(next)) return next;
       if (action.panel === 'beer_shop' && !beerShopUnlocked(next)) return next;
       if (next.activePanel === action.panel) {
         clearActiveHudPanel(next);
@@ -5070,7 +5106,11 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     case 'selectWorldLandmark': {
       if (!landmarkVisible(next, action.landmarkId)) return next;
-      const panel = action.landmarkId === 'metashop' ? 'metashop' : 'beer_shop';
+      const panel = action.landmarkId === 'metashop'
+        ? 'metashop'
+        : action.landmarkId === 'hall_of_fame'
+          ? 'hall_of_fame'
+          : 'beer_shop';
       if (next.activePanel === panel && next.selectedWorldLandmarkId === action.landmarkId) {
         clearActiveHudPanel(next);
         return next;
@@ -5470,19 +5510,19 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       return next;
     }
     case 'setActiveNameMastery': {
-      if (next.overlayMode !== 'intermission' || !next.meta.shopUnlocked) return next;
+      if (next.overlayMode !== 'intermission' || !hallOfFameUnlocked(next)) return next;
       const definition = content.nameMasteries[action.masteryId];
       if (!definition || nameMasteryLevel(next, action.masteryId) <= 0) return next;
       if (definition.category === 'title') {
-        next.meta.activeTitleMasteryId = action.masteryId as TitleMasteryId;
+        next.meta.activeHallOfFameTitleId = action.masteryId as TitleMasteryId;
       } else {
-        next.meta.activeSurnameMasteryId = action.masteryId as SurnameMasteryId;
+        next.meta.activeHallOfFameNameId = action.masteryId as SurnameMasteryId;
       }
       next.message = `${definition.name} mastery is now active.`;
       return next;
     }
     case 'buyNameMasteryRank': {
-      if (next.overlayMode !== 'intermission' || !next.meta.shopUnlocked) return next;
+      if (next.overlayMode !== 'intermission' || !hallOfFameUnlocked(next)) return next;
       if (next.phase === 'lost') {
         awardMeta(next);
       }
@@ -5496,12 +5536,12 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
       next.meta.steam -= cost;
       if (definition.category === 'title') {
         const masteryId = action.masteryId as TitleMasteryId;
-        next.meta.titleMasteryLevels[masteryId] += 1;
-        next.meta.activeTitleMasteryId ??= masteryId;
+        next.meta.hallOfFameTitleLevels[masteryId] += 1;
+        next.meta.activeHallOfFameTitleId ??= masteryId;
       } else {
         const masteryId = action.masteryId as SurnameMasteryId;
-        next.meta.surnameMasteryLevels[masteryId] += 1;
-        next.meta.activeSurnameMasteryId ??= masteryId;
+        next.meta.hallOfFameNameLevels[masteryId] += 1;
+        next.meta.activeHallOfFameNameId ??= masteryId;
       }
       next.message = `${definition.name} mastery advanced to rank ${nameMasteryLevel(next, action.masteryId)}.`;
       return next;
@@ -6012,7 +6052,7 @@ export function createSnapshot(state: RunState, content: GameContent): GameSnaps
       };
     }),
     titleMasteries: TITLE_MASTERY_IDS.map((masteryId) => hudNameMasteryEntry(state, masteryId, content)),
-    surnameMasteries: SURNAME_MASTERY_IDS.map((masteryId) => hudNameMasteryEntry(state, masteryId, content)),
+    nameMasteries: SURNAME_MASTERY_IDS.map((masteryId) => hudNameMasteryEntry(state, masteryId, content)),
     worldLandmarks
   };
   return {

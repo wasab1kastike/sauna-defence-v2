@@ -1,4 +1,4 @@
-import { STORAGE_KEY_PREFIX, migrateLegacyStorageKeys } from '../runtime';
+import { STORAGE_KEY_PREFIX, loadMeta, migrateLegacyStorageKeys } from '../runtime';
 
 function createStorageMock(initial: Record<string, string>): Storage {
   const values = new Map(Object.entries(initial));
@@ -56,5 +56,37 @@ describe('storage migration', () => {
 
     expect(storage.getItem(META_KEY)).toBe('{"steam":999}');
     expect(storage.getItem('sauna-defense-v2-meta')).toBeNull();
+  });
+
+  it('resets legacy mastery progress while preserving other stored meta values', () => {
+    const storage = createStorageMock({
+      [META_KEY]: JSON.stringify({
+        steam: 77,
+        completedRuns: 4,
+        shopUnlocked: true,
+        upgrades: {
+          roster_capacity: 2,
+          hall_of_fame_unlock: 1,
+          beer_shop_unlock: 1
+        },
+        activeTitleMasteryId: 'laudekuningas',
+        activeSurnameMasteryId: 'askala',
+        titleMasteryLevels: { laudekuningas: 5 },
+        surnameMasteryLevels: { askala: 4 }
+      })
+    });
+
+    const meta = loadMeta(storage);
+
+    expect(meta.steam).toBe(77);
+    expect(meta.completedRuns).toBe(4);
+    expect(meta.shopUnlocked).toBe(true);
+    expect(meta.upgrades.roster_capacity).toBe(2);
+    expect(meta.upgrades.hall_of_fame_unlock).toBe(1);
+    expect(meta.upgrades.beer_shop_unlock).toBe(1);
+    expect(meta.activeHallOfFameTitleId).toBeNull();
+    expect(meta.activeHallOfFameNameId).toBeNull();
+    expect(meta.hallOfFameTitleLevels.laudekuningas).toBe(0);
+    expect(meta.hallOfFameNameLevels.askala).toBe(0);
   });
 });

@@ -44,7 +44,7 @@ export function migrateLegacyStorageKeys(storage?: Storage | null) {
   }
 }
 
-function loadMeta(storage?: Storage | null): MetaProgress {
+export function loadMeta(storage?: Storage | null): MetaProgress {
   if (!storage) {
     return createDefaultMetaProgress();
   }
@@ -54,15 +54,15 @@ function loadMeta(storage?: Storage | null): MetaProgress {
     if (!raw) {
       return createDefaultMetaProgress();
     }
-    const parsed = JSON.parse(raw) as MetaProgress;
+    const parsed = JSON.parse(raw) as Partial<MetaProgress>;
     const defaults = createDefaultMetaProgress();
-    const activeTitleMasteryId =
-      typeof parsed.activeTitleMasteryId === 'string' && parsed.activeTitleMasteryId in defaults.titleMasteryLevels
-        ? parsed.activeTitleMasteryId
+    const activeHallOfFameTitleId =
+      typeof parsed.activeHallOfFameTitleId === 'string' && parsed.activeHallOfFameTitleId in defaults.hallOfFameTitleLevels
+        ? parsed.activeHallOfFameTitleId
         : null;
-    const activeSurnameMasteryId =
-      typeof parsed.activeSurnameMasteryId === 'string' && parsed.activeSurnameMasteryId in defaults.surnameMasteryLevels
-        ? parsed.activeSurnameMasteryId
+    const activeHallOfFameNameId =
+      typeof parsed.activeHallOfFameNameId === 'string' && parsed.activeHallOfFameNameId in defaults.hallOfFameNameLevels
+        ? parsed.activeHallOfFameNameId
         : null;
     return {
       steam: Number.isFinite(parsed.steam) ? parsed.steam : 0,
@@ -72,15 +72,15 @@ function loadMeta(storage?: Storage | null): MetaProgress {
         ...defaults.upgrades,
         ...parsed.upgrades
       },
-      activeTitleMasteryId,
-      activeSurnameMasteryId,
-      titleMasteryLevels: {
-        ...defaults.titleMasteryLevels,
-        ...parsed.titleMasteryLevels
+      activeHallOfFameTitleId,
+      activeHallOfFameNameId,
+      hallOfFameTitleLevels: {
+        ...defaults.hallOfFameTitleLevels,
+        ...parsed.hallOfFameTitleLevels
       },
-      surnameMasteryLevels: {
-        ...defaults.surnameMasteryLevels,
-        ...parsed.surnameMasteryLevels
+      hallOfFameNameLevels: {
+        ...defaults.hallOfFameNameLevels,
+        ...parsed.hallOfFameNameLevels
       }
     };
   } catch {

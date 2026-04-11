@@ -18,32 +18,34 @@ All notable changes to this project are documented in this file.
 ## Unreleased
 
 ### Added
-- [internal] Ei viela merkintoja.
+- [player] Sauna Kiosk now sells a one-time `Sauna Hall of Fame` unlock, which spawns as its own board landmark for title and name buffs.
 
 ### Changed
-- [internal] Ei viela merkintoja.
+- [player] Title and name buffs moved out of Sauna Kiosk into the new Hall of Fame panel, while internal mastery content ids stay unchanged for compatibility.
+- [player] Hall of Fame uses the current title-prefix and surname-match rules under the new player-facing `Titles` and `Names` columns.
+- [player] Board landmarks now include Sauna Hall of Fame as a deterministic between-runs destination alongside Sauna Kiosk and Beer Shop.
 
 ### Fixed
-- [internal] Ei viela merkintoja.
+- [player] Matching-name bonuses now update dynamically after identity rerolls inside the Hall of Fame flow instead of requiring any separate refresh.
 
 ### Breaking
-- [internal] Ei viela merkintoja.
+- [player] Legacy title/name mastery ranks from older saves are intentionally reset when Hall of Fame replaces the old kiosk mastery track.
 
 ## 0.1.3 - 2026-04-10
 
 ### Player Notes
 
 #### Intro
-Sauna Kiosk heitti vanhan metakaupan nurkkaan ja avasi nimekkaammalle endless-grindille oman tiskin. Nyt voit virittaa pysyvan title- ja surname-fokuksen samalla kun koko meta-kaupan hinnat ja osiot ovat selkeammat.
+Sauna Kiosk pisti nimihifistelyn uuteen taloon ja avasi laudan reunalle Sauna Hall of Famen. Nyt title- ja name-buffit haetaan omasta rakennuksesta, kun taas kioskissa hoidetaan itse unlockit ja muu meta-progressio.
 
 #### New Features
-- Sauna Kioskissa on nyt `Name Masteries` -osio, jossa voit ostaa pysyvia rankeja yhdelle aktiiviselle title-linjalle ja yhdelle aktiiviselle surname-linjalle.
-- Aktiivisen title- ja surname-fokuksen voi vaihtaa ilmaiseksi intermissionissa, joten voit rakentaa seuraavan runin rosteria kohti haluttua nimisynergiaa.
+- Sauna Kiosk myy nyt uuden `Sauna Hall of Fame` -rakennuksen, joka ilmestyy laudalle omana klikattavana landmarkinaan unlockin jalkeen.
+- Sauna Hall of Famessa voit ostaa pysyvia rankeja yhdelle aktiiviselle title-linjalle ja yhdelle aktiiviselle name-linjalle, ja fokuksen voi vaihtaa ilmaiseksi intermissionissa.
 
 #### General Improvements
-- Sauna Kiosk korvaa vanhan Metashop/Kylakauppa-nimen kaikessa pelaajalle nakyvassa UI:ssa.
-- Meta-kauppa on nyt jaettu selkeammin osioihin: `Core`, `Loot`, `Sauna`, `Beer Shop` ja `Name Masteries`.
-- Useiden varhaisten meta-upgradejen hinnat laskivat hieman, jotta endless-progression ensiaskeleet aukeavat nopeammin.
+- Sauna Kiosk keskittyy nyt unlockeihin ja repeatable-metaan, kun taas title- ja name-buffit ovat omassa Hall of Fame -panelissaan.
+- Hall of Fame spawnitaan deterministisesti saunan lahelle kuten muutkin board-landmarkit, joten se loytyy samasta paikasta runista toiseen.
+- Guide-copy ja landmark-UI kertovat nyt erikseen Beer Shopista, Sauna Kioskista ja Sauna Hall of Famesta.
 
 #### General Fixes
 - Repeatable-polut kertovat nyt paremmin softcapin ylityksesta eivatka huku yhden pitkän listan sisaan.

@@ -532,6 +532,15 @@ export const metaUpgrades: GameContent['metaUpgrades'] = {
       costStep: 6,
       maxLevel: 4
     },
+    hall_of_fame_unlock: {
+      id: 'hall_of_fame_unlock',
+      name: 'Sauna Hall of Fame',
+      description: 'Unlock a permanent board landmark where title and name buffs live between runs.',
+      section: 'hall_of_fame',
+      baseCost: 8,
+      costStep: 0,
+      maxLevel: 1
+    },
     beer_shop_unlock: {
       id: 'beer_shop_unlock',
       name: 'Beer Shop',

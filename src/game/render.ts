@@ -107,6 +107,7 @@ const PEBBLE_HEAD_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_head.p
 const PEBBLE_BODY_SPRITE_URL = `${import.meta.env.BASE_URL}enemies/pebble_body.png`;
 const SAUNA_SPRITE_URL = `${import.meta.env.BASE_URL}Buildings/sauna.png`;
 const METASHOP_SPRITE_URL = `${import.meta.env.BASE_URL}Buildings/sauna-kiosk.png`;
+const HALL_OF_FAME_SPRITE_URL = `${import.meta.env.BASE_URL}Buildings/sauna_hall-of-fame.png`;
 const BEER_SHOP_SPRITE_URL = `${import.meta.env.BASE_URL}Buildings/olutkauppa.png`;
 const PEBBLE_BASE_RENDER_HP = 260;
 const PEBBLE_RENDER_HP_STEP = 60;
@@ -139,6 +140,7 @@ let pebbleBodySprite: HTMLImageElement | null | undefined;
 const processedPebbleSprites = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 let saunaSprite: HTMLImageElement | null | undefined;
 let metashopSprite: HTMLImageElement | null | undefined;
+let hallOfFameSprite: HTMLImageElement | null | undefined;
 let beerShopSprite: HTMLImageElement | null | undefined;
 const processedBackdropSprites = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 const processedHordeSprites = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
@@ -689,6 +691,17 @@ function getBeerShopSprite(): HTMLImageElement | null {
     beerShopSprite.src = BEER_SHOP_SPRITE_URL;
   }
   return beerShopSprite;
+}
+
+function getHallOfFameSprite(): HTMLImageElement | null {
+  if (typeof Image === 'undefined') {
+    return null;
+  }
+  if (!hallOfFameSprite) {
+    hallOfFameSprite = new Image();
+    hallOfFameSprite.src = HALL_OF_FAME_SPRITE_URL;
+  }
+  return hallOfFameSprite;
 }
 
 function getSaunaSprite(): HTMLImageElement | null {
@@ -2352,12 +2365,68 @@ function drawBeerShopLandmark(
   ctx.restore();
 }
 
+function drawHallOfFameLandmark(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  size: number,
+  selected: boolean,
+  enabled: boolean
+) {
+  const sprite = getProcessedBackdropSprite(getHallOfFameSprite());
+  if (isDrawableImage(sprite)) {
+    drawWorldLandmarkShadow(ctx, center, size * 1.95, size * 0.98);
+    drawGlowDisc(
+      ctx,
+      { x: center.x, y: center.y - size * 0.1 },
+      size * (selected ? 1.08 : 0.92),
+      enabled ? 'rgba(255, 226, 168, 0.24)' : 'rgba(165, 165, 165, 0.18)',
+      'rgba(0,0,0,0)',
+      0.82
+    );
+    drawBaselineSprite(ctx, sprite, center, size * 2.46, size * 1.95, center.y + size * 0.5);
+    return;
+  }
+
+  const width = size * 1.06;
+  const height = size * 0.92;
+  drawWorldLandmarkShadow(ctx, center, width, height);
+  ctx.save();
+  ctx.translate(center.x, center.y);
+
+  ctx.fillStyle = enabled ? 'rgba(74, 57, 42, 0.96)' : 'rgba(68, 62, 56, 0.92)';
+  ctx.strokeStyle = selected ? 'rgba(255, 233, 191, 0.95)' : 'rgba(208, 178, 132, 0.54)';
+  ctx.lineWidth = selected ? 3 : 2;
+  ctx.beginPath();
+  ctx.roundRect(-width * 0.32, -height * 0.1, width * 0.64, height * 0.56, 12);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = enabled ? 'rgba(244, 201, 128, 0.96)' : 'rgba(164, 164, 164, 0.78)';
+  ctx.beginPath();
+  ctx.moveTo(-width * 0.38, -height * 0.08);
+  ctx.lineTo(0, -height * 0.4);
+  ctx.lineTo(width * 0.38, -height * 0.08);
+  ctx.lineTo(0, height * 0.04);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(255, 243, 222, 0.96)';
+  ctx.font = `800 ${Math.max(10, size * 0.16)}px Trebuchet MS`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('FAME', 0, -height * 0.22);
+  ctx.fillText('HALL', 0, height * 0.04);
+  ctx.restore();
+}
+
 function drawWorldLandmarks(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot, layout: BoardLayout) {
   for (const landmark of snapshot.hud.worldLandmarks) {
     const center = axialToPixel(landmark.tile, layout);
     const size = layout.hexSize * 1.05;
     if (landmark.id === 'metashop') {
       drawMetashopLandmark(ctx, center, size, landmark.selected, landmark.enabled, landmark.locked);
+    } else if (landmark.id === 'hall_of_fame') {
+      drawHallOfFameLandmark(ctx, center, size, landmark.selected, landmark.enabled);
     } else {
       drawBeerShopLandmark(ctx, center, size, landmark.selected, landmark.enabled);
     }

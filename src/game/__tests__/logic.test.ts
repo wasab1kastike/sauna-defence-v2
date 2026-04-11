@@ -2478,8 +2478,25 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.metaShopUnlockCost).toBe(5);
     expect(snapshot.hud.metaUpgrades.find((entry) => entry.id === 'roster_capacity')?.cost).toBe(5);
     expect(snapshot.hud.metaUpgrades.find((entry) => entry.id === 'inventory_slots')?.cost).toBe(4);
+    expect(snapshot.hud.metaUpgrades.find((entry) => entry.id === 'hall_of_fame_unlock')?.cost).toBe(8);
     expect(snapshot.hud.metaUpgrades.find((entry) => entry.id === 'beer_shop_unlock')?.cost).toBe(8);
     expect(snapshot.hud.metaUpgrades.find((entry) => entry.id === 'sauna_slap_swap')?.cost).toBe(12);
+  });
+
+  it('unlocks the Hall of Fame building from the Sauna Kiosk', () => {
+    let state = prepState();
+    state.phase = 'lost';
+    state.overlayMode = 'intermission';
+    state.meta.shopUnlocked = true;
+    state.meta.steam = 12;
+
+    state = applyAction(state, { type: 'buyMetaUpgrade', upgradeId: 'hall_of_fame_unlock' }, gameContent);
+
+    expect(state.meta.upgrades.hall_of_fame_unlock).toBe(1);
+    expect(state.meta.steam).toBe(4);
+
+    const snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.worldLandmarks.find((entry) => entry.id === 'hall_of_fame')?.visible).toBe(true);
   });
 
   it('applies More Weirdos to the next run after buying it in the metashop', () => {
@@ -2502,11 +2519,12 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.boardCap).toBe(gameContent.config.boardCap + 1);
   });
 
-  it('lets the player buy and switch title and surname masteries independently', () => {
+  it('lets the player buy and switch Hall of Fame title and name masteries independently', () => {
     let state = prepState();
     state.phase = 'lost';
     state.overlayMode = 'intermission';
     state.meta.shopUnlocked = true;
+    state.meta.upgrades.hall_of_fame_unlock = 1;
     state.meta.steam = 30;
 
     state = applyAction(state, { type: 'buyNameMasteryRank', masteryId: 'laudekuningas' }, gameContent);
@@ -2514,24 +2532,24 @@ describe('Sauna Defense V2 logic', () => {
     state = applyAction(state, { type: 'buyNameMasteryRank', masteryId: 'vihtavelho' }, gameContent);
     state = applyAction(state, { type: 'setActiveNameMastery', masteryId: 'vihtavelho' }, gameContent);
 
-    expect(state.meta.titleMasteryLevels.laudekuningas).toBe(1);
-    expect(state.meta.titleMasteryLevels.vihtavelho).toBe(1);
-    expect(state.meta.surnameMasteryLevels.askala).toBe(1);
-    expect(state.meta.activeTitleMasteryId).toBe('vihtavelho');
-    expect(state.meta.activeSurnameMasteryId).toBe('askala');
+    expect(state.meta.hallOfFameTitleLevels.laudekuningas).toBe(1);
+    expect(state.meta.hallOfFameTitleLevels.vihtavelho).toBe(1);
+    expect(state.meta.hallOfFameNameLevels.askala).toBe(1);
+    expect(state.meta.activeHallOfFameTitleId).toBe('vihtavelho');
+    expect(state.meta.activeHallOfFameNameId).toBe('askala');
   });
 
-  it('applies active title and surname masteries only to matching heroes and updates when names change', () => {
+  it('applies active Hall of Fame title and name masteries only to matching heroes and updates when names change', () => {
     const state = prepState();
     const buffed = state.defenders[0];
     const control = state.defenders[1];
 
     buffed.title = 'Laudekuningas Askala';
     control.title = 'Vihtavelho Ekberg';
-    state.meta.activeTitleMasteryId = 'laudekuningas';
-    state.meta.activeSurnameMasteryId = 'askala';
-    state.meta.titleMasteryLevels.laudekuningas = 2;
-    state.meta.surnameMasteryLevels.askala = 3;
+    state.meta.activeHallOfFameTitleId = 'laudekuningas';
+    state.meta.activeHallOfFameNameId = 'askala';
+    state.meta.hallOfFameTitleLevels.laudekuningas = 2;
+    state.meta.hallOfFameNameLevels.askala = 3;
     state.selectedMapTarget = 'defender';
     state.selectedDefenderId = buffed.id;
 
@@ -3753,9 +3771,11 @@ describe('Sauna Defense V2 logic', () => {
   it('keeps landmarks near the sauna, on buildable tiles, off the spawn frontier, and stable after expansion', () => {
     let state = prepState();
     state.meta.completedRuns = 1;
+    state.meta.upgrades.hall_of_fame_unlock = 1;
     state.meta.upgrades.beer_shop_unlock = 1;
     const initialSnapshot = createSnapshot(state, gameContent);
     const initialMetashop = initialSnapshot.hud.worldLandmarks.find((entry) => entry.id === 'metashop');
+    const initialHallOfFame = initialSnapshot.hud.worldLandmarks.find((entry) => entry.id === 'hall_of_fame');
     const initialBeerShop = initialSnapshot.hud.worldLandmarks.find((entry) => entry.id === 'beer_shop');
     state.phase = 'wave';
     state.waveIndex = 5;
@@ -3775,25 +3795,35 @@ describe('Sauna Defense V2 logic', () => {
     state = stepState(state, 16, gameContent);
     const snapshot = createSnapshot(state, gameContent);
     const metashop = snapshot.hud.worldLandmarks.find((entry) => entry.id === 'metashop');
+    const hallOfFame = snapshot.hud.worldLandmarks.find((entry) => entry.id === 'hall_of_fame');
     const beerShop = snapshot.hud.worldLandmarks.find((entry) => entry.id === 'beer_shop');
     const spawnKeys = new Set(snapshot.spawnTiles.map((tile) => `${tile.q},${tile.r}`));
     const tileKeys = new Set(snapshot.tiles.map((tile) => `${tile.q},${tile.r}`));
     const buildableKeys = new Set(snapshot.buildableTiles.map((tile) => `${tile.q},${tile.r}`));
 
     expect(metashop).toBeTruthy();
+    expect(hallOfFame).toBeTruthy();
     expect(beerShop).toBeTruthy();
     expect(tileKeys.has(`${metashop!.tile.q},${metashop!.tile.r}`)).toBe(true);
+    expect(tileKeys.has(`${hallOfFame!.tile.q},${hallOfFame!.tile.r}`)).toBe(true);
     expect(tileKeys.has(`${beerShop!.tile.q},${beerShop!.tile.r}`)).toBe(true);
     expect(buildableKeys.has(`${metashop!.tile.q},${metashop!.tile.r}`)).toBe(true);
+    expect(buildableKeys.has(`${hallOfFame!.tile.q},${hallOfFame!.tile.r}`)).toBe(true);
     expect(buildableKeys.has(`${beerShop!.tile.q},${beerShop!.tile.r}`)).toBe(true);
     expect(spawnKeys.has(`${metashop!.tile.q},${metashop!.tile.r}`)).toBe(false);
+    expect(spawnKeys.has(`${hallOfFame!.tile.q},${hallOfFame!.tile.r}`)).toBe(false);
     expect(spawnKeys.has(`${beerShop!.tile.q},${beerShop!.tile.r}`)).toBe(false);
     expect(hexDistance(metashop!.tile, { q: 0, r: 0 })).toBeGreaterThanOrEqual(1);
     expect(hexDistance(metashop!.tile, { q: 0, r: 0 })).toBeLessThanOrEqual(4);
+    expect(hexDistance(hallOfFame!.tile, { q: 0, r: 0 })).toBeGreaterThanOrEqual(1);
+    expect(hexDistance(hallOfFame!.tile, { q: 0, r: 0 })).toBeLessThanOrEqual(4);
     expect(hexDistance(beerShop!.tile, { q: 0, r: 0 })).toBeGreaterThanOrEqual(1);
     expect(hexDistance(beerShop!.tile, { q: 0, r: 0 })).toBeLessThanOrEqual(4);
+    expect(metashop!.tile).not.toEqual(hallOfFame!.tile);
     expect(metashop!.tile).not.toEqual(beerShop!.tile);
+    expect(hallOfFame!.tile).not.toEqual(beerShop!.tile);
     expect(metashop!.tile).toEqual(initialMetashop!.tile);
+    expect(hallOfFame!.tile).toEqual(initialHallOfFame!.tile);
     expect(beerShop!.tile).toEqual(initialBeerShop!.tile);
   });
 
@@ -4307,6 +4337,7 @@ describe('Sauna Defense V2 logic', () => {
     const state = prepState();
     let snapshot = createSnapshot(state, gameContent);
     expect(snapshot.hud.worldLandmarks.some((entry) => entry.id === 'metashop')).toBe(false);
+    expect(snapshot.hud.worldLandmarks.some((entry) => entry.id === 'hall_of_fame')).toBe(false);
 
     state.meta.completedRuns = 1;
     snapshot = createSnapshot(state, gameContent);
@@ -4323,6 +4354,27 @@ describe('Sauna Defense V2 logic', () => {
     state.meta.shopUnlocked = true;
     snapshot = createSnapshot(state, gameContent);
     expect(snapshot.hud.worldLandmarks.find((entry) => entry.id === 'metashop')?.locked).toBe(false);
+    expect(snapshot.hud.worldLandmarks.find((entry) => entry.id === 'hall_of_fame')).toBeUndefined();
+  });
+
+  it('shows the Hall of Fame landmark only after its kiosk unlock and only enables it between runs', () => {
+    const state = prepState();
+    state.meta.completedRuns = 1;
+
+    let snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.worldLandmarks.find((entry) => entry.id === 'hall_of_fame')).toBeUndefined();
+
+    state.meta.upgrades.hall_of_fame_unlock = 1;
+    snapshot = createSnapshot(state, gameContent);
+    const prepLandmark = snapshot.hud.worldLandmarks.find((entry) => entry.id === 'hall_of_fame');
+    expect(prepLandmark?.visible).toBe(true);
+    expect(prepLandmark?.locked).toBe(false);
+    expect(prepLandmark?.enabled).toBe(false);
+
+    state.overlayMode = 'intermission';
+    state.phase = 'lost';
+    snapshot = createSnapshot(state, gameContent);
+    expect(snapshot.hud.worldLandmarks.find((entry) => entry.id === 'hall_of_fame')?.enabled).toBe(true);
   });
 
   it('keeps beer shop landmark and purchases available in prep, wave, and intermission', () => {
@@ -4414,5 +4466,11 @@ describe('Sauna Defense V2 logic', () => {
     state = applyAction(state, { type: 'selectWorldLandmark', landmarkId: 'metashop' }, gameContent);
     expect(state.activePanel).toBe('metashop');
     expect(state.selectedWorldLandmarkId).toBe('metashop');
+
+    state = applyAction(state, { type: 'clearWorldLandmark' }, gameContent);
+    state.meta.upgrades.hall_of_fame_unlock = 1;
+    state = applyAction(state, { type: 'selectWorldLandmark', landmarkId: 'hall_of_fame' }, gameContent);
+    expect(state.activePanel).toBe('hall_of_fame');
+    expect(state.selectedWorldLandmarkId).toBe('hall_of_fame');
   });
 });

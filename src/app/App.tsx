@@ -548,10 +548,10 @@ export function App() {
       return null;
     }
 
-    const popupStyle = (activePanel === 'beer_shop' || activePanel === 'metashop')
+    const popupStyle = (activePanel === 'beer_shop' || activePanel === 'metashop' || activePanel === 'hall_of_fame')
       ? getLandmarkPopupStyle(snapshot, frameSize, activeLandmark, boardCamera)
       : undefined;
-    const popupClassName = (activePanel === 'beer_shop' || activePanel === 'metashop')
+    const popupClassName = (activePanel === 'beer_shop' || activePanel === 'metashop' || activePanel === 'hall_of_fame')
       ? 'board-popup board-popup-landmark'
       : 'board-popup board-popup-utility';
 
@@ -762,13 +762,13 @@ export function App() {
         { id: 'core', label: 'Core' },
         { id: 'loot', label: 'Loot' },
         { id: 'sauna', label: 'Sauna' },
+        { id: 'hall_of_fame', label: 'Hall of Fame' },
         { id: 'beer_shop', label: 'Beer Shop' }
       ].map((section) => ({
         ...section,
         upgrades: snapshot.hud.metaUpgrades.filter((upgrade) => snapshot.metaUpgrades[upgrade.id].section === section.id)
       })).filter((section) => section.upgrades.length > 0);
-      const activeTitleMastery = snapshot.hud.titleMasteries.find((entry) => entry.active) ?? null;
-      const activeSurnameMastery = snapshot.hud.surnameMasteries.find((entry) => entry.active) ?? null;
+      const hallOfFameUpgrade = snapshot.hud.metaUpgrades.find((upgrade) => upgrade.id === 'hall_of_fame_unlock') ?? null;
       content = (
         <div className="popup-scroll-stack">
           {!snapshot.hud.metaShopUnlocked ? (
@@ -793,14 +793,29 @@ export function App() {
                   <span className="mini-tag">Banked Steam {snapshot.hud.bankedSteam}</span>
                   <span className="mini-tag">{snapshot.hud.showIntermission ? 'Purchases enabled' : 'Between runs only'}</span>
                   <span className="mini-tag">Repeatables keep scaling after softcap</span>
-                  <span className="mini-tag">Title focus {activeTitleMastery?.name ?? 'None'}</span>
-                  <span className="mini-tag">Surname focus {activeSurnameMastery?.name ?? 'None'}</span>
+                  <span className="mini-tag">Hall of Fame {hallOfFameUpgrade?.level ? 'Unlocked' : 'Locked'}</span>
                 </div>
                 <p className="panel-copy small-copy">
                   Repeatables never truly max out. Old caps now act as softcaps: costs keep climbing and gains arrive more slowly,
-                  while one-shot utility unlocks still finish normally. Name Masteries let you invest in one active title line
-                  and one active surname line at a time.
+                  while one-shot utility unlocks still finish normally. Title and name buffs now live inside the Sauna Hall of Fame,
+                  which opens as its own board landmark once you buy the unlock here.
                 </p>
+              </section>
+              <section className="popup-section">
+                <div className="popup-card">
+                  <div className="unit-row-top">
+                    <strong>Sauna Hall of Fame</strong>
+                    <div className="mini-tag-row">
+                      <span className="mini-tag">{hallOfFameUpgrade?.level ? 'Unlocked' : 'Locked'}</span>
+                    </div>
+                  </div>
+                  <small>Title and name buffs moved into their own building on the board.</small>
+                  <small>
+                    {hallOfFameUpgrade?.level
+                      ? 'Open the Hall of Fame landmark between runs to buy and switch buffs.'
+                      : `Unlock it here for ${hallOfFameUpgrade?.cost ?? 0} Steam, then visit it on the board.`}
+                  </small>
+                </div>
               </section>
               {metaSections.map((section) => (
                 <section className="popup-section" key={section.id}>
@@ -833,90 +848,111 @@ export function App() {
                   </div>
                 </section>
               ))}
-              <section className="popup-section">
-                <div className="section-head">
-                  <strong>Name Masteries</strong>
-                  <span>{snapshot.hud.titleMasteries.length + snapshot.hud.surnameMasteries.length}</span>
-                </div>
-                <div className="mastery-columns">
-                  <div className="popup-list">
-                    <div className="section-head">
-                      <strong>Titles</strong>
-                      <span>{activeTitleMastery?.name ?? 'No focus'}</span>
-                    </div>
-                    {snapshot.hud.titleMasteries.map((mastery) => (
-                      <div key={mastery.id} className="popup-card">
-                        <div className="unit-row-top">
-                          <strong>{mastery.name}</strong>
-                          <div className="mini-tag-row">
-                            <span className="mini-tag">Rank {mastery.level}</span>
-                            {mastery.active ? <span className="mini-tag">Active</span> : null}
-                            {mastery.softcapReached ? <span className="mini-tag">Softcap reached</span> : null}
-                          </div>
-                        </div>
-                        <small>{mastery.description}</small>
-                        <small>{mastery.effectText}</small>
-                        {mastery.nextEffectText ? <small>{mastery.nextEffectText}</small> : null}
-                        <div className="button-row">
-                          <button
-                            className={mastery.active ? 'ghost-button small-ghost' : 'mini-button'}
-                            disabled={!snapshot.hud.showIntermission || !mastery.canActivate || mastery.active}
-                            onClick={() => dispatch({ type: 'setActiveNameMastery', masteryId: mastery.id })}
-                          >
-                            {mastery.active ? 'Active' : 'Set Active'}
-                          </button>
-                          <button
-                            className="mini-button"
-                            disabled={!snapshot.hud.showIntermission || !mastery.affordable}
-                            onClick={() => dispatch({ type: 'buyNameMasteryRank', masteryId: mastery.id })}
-                          >
-                            {`Upgrade (${mastery.cost ?? 0} Steam)`}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="popup-list">
-                    <div className="section-head">
-                      <strong>Surnames</strong>
-                      <span>{activeSurnameMastery?.name ?? 'No focus'}</span>
-                    </div>
-                    {snapshot.hud.surnameMasteries.map((mastery) => (
-                      <div key={mastery.id} className="popup-card">
-                        <div className="unit-row-top">
-                          <strong>{mastery.name}</strong>
-                          <div className="mini-tag-row">
-                            <span className="mini-tag">Rank {mastery.level}</span>
-                            {mastery.active ? <span className="mini-tag">Active</span> : null}
-                            {mastery.softcapReached ? <span className="mini-tag">Softcap reached</span> : null}
-                          </div>
-                        </div>
-                        <small>{mastery.description}</small>
-                        <small>{mastery.effectText}</small>
-                        {mastery.nextEffectText ? <small>{mastery.nextEffectText}</small> : null}
-                        <div className="button-row">
-                          <button
-                            className={mastery.active ? 'ghost-button small-ghost' : 'mini-button'}
-                            disabled={!snapshot.hud.showIntermission || !mastery.canActivate || mastery.active}
-                            onClick={() => dispatch({ type: 'setActiveNameMastery', masteryId: mastery.id })}
-                          >
-                            {mastery.active ? 'Active' : 'Set Active'}
-                          </button>
-                          <button
-                            className="mini-button"
-                            disabled={!snapshot.hud.showIntermission || !mastery.affordable}
-                            onClick={() => dispatch({ type: 'buyNameMasteryRank', masteryId: mastery.id })}
-                          >
-                            {`Upgrade (${mastery.cost ?? 0} Steam)`}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
             </>
           )}
+        </div>
+      );
+    } else if (activePanel === 'hall_of_fame') {
+      title = 'Sauna Hall of Fame';
+      subtitle = activeLandmark?.statusText ?? 'A between-run building for title and name buffs.';
+      const activeTitleMastery = snapshot.hud.titleMasteries.find((entry) => entry.active) ?? null;
+      const activeNameMastery = snapshot.hud.nameMasteries.find((entry) => entry.active) ?? null;
+      content = (
+        <div className="popup-scroll-stack">
+          <section className="popup-section">
+            <div className="mini-tag-row">
+              <span className="mini-tag">Banked Steam {snapshot.hud.bankedSteam}</span>
+              <span className="mini-tag">{snapshot.hud.showIntermission ? 'Purchases enabled' : 'Between runs only'}</span>
+              <span className="mini-tag">Title focus {activeTitleMastery?.name ?? 'None'}</span>
+              <span className="mini-tag">Name focus {activeNameMastery?.name ?? 'None'}</span>
+            </div>
+            <p className="panel-copy small-copy">
+              Hall of Fame buffs reset the old kiosk progression and now live in their own building. Invest in one active
+              title line and one active name line at a time, then pivot for the next run whenever the roster needs it.
+            </p>
+          </section>
+          <section className="popup-section">
+            <div className="section-head">
+              <strong>Hall of Fame Masteries</strong>
+              <span>{snapshot.hud.titleMasteries.length + snapshot.hud.nameMasteries.length}</span>
+            </div>
+            <div className="mastery-columns">
+              <div className="popup-list">
+                <div className="section-head">
+                  <strong>Titles</strong>
+                  <span>{activeTitleMastery?.name ?? 'No focus'}</span>
+                </div>
+                {snapshot.hud.titleMasteries.map((mastery) => (
+                  <div key={mastery.id} className="popup-card">
+                    <div className="unit-row-top">
+                      <strong>{mastery.name}</strong>
+                      <div className="mini-tag-row">
+                        <span className="mini-tag">Rank {mastery.level}</span>
+                        {mastery.active ? <span className="mini-tag">Active</span> : null}
+                        {mastery.softcapReached ? <span className="mini-tag">Softcap reached</span> : null}
+                      </div>
+                    </div>
+                    <small>{mastery.description}</small>
+                    <small>{mastery.effectText}</small>
+                    {mastery.nextEffectText ? <small>{mastery.nextEffectText}</small> : null}
+                    <div className="button-row">
+                      <button
+                        className={mastery.active ? 'ghost-button small-ghost' : 'mini-button'}
+                        disabled={!snapshot.hud.showIntermission || !mastery.canActivate || mastery.active}
+                        onClick={() => dispatch({ type: 'setActiveNameMastery', masteryId: mastery.id })}
+                      >
+                        {mastery.active ? 'Active' : 'Set Active'}
+                      </button>
+                      <button
+                        className="mini-button"
+                        disabled={!snapshot.hud.showIntermission || !mastery.affordable}
+                        onClick={() => dispatch({ type: 'buyNameMasteryRank', masteryId: mastery.id })}
+                      >
+                        {`Upgrade (${mastery.cost ?? 0} Steam)`}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="popup-list">
+                <div className="section-head">
+                  <strong>Names</strong>
+                  <span>{activeNameMastery?.name ?? 'No focus'}</span>
+                </div>
+                {snapshot.hud.nameMasteries.map((mastery) => (
+                  <div key={mastery.id} className="popup-card">
+                    <div className="unit-row-top">
+                      <strong>{mastery.name}</strong>
+                      <div className="mini-tag-row">
+                        <span className="mini-tag">Rank {mastery.level}</span>
+                        {mastery.active ? <span className="mini-tag">Active</span> : null}
+                        {mastery.softcapReached ? <span className="mini-tag">Softcap reached</span> : null}
+                      </div>
+                    </div>
+                    <small>{mastery.description}</small>
+                    <small>{mastery.effectText}</small>
+                    {mastery.nextEffectText ? <small>{mastery.nextEffectText}</small> : null}
+                    <div className="button-row">
+                      <button
+                        className={mastery.active ? 'ghost-button small-ghost' : 'mini-button'}
+                        disabled={!snapshot.hud.showIntermission || !mastery.canActivate || mastery.active}
+                        onClick={() => dispatch({ type: 'setActiveNameMastery', masteryId: mastery.id })}
+                      >
+                        {mastery.active ? 'Active' : 'Set Active'}
+                      </button>
+                      <button
+                        className="mini-button"
+                        disabled={!snapshot.hud.showIntermission || !mastery.affordable}
+                        onClick={() => dispatch({ type: 'buyNameMasteryRank', masteryId: mastery.id })}
+                      >
+                        {`Upgrade (${mastery.cost ?? 0} Steam)`}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
         </div>
       );
     }

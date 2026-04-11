@@ -2,23 +2,23 @@
   {
     "version": "0.1.3",
     "date": "2026-04-10",
-    "intro": "Sauna Kiosk heitti vanhan metakaupan nurkkaan ja avasi nimekkaammalle endless-grindille oman tiskin. Nyt voit virittaa pysyvan title- ja surname-fokuksen samalla kun koko meta-kaupan hinnat ja osiot ovat selkeammat.",
+    "intro": "Sauna Kiosk pisti nimihifistelyn uuteen taloon ja avasi laudan reunalle Sauna Hall of Famen. Nyt title- ja name-buffit haetaan omasta rakennuksesta, kun taas kioskissa hoidetaan itse unlockit ja muu meta-progressio.",
     "sections": [
       {
         "id": "new-features",
         "title": "Uutta",
         "items": [
-          "Sauna Kioskissa on nyt `Name Masteries` -osio, jossa voit ostaa pysyvia rankeja yhdelle aktiiviselle title-linjalle ja yhdelle aktiiviselle surname-linjalle.",
-          "Aktiivisen title- ja surname-fokuksen voi vaihtaa ilmaiseksi intermissionissa, joten voit rakentaa seuraavan runin rosteria kohti haluttua nimisynergiaa."
+          "Sauna Kiosk myy nyt uuden `Sauna Hall of Fame` -rakennuksen, joka ilmestyy laudalle omana klikattavana landmarkinaan unlockin jalkeen.",
+          "Sauna Hall of Famessa voit ostaa pysyvia rankeja yhdelle aktiiviselle title-linjalle ja yhdelle aktiiviselle name-linjalle, ja fokuksen voi vaihtaa ilmaiseksi intermissionissa."
         ]
       },
       {
         "id": "general-improvements",
         "title": "Parannuksia",
         "items": [
-          "Sauna Kiosk korvaa vanhan Metashop/Kylakauppa-nimen kaikessa pelaajalle nakyvassa UI:ssa.",
-          "Meta-kauppa on nyt jaettu selkeammin osioihin: `Core`, `Loot`, `Sauna`, `Beer Shop` ja `Name Masteries`.",
-          "Useiden varhaisten meta-upgradejen hinnat laskivat hieman, jotta endless-progression ensiaskeleet aukeavat nopeammin."
+          "Sauna Kiosk keskittyy nyt unlockeihin ja repeatable-metaan, kun taas title- ja name-buffit ovat omassa Hall of Fame -panelissaan.",
+          "Hall of Fame spawnitaan deterministisesti saunan lahelle kuten muutkin board-landmarkit, joten se loytyy samasta paikasta runista toiseen.",
+          "Guide-copy ja landmark-UI kertovat nyt erikseen Beer Shopista, Sauna Kioskista ja Sauna Hall of Famesta."
         ]
       },
       {

@@ -34,7 +34,7 @@ export const GUIDE_STEPS = [
   },
   {
     title: 'Map Buildings Matter',
-    body: 'Permanent unlocks can appear as buildings on the board. Click them to open things like the Beer Shop or Sauna Kiosk when available.'
+    body: 'Permanent unlocks can appear as buildings on the board. Click them to open places like the Beer Shop, Sauna Kiosk, or Sauna Hall of Fame when available.'
   },
   {
     title: 'Hint Card And Action Buttons',
