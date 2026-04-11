@@ -3266,7 +3266,7 @@ function triggerBattleHymn(state: RunState, defender: DefenderInstance): void {
       pushFx(state, 'battle_hymn', ally.tile, 320, defender.tile);
     }
   }
-  defender.battleHymnReadyAtMs = state.timeMs + BATTLE_HYMN_COOLDOWN_MS;
+  defender.battleHymnReadyAtMs = state.timeMs + skillCooldownMsForState(state, BATTLE_HYMN_COOLDOWN_MS);
 }
 
 function performDefenderBasicAttack(
@@ -3318,13 +3318,18 @@ function performDefenderBasicAttack(
     scheduleFireball(state, defender, target.tile, hitDamage);
   }
   if (defender.skills.includes('chain_spark')) {
-    const chainedTarget = state.enemies
+    const chainedTargets = state.enemies
       .filter((enemy) => enemy.instanceId !== target.instanceId)
       .filter((enemy) => hexDistance(enemy.tile, target.tile) <= 2)
-      .sort((left, right) => (left.hp - right.hp) || (hexDistance(left.tile, target.tile) - hexDistance(right.tile, target.tile)))[0];
-    if (chainedTarget) {
-      applyDamageToEnemy(state, chainedTarget, Math.max(1, Math.round(stats.damage * 0.42)), defender.id);
-      pushFx(state, 'chain', chainedTarget.tile, 220, target.tile);
+      .sort((left, right) => (left.hp - right.hp) || (hexDistance(left.tile, target.tile) - hexDistance(right.tile, target.tile)))
+      .slice(0, 1 + chainSparkExtraTargets(state));
+    for (const [index, chainedTarget] of chainedTargets.entries()) {
+      const damageMultiplier = index === 0 ? 0.42 : index === 1 ? 0.3 : 0.22;
+      applyDamageToEnemy(state, chainedTarget, Math.max(1, Math.round(stats.damage * damageMultiplier)), defender.id);
+      pushFx(state, 'chain', chainedTarget.tile, 220 + index * 20, index === 0 ? target.tile : chainedTargets[index - 1].tile);
+    }
+    if (chainedTargets.length > 1) {
+      addHitStop(state, 14);
     }
   }
   if (defender.skills.includes('steam_shield')) {
@@ -3339,7 +3344,9 @@ function defenderAttack(state: RunState, defender: DefenderInstance, content: Ga
   if (!defender.tile || defender.location !== 'board' || state.timeMs < defender.attackReadyAtMs) return;
   const stats = derivedStats(state, defender, content);
   const dmgMult = state.timeMs < state.sisu.activeUntilMs ? content.config.sisuDamageMultiplier : 1;
-  const cdMult = state.timeMs < state.sisu.activeUntilMs ? content.config.sisuAttackMultiplier : 1;
+  const cdMult =
+    defenderCadenceMultiplier(state) *
+    (state.timeMs < state.sisu.activeUntilMs ? content.config.sisuAttackMultiplier : 1);
   const lowHp = defender.skills.includes('blink_step') && defender.hp / Math.max(1, stats.maxHp) < 0.5;
   if (lowHp && tryBlink(state, defender, content)) {
     defender.attackReadyAtMs = state.timeMs + stats.attackCooldownMs / cdMult;
@@ -3675,12 +3682,12 @@ function stepStandardEnemy(state: RunState, enemy: EnemyInstance, content: GameC
       if (enemy.archetypeId === 'thirsty_user' && isEndUserHordeBossWave(state.currentWave)) {
         setEndUserHordeMomentum(state, state.endUserHordeMomentum + 2);
       }
-      enemy.attackReadyAtMs = state.timeMs + archetype.attackCooldownMs;
+      enemy.attackReadyAtMs = state.timeMs + enemyCooldownMsForState(state, archetype.attackCooldownMs);
       return;
     }
     if (target) {
       applyEnemyDamageToDefender(state, enemy, target, enemyAttackDamage(state, enemy, content), content);
-      enemy.attackReadyAtMs = state.timeMs + archetype.attackCooldownMs;
+      enemy.attackReadyAtMs = state.timeMs + enemyCooldownMsForState(state, archetype.attackCooldownMs);
       return;
     }
   }
@@ -3729,7 +3736,7 @@ function stepPebble(state: RunState, enemy: EnemyInstance, content: GameContent)
 
   if (!bottleTarget && state.timeMs >= enemy.attackReadyAtMs && hexDistance(enemy.tile, CENTER) <= archetype.range) {
     applyEnemyDamageToSauna(state, enemy, enemyAttackDamage(state, enemy, content));
-    enemy.attackReadyAtMs = state.timeMs + archetype.attackCooldownMs;
+    enemy.attackReadyAtMs = state.timeMs + enemyCooldownMsForState(state, archetype.attackCooldownMs);
     return;
   }
   if (state.timeMs < enemy.moveReadyAtMs) return;
@@ -3796,8 +3803,8 @@ function stepElectricBather(state: RunState, enemy: EnemyInstance, content: Game
     }
 
     maybeTriggerBossProcSpeech(state, content);
-    enemy.nextAbilityAtMs = state.timeMs + ELECTRIC_BATHER_ABILITY_COOLDOWN_MS;
-    enemy.attackReadyAtMs = Math.max(enemy.attackReadyAtMs, state.timeMs + 720);
+    enemy.nextAbilityAtMs = state.timeMs + enemyCooldownMsForState(state, ELECTRIC_BATHER_ABILITY_COOLDOWN_MS);
+    enemy.attackReadyAtMs = Math.max(enemy.attackReadyAtMs, state.timeMs + enemyCooldownMsForState(state, 720));
     return;
   }
 
@@ -3815,7 +3822,7 @@ function summonEscalationTickets(state: RunState, enemy: EnemyInstance, content:
   for (let index = 0; index < 3; index += 1) {
     const laneIndex = preferredLanes[randomInt(state, 0, preferredLanes.length - 1)];
     state.pendingSpawns.push({
-      atMs: state.waveElapsedMs + 220 + index * 160,
+      atMs: state.waveElapsedMs + 200 + index * (state.currentWave.index >= 16 ? 110 : 140),
       enemyId: 'thirsty_user',
       laneIndex,
       spawnedByEnemyInstanceId: enemy.instanceId
@@ -3829,7 +3836,7 @@ function stepEscalationManager(state: RunState, enemy: EnemyInstance, content: G
   if (state.timeMs >= (enemy.nextAbilityAtMs ?? Number.POSITIVE_INFINITY)) {
     summonEscalationTickets(state, enemy, content);
     maybeTriggerBossProcSpeech(state, content);
-    enemy.nextAbilityAtMs = state.timeMs + ESCALATION_MANAGER_ABILITY_COOLDOWN_MS;
+    enemy.nextAbilityAtMs = state.timeMs + enemyCooldownMsForState(state, ESCALATION_MANAGER_ABILITY_COOLDOWN_MS);
   }
 
   stepStandardEnemy(state, enemy, content);
@@ -3847,7 +3854,7 @@ function queueEndUserHordeSurgeSpawns(state: RunState, content: GameContent): vo
 
   lanes.forEach((laneIndex, index) => {
     state.pendingSpawns.push({
-      atMs: state.waveElapsedMs + END_USER_HORDE_SURGE_MOVE_READY_MS + index * 120,
+      atMs: state.waveElapsedMs + END_USER_HORDE_SURGE_MOVE_READY_MS + index * (state.currentWave.index >= 15 ? 90 : 120),
       enemyId: 'thirsty_user',
       laneIndex
     });
@@ -3866,7 +3873,7 @@ function maybeTriggerEndUserHordeSurge(state: RunState, content: GameContent): v
     enemy.moveReadyAtMs = Math.min(enemy.moveReadyAtMs, state.timeMs + END_USER_HORDE_SURGE_MOVE_READY_MS);
   }
   setEndUserHordeMomentum(state, state.endUserHordeMomentum - 4);
-  state.endUserHordeNextSurgeAtMs = state.timeMs + END_USER_HORDE_SURGE_COOLDOWN_MS;
+  state.endUserHordeNextSurgeAtMs = state.timeMs + enemyCooldownMsForState(state, END_USER_HORDE_SURGE_COOLDOWN_MS);
   maybeTriggerBossProcSpeech(state, content);
 }
 
@@ -3928,13 +3935,13 @@ function spawnEnemies(state: RunState, content: GameContent): void {
       hp: spawnMaxHp,
       waveScaledMaxHp: spawnMaxHp,
       lastHitByDefenderId: null,
-      attackReadyAtMs: state.timeMs + archetype.attackCooldownMs,
+      attackReadyAtMs: state.timeMs + enemyCooldownMsForState(state, archetype.attackCooldownMs),
       moveReadyAtMs: state.timeMs + enemyMoveCooldownMsForSpawn(state, spawn.enemyId, content),
       nextAbilityAtMs:
         archetype.behavior === 'electric'
-          ? state.timeMs + ELECTRIC_BATHER_ABILITY_COOLDOWN_MS
+          ? state.timeMs + enemyCooldownMsForState(state, ELECTRIC_BATHER_ABILITY_COOLDOWN_MS)
           : archetype.behavior === 'summoner'
-            ? state.timeMs + ESCALATION_MANAGER_ABILITY_COOLDOWN_MS
+            ? state.timeMs + enemyCooldownMsForState(state, ESCALATION_MANAGER_ABILITY_COOLDOWN_MS)
             : Number.POSITIVE_INFINITY,
       pathIndex: archetype.behavior === 'pebble' ? 0 : null,
       pebbleDevourStacks: archetype.behavior === 'pebble' ? 0 : undefined,
@@ -3974,7 +3981,7 @@ function startWaveState(state: RunState, waveDef: WaveDefinition, content: GameC
   }
   if (isEndUserHordeBossWave(waveDef)) {
     setEndUserHordeMomentum(state, END_USER_HORDE_START_MOMENTUM);
-    state.endUserHordeNextSurgeAtMs = state.timeMs + END_USER_HORDE_SURGE_COOLDOWN_MS;
+    state.endUserHordeNextSurgeAtMs = state.timeMs + enemyCooldownMsForState(state, END_USER_HORDE_SURGE_COOLDOWN_MS);
   } else {
     resetEndUserHordeState(state);
   }

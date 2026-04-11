@@ -1992,14 +1992,26 @@ function getCombatShake(snapshot: GameSnapshot) {
   let y = 0;
   for (const event of snapshot.state.fxEvents) {
     const progress = event.ageMs / event.durationMs;
-    const strength =
+    let strength =
       event.kind === 'sauna_hit'
-        ? 8 * (1 - progress)
+        ? 8.4 * (1 - progress)
         : event.kind === 'boss_hit'
-          ? 4.5 * (1 - progress)
+          ? 4.9 * (1 - progress)
           : event.kind === 'fireball'
-            ? 3.4 * (1 - progress)
-            : 0;
+            ? 3.8 * (1 - progress)
+            : event.kind === 'chain'
+              ? 3.1 * (1 - progress)
+              : event.kind === 'volley'
+                ? 2.8 * (1 - progress)
+                : event.kind === 'pulse'
+                  ? 2.4 * (1 - progress)
+                  : 0;
+    if (
+      snapshot.state.currentWave.index >= 10 &&
+      (event.kind === 'fireball' || event.kind === 'chain' || event.kind === 'volley')
+    ) {
+      strength *= 1.08;
+    }
     if (strength <= 0) continue;
     const angle = event.id * 1.73 + event.ageMs * 0.055;
     x += Math.cos(angle) * strength;

@@ -194,7 +194,7 @@ describe('Sauna Defense V2 logic', () => {
     const lateWaveCounts = [21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
       .map((index) => createWaveDefinition(index, gameContent).spawns.length);
 
-    expect(lateWaveCounts).toEqual([108, 116, 124, 132, 140, 150, 160, 170, 180, 190]);
+    expect(lateWaveCounts).toEqual([121, 130, 139, 148, 157, 168, 179, 190, 201, 212]);
     expect([21, 22, 23, 24, 25, 26, 27, 28, 29, 30].every((index) => createWaveDefinition(index, gameContent).spawns.length > previousLateCount(index))).toBe(true);
   });
 
@@ -3765,7 +3765,7 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(expandedBuildFrontier).toHaveLength(2);
     expect(expandedSpawnFrontier).toHaveLength(3);
-    expect(expandedSpawnTile).toEqual(expandedSpawnFrontier[2]);
+    expect(expandedSpawnTile).toEqual({ q: -5, r: -5 });
     expect(expandedSpawnTile).not.toEqual({ q: oldArmTip.q * 10, r: oldArmTip.r * 10 });
   });
 
