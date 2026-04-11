@@ -3302,6 +3302,7 @@ describe('Sauna Defense V2 logic', () => {
     }];
 
     state = stepState(state, 16, gameContent);
+    state.selectedDefenderId = attacker!.id;
 
     const updated = state.defenders.find((defender) => defender.id === attacker!.id)!;
     expect(updated.fireballReadyAtMs - state.timeMs).toBeLessThan(12000);
