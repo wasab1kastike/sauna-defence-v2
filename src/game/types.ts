@@ -143,6 +143,7 @@ export type GlobalModifierId =
   | 'campfire_doctrine';
 export type MetaUpgradeId =
   | 'roster_capacity'
+  | 'sauna_capacity'
   | 'inventory_slots'
   | 'loot_luck'
   | 'loot_rarity'
@@ -518,6 +519,10 @@ export interface GameConfig {
   sisuDamageMultiplier: number;
   boardCap: number;
   saunaCap: number;
+  saunaSlotBuyBaseCost: number;
+  saunaSlotBuyLinearStep: number;
+  runRosterCapBuyBaseCost: number;
+  runRosterCapBuyLinearStep: number;
   baseRosterCap: number;
   baseInventoryCap: number;
   baseItemSlots: number;
@@ -592,7 +597,10 @@ export interface RunState {
   fxEvents: CombatFxEvent[];
   pendingFireballs: PendingFireball[];
   hitStopMs: number;
-  saunaDefenderId: string | null;
+  saunaDefenderIds: string[];
+  selectedSaunaSlotIndex: number;
+  runSaunaSlotPurchases: number;
+  runRosterCapPurchases: number;
   pendingSpawns: WaveSpawn[];
   nextEnemyInstanceId: number;
   nextLootInstanceId: number;
@@ -675,6 +683,7 @@ export interface HudRosterEntry {
 }
 
 export interface HudSaunaDockEntry {
+  slotIndex: number;
   occupantId: string | null;
   occupantName: string | null;
   occupantTitle: string | null;
@@ -684,10 +693,31 @@ export interface HudSaunaDockEntry {
   occupantHp: number | null;
   occupantMaxHp: number | null;
   selected: boolean;
+  empty: boolean;
   canReroll: boolean;
   rerollCost: number | null;
+  canSacrifice: boolean;
+  sacrificeRewardSteam: number;
   canSendSelectedBoardHero: boolean;
   sendSelectedBoardHeroLabel: string | null;
+}
+
+export interface HudSaunaSlotEntry {
+  slotIndex: number;
+  occupantId: string | null;
+  occupantName: string | null;
+  occupantTitle: string | null;
+  occupantTemplateName: string | null;
+  occupantSubclassName: string | null;
+  occupantLore: string | null;
+  occupantHp: number | null;
+  occupantMaxHp: number | null;
+  selected: boolean;
+  empty: boolean;
+  canReroll: boolean;
+  rerollCost: number | null;
+  canSacrifice: boolean;
+  sacrificeRewardSteam: number;
 }
 
 export interface HudInventoryEntry {
@@ -758,20 +788,21 @@ export interface HudSelectedSubclassEntry {
 
 export interface HudSelectedSauna {
   occupancyLabel: string;
-  occupantId: string | null;
-  occupantName: string | null;
-  occupantTitle: string | null;
-  occupantRole: string | null;
-  occupantSubclassName: string | null;
-  occupantLore: string | null;
-  occupantHp: number | null;
-  occupantMaxHp: number | null;
+  slotCount: number;
+  selectedSlotIndex: number;
+  slots: HudSaunaSlotEntry[];
   autoDeployUnlocked: boolean;
   slapSwapUnlocked: boolean;
   canReroll: boolean;
   rerollCost: number | null;
+  canSacrifice: boolean;
+  sacrificeRewardSteam: number;
   canSendSelectedBoardHero: boolean;
   sendSelectedBoardHeroLabel: string | null;
+  buySlotCost: number;
+  canBuySlot: boolean;
+  buyRunRosterCapCost: number;
+  canBuyRunRosterCap: boolean;
 }
 
 export interface HudSelectedEnemy {
@@ -1002,6 +1033,7 @@ export interface HudViewModel {
   actionBody: string;
   freeRecruitSlots: number;
   saunaReserve: HudSaunaDockEntry;
+  saunaSlots: HudSaunaSlotEntry[];
   deathLogEntries: HudDeathLogEntry[];
   headerItemEntries: HudInventoryEntry[];
   headerSkillEntries: HudInventoryEntry[];
@@ -1048,6 +1080,7 @@ export type InputAction =
   | { type: 'selectDefender'; defenderId: string }
   | { type: 'selectEnemy'; enemyInstanceId: number }
   | { type: 'selectSauna' }
+  | { type: 'selectSaunaSlot'; slotIndex: number }
   | { type: 'clearSelection' }
   | { type: 'closeSaunaPopup' }
   | { type: 'openHudPanel'; panel: HudPanelId }
@@ -1068,7 +1101,11 @@ export type InputAction =
   | { type: 'draftGlobalModifier'; modifierId: GlobalModifierId }
   | { type: 'draftSubclassChoice'; subclassId: DefenderSubclassId }
   | { type: 'recallDefenderToSauna'; defenderId: string }
+  | { type: 'rerollSaunaSlot' }
   | { type: 'rerollSaunaDefender' }
+  | { type: 'sacrificeSaunaDefender' }
+  | { type: 'buySaunaSlot' }
+  | { type: 'buyRunRosterCap' }
   | { type: 'rerollBenchDefender'; defenderId: string }
   | { type: 'rerollRecruitOffers' }
   | { type: 'rerollRecruitOffer'; offerId: number }

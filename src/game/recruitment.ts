@@ -6,9 +6,12 @@ export interface RecruitmentDependencies {
   canAccessRecruitment: (state: RunState) => boolean;
   clearUnitMotion: (unit: DefenderInstance) => void;
   derivedMaxHp: (state: RunState, defender: DefenderInstance, content: GameContent) => number;
-  getDefender: (state: RunState, defenderId: string | null) => DefenderInstance | null;
+  getFocusedSaunaDefender: (state: RunState) => DefenderInstance | null;
   livingDefenders: (state: RunState) => DefenderInstance[];
+  moveDefenderToFirstEmptySaunaSlot: (state: RunState, defender: DefenderInstance, content: GameContent) => boolean;
   rosterCap: (state: RunState, content: GameContent) => number;
+  saunaCapacity: (state: RunState, content: GameContent) => number;
+  saunaOccupancy: (state: RunState) => number;
 }
 
 export function recruitRollCost(): number {
@@ -24,7 +27,7 @@ export function recruitLevelUpCost(levelUpCount: number): number {
 }
 
 export function saunaRerollCost(state: RunState, deps: RecruitmentDependencies): number | null {
-  const saunaDefender = deps.getDefender(state, state.saunaDefenderId);
+  const saunaDefender = deps.getFocusedSaunaDefender(state);
   return saunaDefender && saunaDefender.location === 'sauna'
     ? benchRerollCost(state, saunaDefender.id)
     : null;
@@ -54,10 +57,11 @@ export function recruitmentStatusText(state: RunState, content: GameContent, dep
   if (visibleOffers.length > 0) {
     const cheapest = Math.min(...visibleOffers.map((offer) => offer.price));
     if (boardFull) {
+      const saunaHasSpace = deps.saunaOccupancy(state) < deps.saunaCapacity(state, content);
       return state.sisu.current >= cheapest
-        ? state.saunaDefenderId
-          ? 'Board full: buying a recruit will replace the current sauna hero.'
-          : 'Board full: the next recruit goes straight into the empty sauna.'
+        ? saunaHasSpace
+          ? 'Board full: the next recruit goes straight into an empty sauna slot.'
+          : 'Board full: buying a recruit will replace the currently selected sauna hero.'
         : 'Board full: the next recruit will route through the sauna once you have enough SISU.';
     }
     return state.sisu.current >= cheapest
@@ -67,9 +71,9 @@ export function recruitmentStatusText(state: RunState, content: GameContent, dep
       : 'You can inspect the market, but you need more SISU to afford any offer.';
   }
   if (boardFull) {
-    return state.saunaDefenderId
-      ? `Board full and sauna occupied: the next recruit replaces the sauna hero. Refresh costs ${rerollCost} SISU and Level Up costs ${nextLevelUpCost} SISU.`
-      : `Board full and sauna empty: the next recruit goes to sauna. Refresh costs ${rerollCost} SISU and Level Up costs ${nextLevelUpCost} SISU.`;
+    return deps.saunaOccupancy(state) < deps.saunaCapacity(state, content)
+      ? `Board full and sauna has room: the next recruit goes to sauna. Refresh costs ${rerollCost} SISU and Level Up costs ${nextLevelUpCost} SISU.`
+      : `Board full and sauna is full: the next recruit replaces the selected sauna hero. Refresh costs ${rerollCost} SISU and Level Up costs ${nextLevelUpCost} SISU.`;
   }
   return `Refresh costs ${rerollCost} SISU. Recruitment Level Up costs ${nextLevelUpCost} SISU and improves future rerolls.`;
 }
@@ -90,13 +94,10 @@ export function addRecruitToReserve(
   deps: RecruitmentDependencies
 ): void {
   const boardIsFull = deps.boardDefenders(state).length >= deps.boardCap(state, content);
-  const saunaIsEmpty = !state.saunaDefenderId;
+  const saunaHasSpace = deps.saunaOccupancy(state) < deps.saunaCapacity(state, content);
 
-  if (boardIsFull && saunaIsEmpty) {
-    defender.location = 'sauna';
-    defender.tile = null;
-    deps.clearUnitMotion(defender);
-    state.saunaDefenderId = defender.id;
+  if (boardIsFull && saunaHasSpace) {
+    deps.moveDefenderToFirstEmptySaunaSlot(state, defender, content);
   } else {
     defender.location = 'ready';
     defender.tile = null;

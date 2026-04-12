@@ -39,60 +39,85 @@ export function SelectionCard({
       </div>
       {selectedSauna ? (
         <>
-          <strong>{selectedSauna.occupantName ? `${selectedSauna.occupantName} ${selectedSauna.occupantTitle}` : 'Sauna empty'}</strong>
-          <small>
-            {selectedSauna.occupantRole
-              ? `${selectedSauna.occupantRole} - ${selectedSauna.occupantSubclassName}`
-              : 'No reserve hero inside.'}
-          </small>
-          {selectedSauna.occupantName ? (
-            <>
-              <div className="mini-tag-row stat-chip-grid">
-                <span className="mini-tag">HP {selectedSauna.occupantHp}/{selectedSauna.occupantMaxHp}</span>
-                <span className="mini-tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy ready' : 'Auto Deploy locked'}</span>
-                <span className="mini-tag">{selectedSauna.slapSwapUnlocked ? 'Slap Swap ready' : 'Slap Swap locked'}</span>
-                {selectedSauna.rerollCost !== null ? <span className="mini-tag">Reforge {selectedSauna.rerollCost} SISU</span> : null}
-              </div>
-              <p className="panel-copy small-copy">{selectedSauna.occupantLore}</p>
-              <div className="button-row tight">
-                <button
-                  className="mini-button"
-                  disabled={!selectedSauna.canReroll}
-                  onClick={() => dispatch({ type: 'rerollSaunaDefender' })}
-                >
-                  Reroll (E{selectedSauna.rerollCost !== null ? ` - ${selectedSauna.rerollCost} SISU` : ''})
-                </button>
-                {selectedSauna.canSendSelectedBoardHero && selectedDefender?.location === 'board' ? (
-                  <button
-                    className="secondary-button small-button"
-                    onClick={() => dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })}
-                  >
-                    {selectedSauna.sendSelectedBoardHeroLabel}
-                  </button>
-                ) : selectedSauna.sendSelectedBoardHeroLabel && selectedDefender?.location === 'board' ? (
-                  <button className="secondary-button small-button" disabled>
-                    {selectedSauna.sendSelectedBoardHeroLabel}
-                  </button>
+          <strong>Sauna reserve {selectedSauna.occupancyLabel}</strong>
+          <small>Pick a slot to reroll, sacrifice, or swap. Empty slots can be bought mid-run with SISU.</small>
+          <div className="mini-tag-row stat-chip-grid">
+            <span className="mini-tag">{selectedSauna.autoDeployUnlocked ? 'Auto Deploy ready' : 'Auto Deploy locked'}</span>
+            <span className="mini-tag">{selectedSauna.slapSwapUnlocked ? 'Slap Swap ready' : 'Slap Swap locked'}</span>
+            <span className="mini-tag">Selected slot {selectedSauna.selectedSlotIndex + 1}/{selectedSauna.slotCount}</span>
+          </div>
+          <div className="popup-list">
+            {selectedSauna.slots.map((slot) => (
+              <button
+                key={`sauna-slot-${slot.slotIndex}`}
+                className={slot.selected ? 'popup-card selected' : 'popup-card'}
+                onClick={() => dispatch({ type: 'selectSaunaSlot', slotIndex: slot.slotIndex })}
+              >
+                <div className="unit-row-top">
+                  <strong>Slot {slot.slotIndex + 1}</strong>
+                  <span className="mini-tag">{slot.empty ? 'Empty' : 'Occupied'}</span>
+                </div>
+                <small>
+                  {slot.occupantName
+                    ? `${slot.occupantName} ${slot.occupantTitle}`
+                    : 'No reserve hero inside.'}
+                </small>
+                {slot.occupantTemplateName ? (
+                  <small>{slot.occupantTemplateName} - {slot.occupantSubclassName}</small>
                 ) : null}
-              </div>
-            </>
+                {slot.occupantHp !== null && slot.occupantMaxHp !== null ? (
+                  <small>HP {slot.occupantHp}/{slot.occupantMaxHp}</small>
+                ) : null}
+              </button>
+            ))}
+          </div>
+          {selectedSauna.slots[selectedSauna.selectedSlotIndex]?.occupantLore ? (
+            <p className="panel-copy small-copy">{selectedSauna.slots[selectedSauna.selectedSlotIndex]?.occupantLore}</p>
           ) : (
-            <>
-              <p className="panel-copy small-copy">Send one board hero here during prep or pay SISU for a live retreat when the sauna is empty.</p>
-              {selectedSauna.canSendSelectedBoardHero && selectedDefender?.location === 'board' ? (
-                <button
-                  className="secondary-button small-button"
-                  onClick={() => dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })}
-                >
-                  {selectedSauna.sendSelectedBoardHeroLabel}
-                </button>
-              ) : selectedSauna.sendSelectedBoardHeroLabel && selectedDefender?.location === 'board' ? (
-                <button className="secondary-button small-button" disabled>
-                  {selectedSauna.sendSelectedBoardHeroLabel}
-                </button>
-              ) : null}
-            </>
+            <p className="panel-copy small-copy">Send one board hero here during prep or pay SISU for a live retreat when the sauna has room.</p>
           )}
+          <div className="button-row tight">
+            <button
+              className="mini-button"
+              disabled={!selectedSauna.canReroll}
+              onClick={() => dispatch({ type: 'rerollSaunaSlot' })}
+            >
+              Reroll (E{selectedSauna.rerollCost !== null ? ` - ${selectedSauna.rerollCost} SISU` : ''})
+            </button>
+            <button
+              className="ghost-button"
+              disabled={!selectedSauna.canSacrifice}
+              onClick={() => dispatch({ type: 'sacrificeSaunaDefender' })}
+            >
+              Sacrifice (+{selectedSauna.sacrificeRewardSteam} Steam)
+            </button>
+            {selectedSauna.canSendSelectedBoardHero && selectedDefender?.location === 'board' ? (
+              <button
+                className="secondary-button small-button"
+                onClick={() => dispatch({ type: 'recallDefenderToSauna', defenderId: selectedDefender.id })}
+              >
+                {selectedSauna.sendSelectedBoardHeroLabel}
+              </button>
+            ) : selectedSauna.sendSelectedBoardHeroLabel && selectedDefender?.location === 'board' ? (
+              <button className="secondary-button small-button" disabled>
+                {selectedSauna.sendSelectedBoardHeroLabel}
+              </button>
+            ) : null}
+            <button
+              className="secondary-button small-button"
+              disabled={!selectedSauna.canBuySlot}
+              onClick={() => dispatch({ type: 'buySaunaSlot' })}
+            >
+              Buy Sauna Slot ({selectedSauna.buySlotCost} SISU)
+            </button>
+            <button
+              className="secondary-button small-button"
+              disabled={!selectedSauna.canBuyRunRosterCap}
+              onClick={() => dispatch({ type: 'buyRunRosterCap' })}
+            >
+              Raise Defender Cap ({selectedSauna.buyRunRosterCapCost} SISU)
+            </button>
+          </div>
         </>
       ) : selectedEnemy ? (
         <>

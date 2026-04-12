@@ -10,7 +10,8 @@ describe('current recruit flow', () => {
     const state = createInitialState(gameContent, createDefaultMetaProgress(), 42, false);
 
     expect(state.defenders).toHaveLength(0);
-    expect(state.saunaDefenderId).toBeNull();
+    expect(state.saunaDefenderIds).toHaveLength(1);
+    expect(state.saunaDefenderIds.every((slotId) => slotId === '')).toBe(true);
     expect(state.recruitMarketIsFree).toBe(true);
     expect(liveOffers(state)).toHaveLength(4);
     expect(liveOffers(state).every((offer) => offer.price === 0)).toBe(true);
@@ -64,15 +65,15 @@ describe('current recruit flow', () => {
     state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
     const saunaOffer = liveOffers(state)[0];
     state = applyAction(state, { type: 'recruitOffer', offerId: saunaOffer.offerId }, gameContent);
-    expect(state.saunaDefenderId).toBe(saunaOffer.candidate.id);
+    expect(state.saunaDefenderIds[0]).toBe(saunaOffer.candidate.id);
     expect(state.defenders.find((defender) => defender.id === saunaOffer.candidate.id)?.location).toBe('sauna');
 
     state = applyAction(state, { type: 'rerollRecruitOffers' }, gameContent);
     const replacementOffer = liveOffers(state)[0];
-    const previousSaunaId = state.saunaDefenderId;
+    const previousSaunaId = state.saunaDefenderIds[0];
     state = applyAction(state, { type: 'recruitOffer', offerId: replacementOffer.offerId }, gameContent);
 
-    expect(state.saunaDefenderId).toBe(replacementOffer.candidate.id);
+    expect(state.saunaDefenderIds[0]).toBe(replacementOffer.candidate.id);
     expect(state.defenders.some((defender) => defender.id === previousSaunaId)).toBe(false);
   });
 

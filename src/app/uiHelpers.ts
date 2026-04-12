@@ -38,7 +38,7 @@ export const GUIDE_STEPS = [
   },
   {
     title: 'Hint Card And Action Buttons',
-    body: 'The small left hint card tells you the next step. Start Wave, Autoplay and SISU stay just below it while Q and W handle market controls, and E rerolls only when the sauna is open.'
+    body: 'The small left hint card tells you the next step. Start Wave, Autoplay and SISU stay just below it while Q and W handle market controls, and E rerolls only the selected sauna slot when the sauna is open.'
   }
 ] as const;
 
@@ -87,7 +87,7 @@ export function compactHintBody(text: string) {
 }
 
 export function getSelectionCardTitle(selectedSauna: boolean, selectedEnemy: HudSelectedEnemy | null): string {
-  if (selectedSauna) return 'Sauna Reserve';
+  if (selectedSauna) return 'Sauna Slots';
   if (selectedEnemy) return selectedEnemy.isBoss ? 'Boss Profile' : 'Target Profile';
   return 'Selected Hero';
 }
@@ -109,6 +109,22 @@ export function formatPatchNotesDate(date: string): string {
     month: 'long',
     year: 'numeric'
   }).format(parsed);
+}
+
+export function getSteamTopbarDisplay(
+  hud: Pick<GameSnapshot['hud'], 'showIntermission' | 'bankedSteam' | 'steamEarned'>
+): { label: string; value: string } {
+  if (hud.showIntermission) {
+    return {
+      label: 'Steam Bank',
+      value: `${hud.bankedSteam}`
+    };
+  }
+
+  return {
+    label: 'Steam Bank',
+    value: hud.steamEarned > 0 ? `${hud.bankedSteam} (+${hud.steamEarned} run)` : `${hud.bankedSteam}`
+  };
 }
 
 export function getLandmarkStyle(
@@ -231,8 +247,8 @@ export function resolveGameplayHotkeyAction(
     return snapshot.hud.canLevelUpRecruitment ? { type: 'levelUpRecruitment' } : null;
   }
   if (normalizedKey === 'e') {
-    return snapshot.hud.saunaSelected && snapshot.hud.saunaReserve.canReroll
-      ? { type: 'rerollSaunaDefender' }
+    return snapshot.hud.saunaSelected && snapshot.hud.selectedSauna?.canReroll
+      ? { type: 'rerollSaunaSlot' }
       : null;
   }
   return null;

@@ -13,6 +13,7 @@ const selectorDeps = {
     void content;
     return defender.stats;
   },
+  sacrificeSteamReward: (defender: DefenderInstance | null) => defender ? Math.floor(defender.kills / 100) : 0,
   saunaRerollCost: () => 3,
   subclassSummary: () => 'Branch Ready'
 };
@@ -27,16 +28,18 @@ describe('hud selectors', () => {
     boardHero.tile = { q: 0, r: -1 };
     saunaHero.location = 'sauna';
     reserveHero.location = 'ready';
-    state.saunaDefenderId = saunaHero.id;
+    state.saunaDefenderIds = [saunaHero.id];
+    state.selectedSaunaSlotIndex = 0;
     state.selectedDefenderId = boardHero.id;
     state.selectedMapTarget = 'sauna';
 
     const rosterEntries = createRosterEntries(state, state.defenders, gameContent, selectorDeps);
-    const saunaReserve = createSaunaReserveEntry(state, saunaHero, boardHero, gameContent, selectorDeps);
+    const saunaReserve = createSaunaReserveEntry(state, saunaHero, 0, boardHero, gameContent, selectorDeps);
 
     expect(rosterEntries.map((entry) => entry.location)).toEqual(['board', 'sauna', 'ready']);
     expect(saunaReserve.canReroll).toBe(true);
     expect(saunaReserve.rerollCost).toBe(3);
-    expect(saunaReserve.sendSelectedBoardHeroLabel).toBe(`Replace Sauna Hero With ${boardHero.name}`);
+    expect(saunaReserve.canSacrifice).toBe(true);
+    expect(saunaReserve.sendSelectedBoardHeroLabel).toBe(`Replace Slot 1 With ${boardHero.name}`);
   });
 });

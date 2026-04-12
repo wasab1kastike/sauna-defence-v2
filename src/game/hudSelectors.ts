@@ -4,6 +4,7 @@ import type {
   GameContent,
   HudRosterEntry,
   HudSaunaDockEntry,
+  HudSaunaSlotEntry,
   RunState,
   UnitStats
 } from './types';
@@ -11,6 +12,7 @@ import type {
 export interface HudSelectorDependencies {
   canRerollSaunaDefender: (state: RunState) => boolean;
   derivedStats: (state: RunState, defender: DefenderInstance, content: GameContent) => UnitStats;
+  sacrificeSteamReward: (defender: DefenderInstance | null) => number;
   saunaRerollCost: (state: RunState) => number | null;
   subclassSummary: (defender: DefenderInstance, content: GameContent) => string;
 }
@@ -68,20 +70,15 @@ export function createHudRosterEntry(
   };
 }
 
-export function createSaunaReserveEntry(
+export function createSaunaSlotEntry(
   state: RunState,
+  slotIndex: number,
   saunaDefender: DefenderInstance | null,
-  selectedBoardDefender: DefenderInstance | null,
   content: GameContent,
   deps: HudSelectorDependencies
-): HudSaunaDockEntry {
-  const saunaSendLabel = selectedBoardDefender
-    ? saunaDefender
-      ? `Replace Sauna Hero With ${selectedBoardDefender.name}`
-      : `Send ${selectedBoardDefender.name} To Sauna`
-    : null;
-
+): HudSaunaSlotEntry {
   return {
+    slotIndex,
     occupantId: saunaDefender?.id ?? null,
     occupantName: saunaDefender?.name ?? null,
     occupantTitle: saunaDefender?.title ?? null,
@@ -90,9 +87,31 @@ export function createSaunaReserveEntry(
     occupantLore: saunaDefender?.lore ?? null,
     occupantHp: saunaDefender?.hp ?? null,
     occupantMaxHp: saunaDefender ? deps.derivedStats(state, saunaDefender, content).maxHp : null,
-    selected: state.selectedMapTarget === 'sauna',
-    canReroll: deps.canRerollSaunaDefender(state),
-    rerollCost: deps.saunaRerollCost(state),
+    selected: state.selectedSaunaSlotIndex === slotIndex,
+    empty: saunaDefender === null,
+    canReroll: saunaDefender !== null && deps.canRerollSaunaDefender(state),
+    rerollCost: saunaDefender !== null ? deps.saunaRerollCost(state) : null,
+    canSacrifice: saunaDefender !== null,
+    sacrificeRewardSteam: deps.sacrificeSteamReward(saunaDefender)
+  };
+}
+
+export function createSaunaReserveEntry(
+  state: RunState,
+  saunaDefender: DefenderInstance | null,
+  slotIndex: number,
+  selectedBoardDefender: DefenderInstance | null,
+  content: GameContent,
+  deps: HudSelectorDependencies
+): HudSaunaDockEntry {
+  const saunaSendLabel = selectedBoardDefender
+    ? saunaDefender
+      ? `Replace Slot ${slotIndex + 1} With ${selectedBoardDefender.name}`
+      : `Send ${selectedBoardDefender.name} To Slot ${slotIndex + 1}`
+    : null;
+
+  return {
+    ...createSaunaSlotEntry(state, slotIndex, saunaDefender, content, deps),
     canSendSelectedBoardHero: selectedBoardDefender !== null && state.overlayMode === 'none' && state.phase === 'prep',
     sendSelectedBoardHeroLabel: saunaSendLabel
   };

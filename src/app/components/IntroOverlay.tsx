@@ -26,8 +26,8 @@ export function IntroOverlay({ dispatch, onReplayTips }: IntroOverlayProps) {
             <small>The topbar tracks your run state, the bottom dock handles the four-slot recruit market, and the right rail keeps Modifiers and Loot close by.</small>
           </div>
           <div className="inventory-card">
-            <strong>Sauna Is Your Reforge Slot</strong>
-            <small>The sauna now acts as a single reserve slot and reroll station. Refresh and level up stay on Q/W, while E works only after you open the sauna.</small>
+            <strong>Sauna Is Your Reserve Grid</strong>
+            <small>The sauna now acts as a multi-slot reserve, reroll, and sacrifice station. Refresh and level up stay on Q/W, while E rerolls only the selected sauna slot.</small>
           </div>
           <div className="inventory-card">
             <strong>Buildings Unlock On The Map</strong>

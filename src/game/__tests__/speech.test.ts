@@ -46,7 +46,8 @@ function prepState(seed = 42, meta = createDefaultMetaProgress()) {
     buildDefender('guardian', 4, 'ready'),
     buildDefender('hurler', 5, 'sauna')
   ];
-  state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
+  state.saunaDefenderIds = [state.defenders.find((defender) => defender.location === 'sauna')?.id ?? ''];
+  state.selectedSaunaSlotIndex = 0;
   return state;
 }
 

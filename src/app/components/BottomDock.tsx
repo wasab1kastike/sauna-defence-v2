@@ -20,10 +20,10 @@ export function BottomDock({ snapshot, dispatch, dockRef }: BottomDockProps) {
           <div>
             <h2>Recruit Market</h2>
             <p className="panel-copy small-copy">
-              {snapshot.hud.recruitmentStatusText} Click the sauna to inspect or reroll whoever is inside.
+              {snapshot.hud.recruitmentStatusText} Click the sauna to manage slot-by-slot rerolls, sacrifices, and reserve swaps.
             </p>
           </div>
-          <span>{snapshot.hud.freeRecruitSlots}/4 live slots</span>
+          <span>{snapshot.hud.freeRecruitSlots}/{snapshot.hud.recruitOffers.length} live slots</span>
         </div>
 
         <div className="market-layout">

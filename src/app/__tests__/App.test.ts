@@ -6,6 +6,7 @@ import {
   getHudUtilityButtons,
   getLandmarkPopupPlacement,
   getSelectionCardTitle,
+  getSteamTopbarDisplay,
   resolveGameplayHotkeyAction,
   resolveBoardPointerAction,
   shouldAutoOpenPatchNotes
@@ -108,6 +109,35 @@ describe('App popup helpers', () => {
     expect(formatPatchNotesDate('not-a-date')).toBe('not-a-date');
   });
 
+  it('keeps banked steam visible in the topbar during and between runs', () => {
+    expect(getSteamTopbarDisplay({
+      showIntermission: false,
+      bankedSteam: 12,
+      steamEarned: 3
+    })).toEqual({
+      label: 'Steam Bank',
+      value: '12 (+3 run)'
+    });
+
+    expect(getSteamTopbarDisplay({
+      showIntermission: false,
+      bankedSteam: 12,
+      steamEarned: 0
+    })).toEqual({
+      label: 'Steam Bank',
+      value: '12'
+    });
+
+    expect(getSteamTopbarDisplay({
+      showIntermission: true,
+      bankedSteam: 15,
+      steamEarned: 4
+    })).toEqual({
+      label: 'Steam Bank',
+      value: '15'
+    });
+  });
+
   it('uses Sauna Kiosk and Sauna Hall of Fame in guide copy for board landmarks', () => {
     expect(GUIDE_STEPS.some((step) => step.body.includes('Sauna Kiosk'))).toBe(true);
     expect(GUIDE_STEPS.some((step) => step.body.includes('Sauna Hall of Fame'))).toBe(true);
@@ -191,7 +221,8 @@ describe('App popup helpers', () => {
     saunaHero.location = 'sauna';
     saunaHero.tile = null;
     state.defenders.push(saunaHero);
-    state.saunaDefenderId = saunaHero.id;
+    state.saunaDefenderIds = [saunaHero.id];
+    state.selectedSaunaSlotIndex = 0;
     const snapshot = createSnapshot(state, gameContent);
     state.selectedMapTarget = 'sauna';
     const saunaSelectedSnapshot = createSnapshot(state, gameContent);
@@ -199,7 +230,7 @@ describe('App popup helpers', () => {
     expect(resolveGameplayHotkeyAction(snapshot, 'q', { guideStepActive: false, patchNotesOpen: false })).toEqual({ type: 'rerollRecruitOffers' });
     expect(resolveGameplayHotkeyAction(snapshot, 'w', { guideStepActive: false, patchNotesOpen: false })).toEqual({ type: 'levelUpRecruitment' });
     expect(resolveGameplayHotkeyAction(snapshot, 'e', { guideStepActive: false, patchNotesOpen: false })).toBeNull();
-    expect(resolveGameplayHotkeyAction(saunaSelectedSnapshot, 'e', { guideStepActive: false, patchNotesOpen: false })).toEqual({ type: 'rerollSaunaDefender' });
+    expect(resolveGameplayHotkeyAction(saunaSelectedSnapshot, 'e', { guideStepActive: false, patchNotesOpen: false })).toEqual({ type: 'rerollSaunaSlot' });
   });
 
   it('keeps sauna reroll out of the default dock and inside the selected sauna view', () => {
@@ -209,7 +240,8 @@ describe('App popup helpers', () => {
     saunaHero.location = 'sauna';
     saunaHero.tile = null;
     state.defenders.push(saunaHero);
-    state.saunaDefenderId = saunaHero.id;
+    state.saunaDefenderIds = [saunaHero.id];
+    state.selectedSaunaSlotIndex = 0;
 
     const snapshot = createSnapshot(state, gameContent);
     const dockMarkup = renderToStaticMarkup(createElement(BottomDock, {

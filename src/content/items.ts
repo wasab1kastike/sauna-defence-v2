@@ -478,6 +478,15 @@ export const metaUpgrades: GameContent['metaUpgrades'] = {
       costStep: 5,
       maxLevel: 5
     },
+    sauna_capacity: {
+      id: 'sauna_capacity',
+      name: 'More Steam Benches',
+      description: 'Add one more permanent sauna reserve slot to future runs.',
+      section: 'sauna',
+      baseCost: 6,
+      costStep: 6,
+      maxLevel: 3
+    },
     inventory_slots: {
       id: 'inventory_slots',
       name: 'Overflow Stash',

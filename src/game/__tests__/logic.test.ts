@@ -96,7 +96,8 @@ function prepState() {
     buildDefender('guardian', 4, 'ready'),
     buildDefender('hurler', 5, 'sauna')
   ];
-  state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
+  state.saunaDefenderIds = [state.defenders.find((defender) => defender.location === 'sauna')?.id ?? ''];
+  state.selectedSaunaSlotIndex = 0;
   return state;
 }
 
@@ -210,7 +211,7 @@ describe('Sauna Defense V2 logic', () => {
     expect([21, 22, 23, 24, 25, 26, 27, 28, 29, 30].every((index) => createWaveDefinition(index, gameContent).spawns.length > previousLateCount(index))).toBe(true);
   });
 
-  it('scales late-wave enemy and boss stats far above archetype baselines', () => {
+  it('softens late-wave normal enemy stats while leaving boss scaling intact', () => {
     const state = prepState();
     state.phase = 'wave';
 
@@ -229,8 +230,8 @@ describe('Sauna Defense V2 logic', () => {
     }];
 
     let snapshot = createSnapshot(state, gameContent);
-    expect(snapshot.hud.selectedEnemy?.maxHp).toBe(106);
-    expect(snapshot.hud.selectedEnemy?.damage).toBe(16);
+    expect(snapshot.hud.selectedEnemy?.maxHp).toBe(69);
+    expect(snapshot.hud.selectedEnemy?.damage).toBe(12);
 
     state.currentWave = createWaveDefinition(45, gameContent);
     state.pebbleEncounterCount = 2;
@@ -265,8 +266,8 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(state.enemies).toHaveLength(1);
     expect(state.enemies[0]?.archetypeId).toBe('brute');
-    expect(state.enemies[0]?.hp).toBe(106);
-    expect(state.enemies[0]?.waveScaledMaxHp).toBe(106);
+    expect(state.enemies[0]?.hp).toBe(69);
+    expect(state.enemies[0]?.waveScaledMaxHp).toBe(69);
   });
 
   it('normalizes legacy unscaled normal enemies to the current wave HP curve', () => {
@@ -288,7 +289,7 @@ describe('Sauna Defense V2 logic', () => {
     state = stepState(state, 16, gameContent);
 
     expect(state.enemies).toHaveLength(1);
-    expect(state.enemies[0]?.waveScaledMaxHp).toBeGreaterThan(gameContent.enemyArchetypes.raider.maxHp);
+    expect(state.enemies[0]?.waveScaledMaxHp).toBe(46);
     expect(state.enemies[0]?.hp).toBe(state.enemies[0]?.waveScaledMaxHp);
   });
 
@@ -326,6 +327,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.enemies[0]?.motion?.style).toBe('slither');
     expect(state.enemies[0]?.motion?.fromTile).toEqual({ q: 0, r: -6 });
     expect(state.enemies[0]?.motion?.toTile).toEqual({ q: 1, r: -5 });
+    expect(state.enemies[0]?.motion?.durationMs).toBe(state.enemies[0]?.moveReadyAtMs - state.timeMs);
   });
 
   it('creates step motion metadata when a standard enemy advances', () => {
@@ -701,6 +703,8 @@ describe('Sauna Defense V2 logic', () => {
     state = stepState(state, 16, gameContent);
 
     expect(state.enemies[0]?.tile).toEqual({ q: 1, r: -6 });
+    expect(state.enemies[0]?.motion?.style).toBe('slither');
+    expect(state.enemies[0]?.motion?.durationMs).toBe(state.enemies[0]?.moveReadyAtMs - state.timeMs);
     expect(state.enemies[0]?.moveReadyAtMs - state.timeMs).toBe(1600);
   });
 
@@ -808,6 +812,10 @@ describe('Sauna Defense V2 logic', () => {
     const bottleState = stepState(buildPebbleState(true), 16, gameContent);
     const pathState = stepState(buildPebbleState(false), 16, gameContent);
 
+    expect(bottleState.enemies[0]?.motion?.style).toBe('slither');
+    expect(pathState.enemies[0]?.motion?.style).toBe('slither');
+    expect(bottleState.enemies[0]?.motion?.durationMs).toBe(bottleState.enemies[0]?.moveReadyAtMs - bottleState.timeMs);
+    expect(pathState.enemies[0]?.motion?.durationMs).toBe(pathState.enemies[0]?.moveReadyAtMs - pathState.timeMs);
     expect(bottleState.enemies[0]?.moveReadyAtMs - bottleState.timeMs).toBe(1880);
     expect(pathState.enemies[0]?.moveReadyAtMs - pathState.timeMs).toBe(2400);
   });
@@ -1147,7 +1155,7 @@ describe('Sauna Defense V2 logic', () => {
     const state = createInitialState(gameContent, createDefaultMetaProgress(), 42);
 
     expect(state.defenders).toHaveLength(0);
-    expect(state.saunaDefenderId).toBeNull();
+    expect(state.saunaDefenderIds).toEqual(['']);
     expect(state.recruitMarketIsFree).toBe(true);
     expect(liveOffers(state)).toHaveLength(4);
     expect(liveOffers(state).every((offer) => offer.price === 0)).toBe(true);
@@ -1164,7 +1172,7 @@ describe('Sauna Defense V2 logic', () => {
     const state = createInitialState(gameContent, meta, 42);
 
     expect(state.defenders).toHaveLength(0);
-    expect(state.saunaDefenderId).toBeNull();
+    expect(state.saunaDefenderIds).toEqual(['']);
     expect(liveOffers(state)).toHaveLength(4);
     expect(liveOffers(state).every((offer) => offer.price === 0)).toBe(true);
     const snapshot = createSnapshot(state, gameContent);
@@ -1258,7 +1266,7 @@ describe('Sauna Defense V2 logic', () => {
     boardHero.location = 'board';
     boardHero.tile = { q: -1, r: -2 };
     boardHero.homeTile = { q: -1, r: -2 };
-    state.saunaDefenderId = null;
+    state.saunaDefenderIds = [''];
     state.defenders = state.defenders.filter((defender) => defender.location !== 'sauna');
 
     state = applyAction(state, { type: 'recallDefenderToSauna', defenderId: boardHero.id }, gameContent);
@@ -1266,7 +1274,7 @@ describe('Sauna Defense V2 logic', () => {
     const updatedHero = state.defenders.find((defender) => defender.id === boardHero.id);
     expect(updatedHero?.location).toBe('sauna');
     expect(updatedHero?.tile).toBeNull();
-    expect(state.saunaDefenderId).toBe(boardHero.id);
+    expect(state.saunaDefenderIds[0]).toBe(boardHero.id);
   });
 
   it('heals the sauna defender and auto-continues to the next non-boss wave', () => {
@@ -1297,7 +1305,7 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(snapshot.hud.saunaSelected).toBe(true);
     expect(snapshot.hud.selectedSauna?.occupancyLabel).toBe('1/1');
-    expect(snapshot.hud.selectedSauna?.occupantName).toBeTruthy();
+    expect(snapshot.hud.selectedSauna?.slots[0]?.occupantName).toBeTruthy();
   });
 
   it('allows placing a ready defender during an active wave', () => {
@@ -2082,7 +2090,7 @@ describe('Sauna Defense V2 logic', () => {
   it('rerolls four visible recruit offers for a fixed 2 SISU with priced candidates after the free opener', () => {
     let state = prepState();
     state.defenders = state.defenders.filter((defender) => defender.location !== 'dead').slice(0, 4);
-    state.saunaDefenderId = state.defenders.find((defender) => defender.location === 'sauna')?.id ?? null;
+    state.saunaDefenderIds = [state.defenders.find((defender) => defender.location === 'sauna')?.id ?? ''];
     state.sisu.current = 20;
 
     const before = state.sisu.current;
@@ -2203,7 +2211,7 @@ describe('Sauna Defense V2 logic', () => {
     let state = prepState();
     state.meta.upgrades.roster_capacity = 1;
     state.sisu.current = 30;
-    state.saunaDefenderId = null;
+    state.saunaDefenderIds = [''];
 
     const living = state.defenders.filter((defender) => defender.location !== 'dead');
     const boardTiles = [
@@ -2225,7 +2233,7 @@ describe('Sauna Defense V2 logic', () => {
 
     const recruit = state.defenders.find((defender) => defender.id === offer.candidate.id);
     expect(recruit?.location).toBe('sauna');
-    expect(state.saunaDefenderId).toBe(offer.candidate.id);
+    expect(state.saunaDefenderIds[0]).toBe(offer.candidate.id);
   });
 
   it('lets a new recruit join the reserve row when the board is full and the sauna is already occupied', () => {
@@ -2253,7 +2261,7 @@ describe('Sauna Defense V2 logic', () => {
 
     const recruit = state.defenders.find((defender) => defender.id === offer.candidate.id);
     expect(recruit?.location).toBe('ready');
-    expect(state.saunaDefenderId).not.toBe(offer.candidate.id);
+    expect(state.saunaDefenderIds[0]).not.toBe(offer.candidate.id);
   });
 
   it('sends a board hero to an empty sauna during prep', () => {
@@ -2268,14 +2276,14 @@ describe('Sauna Defense V2 logic', () => {
     boardHero!.homeTile = { q: 0, r: -1 };
     oldSaunaHero!.location = 'ready';
     oldSaunaHero!.tile = null;
-    state.saunaDefenderId = null;
+    state.saunaDefenderIds = [''];
 
     state = applyAction(state, { type: 'recallDefenderToSauna', defenderId: boardHero!.id }, gameContent);
 
     const updatedBoardHero = state.defenders.find((defender) => defender.id === boardHero!.id);
     expect(updatedBoardHero?.location).toBe('sauna');
     expect(updatedBoardHero?.tile).toBeNull();
-    expect(state.saunaDefenderId).toBe(boardHero!.id);
+    expect(state.saunaDefenderIds[0]).toBe(boardHero!.id);
   });
 
   it('replaces the occupied sauna defender with the chosen board hero during prep', () => {
@@ -2296,7 +2304,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(updatedBoardHero?.location).toBe('sauna');
     expect(updatedBoardHero?.tile).toBeNull();
     expect(updatedSaunaHero?.location).toBe('ready');
-    expect(state.saunaDefenderId).toBe(boardHero!.id);
+    expect(state.saunaDefenderIds[0]).toBe(boardHero!.id);
   });
 
   it('rerolls the sauna hero identity and stats while preserving class, subclasses, progression and loadout', () => {
@@ -2525,7 +2533,7 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(state.meta.upgrades.roster_capacity).toBe(1);
     expect(state.defenders).toHaveLength(0);
-    expect(state.saunaDefenderId).toBeNull();
+    expect(state.saunaDefenderIds).toEqual(['']);
     expect(liveOffers(state)).toHaveLength(4);
     const snapshot = createSnapshot(state, gameContent);
     expect(snapshot.hud.rosterCap).toBe(gameContent.config.baseRosterCap + 1);
@@ -2616,7 +2624,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(boardAfter?.location).toBe('dead');
     expect(saunaAfter?.location).toBe('board');
     expect(saunaAfter?.tile).toEqual({ q: 0, r: -1 });
-    expect(state.saunaDefenderId).toBeNull();
+    expect(state.saunaDefenderIds).toEqual(['']);
     expect(state.deathLog).toHaveLength(1);
     expect(state.deathLog[0].wave).toBe(state.currentWave.index);
     expect(state.deathLog[0].enemyName).toBe('Stone Brute');
@@ -2654,7 +2662,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(boardAfter?.location).toBe('sauna');
     expect(saunaAfter?.location).toBe('board');
     expect(saunaAfter?.tile).toEqual({ q: 0, r: -1 });
-    expect(state.saunaDefenderId).toBe(boardDefender!.id);
+    expect(state.saunaDefenderIds[0]).toBe(boardDefender!.id);
     expect(state.waveSwapUsed).toBe(true);
   });
 
@@ -2842,7 +2850,7 @@ describe('Sauna Defense V2 logic', () => {
     state = applyAction(state, { type: 'recruitOffer', offerId: offer.offerId }, gameContent);
 
     expect(state.defenders.some((defender) => defender.id === saunaDefender!.id)).toBe(false);
-    expect(state.saunaDefenderId).toBe(offer.candidate.id);
+    expect(state.saunaDefenderIds[0]).toBe(offer.candidate.id);
     const replacement = state.defenders.find((defender) => defender.id === offer.candidate.id);
     expect(replacement?.location).toBe('sauna');
   });
@@ -3956,7 +3964,8 @@ describe('Sauna Defense V2 logic', () => {
     let state = prepState();
     state.phase = 'wave';
     state.waveIndex = 5;
-    state.saunaDefenderId = null;
+    state.defenders = state.defenders.filter((defender) => defender.location !== 'sauna');
+    state.saunaDefenderIds = [''];
     state.currentWave = {
       index: 5,
       isBoss: true,
@@ -4047,7 +4056,7 @@ describe('Sauna Defense V2 logic', () => {
     state.pendingSpawns = [];
     state.enemies = [];
     state.defenders = [];
-    state.saunaDefenderId = null;
+    state.saunaDefenderIds = [''];
 
     state = stepState(state, 16, gameContent);
 

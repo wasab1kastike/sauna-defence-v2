@@ -63,7 +63,6 @@ function createBaselineState(seed: number): RunState {
     buildBaselineDefender(seed, 'hurler', 3, BOARD_TILES[2]),
     buildBaselineDefender(seed, 'mender', 4, BOARD_TILES[3])
   ];
-  state.saunaDefenderId = null;
 
   return state;
 }
@@ -197,7 +196,7 @@ describe('balance baseline regression metrics', () => {
     const avgWave10 = Math.round(average(scenarios.map((scenario) => scenario.clearTimeMs[10])));
     const avgWave15 = Math.round(average(scenarios.map((scenario) => scenario.clearTimeMs[15])));
 
-    expect(avgWave5).toBe(30300);
+    expect(avgWave5).toBe(43200);
     expect(avgWave10).toBe(-1);
     expect(avgWave15).toBe(-1);
   });
@@ -212,11 +211,11 @@ describe('balance baseline regression metrics', () => {
     const avgHurlerSurvival = average(scenarios.map((scenario) => scenario.survivalRatioByRole.hurler));
     const avgMenderSurvival = average(scenarios.map((scenario) => scenario.survivalRatioByRole.mender));
 
-    expect(avgHpWave5).toBeCloseTo(72, 10);
+    expect(avgHpWave5).toBeCloseTo(66.66666666666667, 10);
     expect(avgHpWave10).toBe(0);
     expect(avgHpWave15).toBe(0);
 
-    expect(avgGuardianSurvival).toBe(0);
+    expect(avgGuardianSurvival).toBeCloseTo(1 / 3, 10);
     expect(avgMenderSurvival).toBe(0);
     expect(avgHurlerSurvival).toBe(0);
   });
