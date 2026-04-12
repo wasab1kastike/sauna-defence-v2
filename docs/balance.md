@@ -1,70 +1,63 @@
 # Balance targets
 
-Tämä dokumentti määrittää regressioseurannan target-mittarit. Mittarit tuotetaan deterministisellä `src/game/__tests__/balance.spec.ts` baseline-simulaatiolla.
+This document defines the baseline regression targets for `src/game/__tests__/balance.spec.ts`.
 
-## Baseline-skenaariot
+## Baseline scenarios
 
-Ajetaan kolme determinististä baseline-runia siemenillä `1337`, `4242` ja `9001`.
+Run three deterministic baseline simulations with seeds `1337`, `4242`, and `9001`.
 
-Yhteiset ehdot:
-- käytetään oletusmetaa (`createDefaultMetaProgress`), ei lisä-ostoksia
-- käytetään baseline-rosteria (vain alku-runin puolustajat)
-- asetellaan 4 kenttäpuolustajaa samoille tileille joka ajossa
-- drafteissa valitaan aina ensimmäinen tarjolla oleva vaihtoehto
+Shared rules:
+- use default meta progress via `createDefaultMetaProgress()`
+- use the stripped baseline roster only
+- place the same four defenders on the same board tiles every run
+- always pick the first available draft option
 
-## Wave ramp -malli (päivitetty)
+## Wave ramp model
 
-Wavet 1-4 pidetään ennallaan onboarding-vakauden vuoksi.
+Waves 1-4 stay authored and readable for onboarding.
 
 Wave 5+:
-- **Enemy stat scaling** kayttaa nyt eri kertoimia bosseille ja normivihuille: bossit pysyvat 70 % rampissa, normivihut pehmenevat 60 % rampiin; archetypejen base-statit pysyvat ennallaan.
-- **Wave pressure** kasvattaa ei-boss-waveja aiempaa enemmän jokaisessa 5-wave syklissä (`cycleRamp + milestoneBonus`).
-- **Composition scaling** muuntaa paineen tiheämmäksi unit-mixiksi: bruten yläraja kasvaa syklin mukana ja korkeammilla sykleillä lisätään ylimääräisiä spawn pickejä.
-- **Spawn pacing** kiristyy syklin kasvaessa (`spawnIntervalMs` pienenee nopeammin), mutta kunnioittaa aina `minSpawnIntervalMs`-rajaa.
-- **Wave 10-20** siirtyy 6-lane volley -malliin: vihollisia tulee kaikista nykyisistä spawn-paikoista samalla beatilla, jolloin kenttä täyttyy aiempaa nopeammin.
-- **Wave 21-30** siirtyy overdrive-rampiin: spawn-count kasvaa nykyistä paljon jyrkemmin ja volleyt tihenevät edelleen, jotta late game näyttää ja tuntuu selvästi raskaammalta.
+- Enemy stat scaling still uses separate boss and normal ramps so boss waves remain distinct spikes.
+- Spawn pacing compresses harder from wave 5 onward, and again from wave 10 onward, while still respecting a minimum interval floor.
+- Combat cadence now ramps with the wave: defenders attack faster, selected enemy attack timers shorten, and boss ability loops come back sooner.
+- Proc-heavy builds get more internal chaos in mid/late game: `Fireball`, `Blink Step`, and `Battle Hymn` recover faster, and `Chain Spark` forks into extra targets from wave 10 onward.
+- Wave 10-20 uses full-lane volleys plus larger same-beat clusters.
+- Wave 21-30 enters overdrive: more enemies arrive per beat and volley spacing tightens again.
 
-Käytännön odote baseline-ajossa:
-- **Wave 5** ei vielakaan ole riisutulle deterministic-baseline-rosterille luotettava clear-checkpoint, vaikka Pebblen ensikohtaaminen on aiempaa pehmeampi ja myöhemmat encounterit skaalautuvat selvemmin tankki/hitaus-suuntaan.
-- **Wave 10** ei enää ole baseline-rosterille vakaa clear-checkpoint (odotettu fail uuden rampin jälkeen).
-- **Wave 15** pysyy baseline-rosterille fail-checkpointina uuden cycle-rampin alla.
+Practical baseline expectation:
+- Wave 5 remains a meaningful checkpoint instead of a free clear.
+- Wave 10 is intentionally much less stable for the stripped baseline roster.
+- Wave 15 remains a fail checkpoint for the stripped baseline roster.
 
-## Target-mittarit
+## Target metrics
 
 ### 1) Wave clear time
-- Seurataan wavejen **5 / 10 / 15** clear time -arvoja (millisekunteina).
-- Raportointiluku on baseline-skenaarioiden keskiarvo per checkpoint.
-- Tavoite: trendi ei saa hajota regressiossa (ks. testin lukitut rajat).
-- Huom: wave 10 ja wave 15 ovat nyt tarkoituksella "fail checkpoint" baseline-rosterille (`-1` = checkpointia ei saavutettu).
 
-### 2) Aluekeskimääräinen sauna HP checkpointissa 5/10/15
-- Mittari lasketaan 3-wave trailing-ikkuna-keskiarvona:
-  - wave 5: avg(HP wave 3, 4, 5)
-  - wave 10: avg(HP wave 8, 9, 10)
-  - wave 15: avg(HP wave 13, 14, 15)
-- Raportointiluku on baseline-skenaarioiden keskiarvo.
-- Tavoite: sauna HP ei saa pudota yli regressiorajan.
-- Huom: kun wave 10/15 checkpointia ei saavuteta, baseline-tavoite on `0`.
+Track checkpoint clear times for waves `5 / 10 / 15` in milliseconds.
 
-### 3) Defender survival ratio rooleittain
-- Lasketaan runin lopussa (checkpoint wave 15 jälkeen):
-  - `guardian`: elossa / alussa olleet guardianit
-  - `hurler`: elossa / alussa olleet hurlerit
-  - `mender`: elossa / alussa olleet menderit
-- Raportointiluku on baseline-skenaarioiden keskiarvo.
+### 2) Area-average sauna HP
 
+Use a trailing three-wave average:
+- wave 5: avg(HP wave 3, 4, 5)
+- wave 10: avg(HP wave 8, 9, 10)
+- wave 15: avg(HP wave 13, 14, 15)
 
-## Recap: vihollismaarat per wave (1-30)
+### 3) Defender survival ratio
 
-Alla nykyisen balanssilogiikan tuottama spawn-maara per wave (`createWaveDefinition`, nykyinen `main`).
+Track final survival ratios for:
+- `guardian`
+- `hurler`
+- `mender`
 
-Ankkurit (pyydetty ramp):
+## Spawn recap (waves 1-30)
+
+Anchor points for the current tempo pass:
 - wave 6 = **15**
-- wave 10 = **30**
-- wave 15 = **60**
-- wave 20 = **100**
-- wave 25 = **140**
-- wave 30 = **190**
+- wave 10 = **32**
+- wave 15 = **67**
+- wave 20 = **112**
+- wave 25 = **157**
+- wave 30 = **212**
 
 | Wave | Spawns | Boss |
 |---:|---:|:---:|
@@ -75,34 +68,34 @@ Ankkurit (pyydetty ramp):
 | 5 | 11 | yes |
 | 6 | 15 | no |
 | 7 | 19 | no |
-| 8 | 23 | no |
-| 9 | 26 | no |
-| 10 | 30 | yes |
-| 11 | 36 | no |
-| 12 | 42 | no |
-| 13 | 48 | no |
-| 14 | 54 | no |
-| 15 | 60 | yes |
-| 16 | 68 | no |
-| 17 | 76 | no |
-| 18 | 84 | no |
-| 19 | 92 | no |
-| 20 | 100 | yes |
-| 21 | 108 | no |
-| 22 | 116 | no |
-| 23 | 124 | no |
-| 24 | 132 | no |
-| 25 | 140 | yes |
-| 26 | 150 | no |
-| 27 | 160 | no |
-| 28 | 170 | no |
-| 29 | 180 | no |
-| 30 | 190 | yes |
+| 8 | 24 | no |
+| 9 | 28 | no |
+| 10 | 32 | yes |
+| 11 | 39 | no |
+| 12 | 46 | no |
+| 13 | 53 | no |
+| 14 | 60 | no |
+| 15 | 67 | yes |
+| 16 | 76 | no |
+| 17 | 85 | no |
+| 18 | 94 | no |
+| 19 | 103 | no |
+| 20 | 112 | yes |
+| 21 | 121 | no |
+| 22 | 130 | no |
+| 23 | 139 | no |
+| 24 | 148 | no |
+| 25 | 157 | yes |
+| 26 | 168 | no |
+| 27 | 179 | no |
+| 28 | 190 | no |
+| 29 | 201 | no |
+| 30 | 212 | yes |
 
-## PR-käytäntö balanssimuutoksille
+## PR policy
 
-Kaikki balanssia muuttavat PR:t:
-1. päivittävät tämän tiedoston (`docs/balance.md`), ja
-2. päivittävät/lukitsevat regressiomittarit `src/game/__tests__/balance.spec.ts`-testissä.
+Every balance-changing PR should:
+1. update `docs/balance.md`
+2. update the locked expectations in `src/game/__tests__/balance.spec.ts`
 
-Jos balanssimuutos on tarkoituksellinen, päivitä target-arvot ja kirjaa perustelu PR-kuvaukseen.
+If a balance shift is intentional, record the new target values in both places.
