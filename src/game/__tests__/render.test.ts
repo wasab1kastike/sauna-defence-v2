@@ -50,6 +50,25 @@ describe('render helpers', () => {
     expect(position.progress).toBe(1);
   });
 
+  it('keeps slither motion moving across a long Pebble travel window', () => {
+    const motion: UnitMotionState = {
+      fromTile: { q: 0, r: -6 },
+      toTile: { q: 1, r: -5 },
+      startedAtMs: 100,
+      durationMs: 2080,
+      style: 'slither'
+    };
+
+    const position = resolveAnimatedHexPosition({ q: 1, r: -5 }, motion, 1200);
+
+    expect(position.q).toBeGreaterThan(0);
+    expect(position.q).toBeLessThan(1);
+    expect(position.r).toBeGreaterThan(-6);
+    expect(position.r).toBeLessThan(-5);
+    expect(position.isMoving).toBe(true);
+    expect(position.motionStyle).toBe('slither');
+  });
+
   it('distinguishes unit bosses from end-user horde wave members', () => {
     const pebbleWave: WaveDefinition = {
       index: 5,

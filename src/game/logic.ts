@@ -199,12 +199,16 @@ const END_USER_HORDE_START_MOMENTUM = 3;
 const END_USER_HORDE_MAX_MOMENTUM = 12;
 const END_USER_HORDE_TIER_ONE_MIN = 4;
 const END_USER_HORDE_TIER_TWO_MIN = 8;
-const END_USER_HORDE_TIER_ONE_MOVE_BONUS_MS = 140;
-const END_USER_HORDE_TIER_TWO_MOVE_BONUS_MS = 220;
+const END_USER_HORDE_BOSS_TIER_ONE_MOVE_BONUS_MS = 80;
+const END_USER_HORDE_BOSS_TIER_TWO_MOVE_BONUS_MS = 140;
 const END_USER_HORDE_TIER_TWO_SWARM_CAP = 7;
 const END_USER_HORDE_BASE_SWARM_CAP = 5;
+const END_USER_HORDE_BOSS_TIER_TWO_SWARM_CAP = 4;
+const END_USER_HORDE_BOSS_BASE_SWARM_CAP = 3;
 const END_USER_HORDE_SURGE_COOLDOWN_MS = 4200;
 const END_USER_HORDE_SURGE_MOVE_READY_MS = 120;
+const END_USER_HORDE_SAUNA_HIT_MOMENTUM_GAIN = 2;
+const END_USER_HORDE_BOSS_SAUNA_HIT_MOMENTUM_GAIN = 1;
 const STEP_MOTION_DURATION_MS = 240;
 const PEBBLE_DEVOUR_STACK_CAP = 6;
 const PEBBLE_DEVOUR_DAMAGE_PER_STACK = 2;
@@ -214,14 +218,20 @@ const PEBBLE_BOTTLE_DAMAGE_PER_STACK = 2;
 const PEBBLE_FIRST_ENCOUNTER_DAMAGE_PENALTY = 4;
 const PEBBLE_BASE_MAX_HP = 260;
 const PEBBLE_MAX_HP_STEP = 60;
-const PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_MS = 1600;
+const PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_MS = 1800;
 const PEBBLE_BOTTLE_HUNT_MOVE_COOLDOWN_STEP = 140;
-const PEBBLE_PATH_MOVE_COOLDOWN_MS = 2080;
+const PEBBLE_PATH_MOVE_COOLDOWN_MS = 2280;
 const PEBBLE_PATH_MOVE_COOLDOWN_STEP = 160;
 const ENEMY_BOSS_STAT_SCALING_MULTIPLIER = 0.7;
 const ENEMY_NORMAL_HP_SCALING_MULTIPLIER = 0.38;
 const ENEMY_NORMAL_DAMAGE_SCALING_MULTIPLIER = 0.33;
 const ENEMY_NORMAL_MAX_HP_FLAT_BONUS_PER_THREAT = 1.5;
+const NORMAL_ENEMY_EARLY_RELIEF_START_WAVE = 4;
+const NORMAL_ENEMY_EARLY_RELIEF_END_WAVE = 15;
+const NORMAL_ENEMY_EARLY_HP_BONUS_SCALE_START = 0.42;
+const NORMAL_ENEMY_EARLY_HP_BONUS_SCALE_END = 0.62;
+const NORMAL_ENEMY_EARLY_DAMAGE_BONUS_SCALE_START = 0.28;
+const NORMAL_ENEMY_EARLY_DAMAGE_BONUS_SCALE_END = 0.58;
 const LIVE_SAUNA_RETREAT_SISU_COST = 3;
 const LIVE_SAUNA_RETREAT_COOLDOWN_MS = 12000;
 const BLINK_MOTION_DURATION_MS = 320;
@@ -1664,6 +1674,25 @@ function enemyDamageScalingMultiplier(isBossWave: boolean): number {
   return isBossWave ? ENEMY_BOSS_STAT_SCALING_MULTIPLIER : ENEMY_NORMAL_DAMAGE_SCALING_MULTIPLIER;
 }
 
+function normalEnemyEarlyReliefBonusScale(
+  index: number,
+  isBossWave: boolean,
+  startScale: number,
+  endScale: number
+): number {
+  if (
+    isBossWave
+    || index < NORMAL_ENEMY_EARLY_RELIEF_START_WAVE
+    || index > NORMAL_ENEMY_EARLY_RELIEF_END_WAVE
+  ) {
+    return 1;
+  }
+
+  const progress = (index - NORMAL_ENEMY_EARLY_RELIEF_START_WAVE)
+    / Math.max(1, NORMAL_ENEMY_EARLY_RELIEF_END_WAVE - NORMAL_ENEMY_EARLY_RELIEF_START_WAVE);
+  return startScale + (endScale - startScale) * progress;
+}
+
 function scaledEnemyMaxHp(
   baseMaxHp: number,
   index: number,
@@ -1671,6 +1700,12 @@ function scaledEnemyMaxHp(
   content: GameContent,
   isBossWave: boolean
 ): number {
+  const bonusScale = normalEnemyEarlyReliefBonusScale(
+    index,
+    isBossWave,
+    NORMAL_ENEMY_EARLY_HP_BONUS_SCALE_START,
+    NORMAL_ENEMY_EARLY_HP_BONUS_SCALE_END
+  );
   return Math.max(
     1,
     Math.round(
@@ -1678,7 +1713,7 @@ function scaledEnemyMaxHp(
       + (
         baseMaxHp * (enemyHpMultiplier(index, content, isBossWave) - 1)
         + enemyMaxHpFlatBonus(index, threat, content, isBossWave)
-      ) * enemyHpScalingMultiplier(isBossWave)
+      ) * enemyHpScalingMultiplier(isBossWave) * bonusScale
     )
   );
 }
@@ -1695,7 +1730,16 @@ function enemyDamageBonus(index: number, content: GameContent, isBossWave: boole
 
 function scaledEnemyDamage(baseDamage: number, index: number, content: GameContent, isBossWave: boolean): number {
   void content;
-  return Math.max(1, baseDamage + Math.round(enemyDamageBonus(index, content, isBossWave) * enemyDamageScalingMultiplier(isBossWave)));
+  const bonusScale = normalEnemyEarlyReliefBonusScale(
+    index,
+    isBossWave,
+    NORMAL_ENEMY_EARLY_DAMAGE_BONUS_SCALE_START,
+    NORMAL_ENEMY_EARLY_DAMAGE_BONUS_SCALE_END
+  );
+  return Math.max(
+    1,
+    baseDamage + Math.round(enemyDamageBonus(index, content, isBossWave) * enemyDamageScalingMultiplier(isBossWave) * bonusScale)
+  );
 }
 
 function spawnIntervalMs(index: number, content: GameContent, modifier = 0): number {
@@ -3690,19 +3734,31 @@ function hordeEnemies(state: RunState): EnemyInstance[] {
 }
 
 function swarmDamageBonus(state: RunState): number {
-  const cap = isEndUserHordeBossWave(state.currentWave) && state.endUserHordeTier >= 2
-    ? END_USER_HORDE_TIER_TWO_SWARM_CAP
-    : END_USER_HORDE_BASE_SWARM_CAP;
+  const cap = isEndUserHordeBossWave(state.currentWave)
+    ? (state.endUserHordeTier >= 2 ? END_USER_HORDE_BOSS_TIER_TWO_SWARM_CAP : END_USER_HORDE_BOSS_BASE_SWARM_CAP)
+    : (state.endUserHordeTier >= 2 ? END_USER_HORDE_TIER_TWO_SWARM_CAP : END_USER_HORDE_BASE_SWARM_CAP);
   return Math.min(cap, hordeEnemies(state).length);
+}
+
+function hordeMomentumGainFromSaunaHit(state: RunState): number {
+  return isEndUserHordeBossWave(state.currentWave)
+    ? END_USER_HORDE_BOSS_SAUNA_HIT_MOMENTUM_GAIN
+    : END_USER_HORDE_SAUNA_HIT_MOMENTUM_GAIN;
+}
+
+function hordeMomentumGainFromRegenTick(state: RunState): number {
+  const enemyCount = hordeEnemies(state).length;
+  if (!isEndUserHordeBossWave(state.currentWave)) return enemyCount;
+  return Math.max(1, Math.ceil(enemyCount / 2));
 }
 
 function hordeMoveCooldownMs(state: RunState, baseCooldownMs: number): number {
   if (!isEndUserHordeBossWave(state.currentWave)) return baseCooldownMs;
   if (state.endUserHordeTier >= 2) {
-    return Math.max(120, baseCooldownMs - END_USER_HORDE_TIER_TWO_MOVE_BONUS_MS);
+    return Math.max(120, baseCooldownMs - END_USER_HORDE_BOSS_TIER_TWO_MOVE_BONUS_MS);
   }
   if (state.endUserHordeTier >= 1) {
-    return Math.max(120, baseCooldownMs - END_USER_HORDE_TIER_ONE_MOVE_BONUS_MS);
+    return Math.max(120, baseCooldownMs - END_USER_HORDE_BOSS_TIER_ONE_MOVE_BONUS_MS);
   }
   return baseCooldownMs;
 }
@@ -3812,7 +3868,7 @@ function stepStandardEnemy(state: RunState, enemy: EnemyInstance, content: GameC
     if (target === 'sauna') {
       applyEnemyDamageToSauna(state, enemy, enemyAttackDamage(state, enemy, content));
       if (enemy.archetypeId === 'thirsty_user' && isEndUserHordeBossWave(state.currentWave)) {
-        setEndUserHordeMomentum(state, state.endUserHordeMomentum + 2);
+        setEndUserHordeMomentum(state, state.endUserHordeMomentum + hordeMomentumGainFromSaunaHit(state));
       }
       enemy.attackReadyAtMs = state.timeMs + enemyCooldownMsForState(state, archetype.attackCooldownMs);
       return;
@@ -4174,7 +4230,7 @@ function applyGlobalRegenTick(state: RunState, content: GameContent): void {
     defender.hp = Math.min(stats.maxHp, defender.hp + stats.regenHpPerSecond);
   }
   if (isEndUserHordeBossWave(state.currentWave)) {
-    setEndUserHordeMomentum(state, state.endUserHordeMomentum + hordeEnemies(state).length);
+    setEndUserHordeMomentum(state, state.endUserHordeMomentum + hordeMomentumGainFromRegenTick(state));
   }
 }
 
@@ -5170,6 +5226,15 @@ export function createInitialState(
   return state;
 }
 
+function metaProgressForNextRun(state: RunState): MetaProgress {
+  const carriedMeta = clone(state.meta);
+  if (state.phase === 'lost' && !state.metaAwarded) {
+    carriedMeta.steam += state.steamEarned;
+    carriedMeta.completedRuns += 1;
+  }
+  return carriedMeta;
+}
+
 export function applyAction(state: RunState, action: InputAction, content: GameContent): RunState {
   if (action.type === 'restartRun') {
     return createInitialState(
@@ -5190,7 +5255,7 @@ export function applyAction(state: RunState, action: InputAction, content: GameC
     return state.overlayMode === 'intermission'
       ? createInitialState(
         content,
-        state.meta,
+        metaProgressForNextRun(state),
         (Date.now() >>> 0) || 1,
         false,
         false,

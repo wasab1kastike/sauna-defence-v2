@@ -256,6 +256,36 @@ describe('Sauna Defense V2 logic', () => {
     expect(snapshot.hud.selectedEnemy?.damage).toBe(23);
   });
 
+  it('softens normal enemy stats during waves 4 through 15', () => {
+    const buildEnemySnapshot = (waveIndex, archetypeId) => {
+      const state = prepState();
+      const archetype = gameContent.enemyArchetypes[archetypeId];
+      state.phase = 'wave';
+      state.currentWave = createWaveDefinition(waveIndex, gameContent);
+      state.selectedMapTarget = 'enemy';
+      state.selectedEnemyInstanceId = 1;
+      state.enemies = [{
+        instanceId: 1,
+        archetypeId,
+        tokenStyleId: 0,
+        tile: { q: 0, r: -2 },
+        hp: archetype.maxHp,
+        lastHitByDefenderId: null,
+        attackReadyAtMs: 999999,
+        moveReadyAtMs: 999999,
+        nextAbilityAtMs: Number.POSITIVE_INFINITY,
+        pathIndex: null,
+        spawnLaneIndex: 0,
+        spawnedByEnemyInstanceId: null
+      }];
+      return createSnapshot(state, gameContent).hud.selectedEnemy;
+    };
+
+    expect(buildEnemySnapshot(4, 'brute')).toMatchObject({ maxHp: 23, damage: 7 });
+    expect(buildEnemySnapshot(11, 'raider')).toMatchObject({ maxHp: 14, damage: 4 });
+    expect(buildEnemySnapshot(14, 'brute')).toMatchObject({ maxHp: 28, damage: 8 });
+  });
+
   it('spawns late-wave enemies with scaled HP instead of archetype base HP', () => {
     let state = prepState();
     state.phase = 'wave';
@@ -427,6 +457,83 @@ describe('Sauna Defense V2 logic', () => {
 
     expect(heavy.defenders.find((entry) => entry.location === 'board')?.hp).toBe(16);
     expect(light.defenders.find((entry) => entry.location === 'board')?.hp).toBe(17);
+  });
+
+  it('softens end-user horde boss damage by capping swarm bonus lower than normal swarm spikes', () => {
+    const state = prepState();
+    const defender = state.defenders.find((entry) => entry.location === 'ready')!;
+    defender.location = 'board';
+    defender.tile = { q: 0, r: -1 };
+    defender.homeTile = { q: 0, r: -1 };
+    defender.hp = 20;
+    defender.stats.defense = 0;
+    defender.attackReadyAtMs = 999999;
+    state.phase = 'wave';
+    state.currentWave = createWaveDefinition(10, gameContent);
+    state.pendingSpawns = [];
+    state.endUserHordeMomentum = 8;
+    state.endUserHordeTier = 2;
+    state.endUserHordeNextSurgeAtMs = 999999;
+    const fillerTiles = [
+      { q: 5, r: -5 },
+      { q: 5, r: -4 },
+      { q: 4, r: -4 },
+      { q: -5, r: 5 },
+      { q: -4, r: 5 },
+      { q: -4, r: 4 }
+    ];
+    state.enemies = Array.from({ length: 7 }, (_, index) => ({
+      instanceId: index + 1,
+      archetypeId: 'thirsty_user' as const,
+      tokenStyleId: 0,
+      tile: index === 0 ? { q: 0, r: 0 } : fillerTiles[index - 1] ?? fillerTiles[0],
+      hp: gameContent.enemyArchetypes.thirsty_user.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: index === 0 ? 0 : 999999,
+      moveReadyAtMs: 999999,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: null,
+      spawnLaneIndex: index,
+      spawnedByEnemyInstanceId: null
+    }));
+
+    const updated = stepState(state, 16, gameContent);
+
+    expect(updated.defenders.find((entry) => entry.location === 'board')?.hp).toBe(12);
+  });
+
+  it('builds end-user horde boss momentum more slowly from regen ticks and sauna hits', () => {
+    const state = prepState();
+    state.phase = 'wave';
+    state.currentWave = createWaveDefinition(10, gameContent);
+    state.pendingSpawns = [];
+    state.nextRegenTickAtMs = 1000;
+    state.endUserHordeMomentum = 0;
+    state.endUserHordeTier = 0;
+    state.endUserHordeNextSurgeAtMs = 999999;
+    const fillerTiles = [
+      { q: 5, r: -5 },
+      { q: 5, r: -4 },
+      { q: 4, r: -4 }
+    ];
+    state.enemies = Array.from({ length: 4 }, (_, index) => ({
+      instanceId: index + 1,
+      archetypeId: 'thirsty_user' as const,
+      tokenStyleId: 0,
+      tile: index === 0 ? { q: 0, r: 0 } : fillerTiles[index - 1] ?? fillerTiles[0],
+      hp: gameContent.enemyArchetypes.thirsty_user.maxHp,
+      lastHitByDefenderId: null,
+      attackReadyAtMs: index === 0 ? 0 : 999999,
+      moveReadyAtMs: 999999,
+      nextAbilityAtMs: Number.POSITIVE_INFINITY,
+      pathIndex: null,
+      spawnLaneIndex: index,
+      spawnedByEnemyInstanceId: null
+    }));
+
+    const updated = stepState(state, 1000, gameContent);
+
+    expect(updated.endUserHordeMomentum).toBe(3);
   });
 
   it('lets the electric boss chain shock multiple defenders', () => {
@@ -705,7 +812,7 @@ describe('Sauna Defense V2 logic', () => {
     expect(state.enemies[0]?.tile).toEqual({ q: 1, r: -6 });
     expect(state.enemies[0]?.motion?.style).toBe('slither');
     expect(state.enemies[0]?.motion?.durationMs).toBe(state.enemies[0]?.moveReadyAtMs - state.timeMs);
-    expect(state.enemies[0]?.moveReadyAtMs - state.timeMs).toBe(1600);
+    expect(state.enemies[0]?.moveReadyAtMs - state.timeMs).toBe(1800);
   });
 
   it('uses the slower path cooldown for the first Pebble encounter when no bottles remain', () => {
@@ -743,7 +850,7 @@ describe('Sauna Defense V2 logic', () => {
     state = stepState(state, 16, gameContent);
 
     expect(state.enemies[0]?.tile).toEqual({ q: 1, r: -5 });
-    expect(state.enemies[0]?.moveReadyAtMs - state.timeMs).toBe(2080);
+    expect(state.enemies[0]?.moveReadyAtMs - state.timeMs).toBe(2280);
   });
 
   it('softens first Pebble encounter attack damage without lowering tankiness', () => {
@@ -816,8 +923,8 @@ describe('Sauna Defense V2 logic', () => {
     expect(pathState.enemies[0]?.motion?.style).toBe('slither');
     expect(bottleState.enemies[0]?.motion?.durationMs).toBe(bottleState.enemies[0]?.moveReadyAtMs - bottleState.timeMs);
     expect(pathState.enemies[0]?.motion?.durationMs).toBe(pathState.enemies[0]?.moveReadyAtMs - pathState.timeMs);
-    expect(bottleState.enemies[0]?.moveReadyAtMs - bottleState.timeMs).toBe(1880);
-    expect(pathState.enemies[0]?.moveReadyAtMs - pathState.timeMs).toBe(2400);
+    expect(bottleState.enemies[0]?.moveReadyAtMs - bottleState.timeMs).toBe(2080);
+    expect(pathState.enemies[0]?.moveReadyAtMs - pathState.timeMs).toBe(2600);
   });
 
   it('rejoins Pebble to the forward scripted path after the last bottle is gone', () => {
@@ -1108,12 +1215,12 @@ describe('Sauna Defense V2 logic', () => {
 
     const bottleSnapshot = createSnapshot(state, gameContent);
     expect(bottleSnapshot.hud.selectedEnemy?.maxHp).toBe(920);
-    expect(bottleSnapshot.hud.selectedEnemy?.moveCooldownMs).toBe(1740);
+    expect(bottleSnapshot.hud.selectedEnemy?.moveCooldownMs).toBe(1940);
     expect(bottleSnapshot.hud.selectedEnemy?.damage).toBe(17);
 
     state.pebbleBottleTargets = [];
     const pathSnapshot = createSnapshot(state, gameContent);
-    expect(pathSnapshot.hud.selectedEnemy?.moveCooldownMs).toBe(2240);
+    expect(pathSnapshot.hud.selectedEnemy?.moveCooldownMs).toBe(2440);
   });
 
   it('surfaces defender kill counts in selected-hero HUD data', () => {
@@ -2538,6 +2645,45 @@ describe('Sauna Defense V2 logic', () => {
     const snapshot = createSnapshot(state, gameContent);
     expect(snapshot.hud.rosterCap).toBe(gameContent.config.baseRosterCap + 1);
     expect(snapshot.hud.boardCap).toBe(gameContent.config.boardCap + 1);
+  });
+
+  it('keeps banked steam when starting the next run and after starting the first wave', () => {
+    let state = prepState();
+    state.phase = 'lost';
+    state.overlayMode = 'intermission';
+    state.meta.shopUnlocked = true;
+    state.meta.steam = 12;
+    state.steamEarned = 0;
+    state.metaAwarded = true;
+
+    state = applyAction(state, { type: 'startNextRun' }, gameContent);
+
+    expect(state.meta.steam).toBe(12);
+    expect(createSnapshot(state, gameContent).hud.bankedSteam).toBe(12);
+
+    ({ state } = recruitAndPlace(state, { q: 0, r: -1 }));
+
+    state = applyAction(state, { type: 'startWave' }, gameContent);
+
+    expect(state.phase).toBe('wave');
+    expect(state.meta.steam).toBe(12);
+    expect(createSnapshot(state, gameContent).hud.bankedSteam).toBe(12);
+  });
+
+  it('cashes out pending steam before starting the next run if the loss flow has not awarded it yet', () => {
+    let state = prepState();
+    state.phase = 'lost';
+    state.overlayMode = 'intermission';
+    state.meta.shopUnlocked = true;
+    state.meta.steam = 7;
+    state.steamEarned = 9;
+    state.metaAwarded = false;
+
+    state = applyAction(state, { type: 'startNextRun' }, gameContent);
+
+    expect(state.meta.steam).toBe(16);
+    expect(state.meta.completedRuns).toBe(1);
+    expect(createSnapshot(state, gameContent).hud.bankedSteam).toBe(16);
   });
 
   it('lets the player buy and switch Hall of Fame title and name masteries independently', () => {
